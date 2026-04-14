@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: equalizacao-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # você preenche no painel do Render
+      - key: SECRET_KEY
+        generateValue: true  # Render gera automaticamente
+      - key: FRONTEND_URL
+        sync: false          # você preenche com a URL do Vercel
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 480

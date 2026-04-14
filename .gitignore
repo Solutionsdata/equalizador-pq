@@ -1,0 +1,32 @@
+# Env files com credenciais — NUNCA commitar
+backend/.env
+frontend/.env
+frontend/.env.local
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.cache/
+
+# Docker volumes (gerados localmente)
+postgres_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
