@@ -54,8 +54,8 @@ export default function Projects() {
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.detail
-        ?? (err?.code === 'ERR_NETWORK' || !err?.response
-          ? 'Servidor iniciando… aguarde 30s e tente novamente.'
+        ?? (err?.isServerStarting
+          ? 'Servidor inicializando… tente novamente em 30 segundos.'
           : 'Erro ao criar projeto')
       toast.error(msg)
     },

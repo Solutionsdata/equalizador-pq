@@ -33,6 +33,11 @@ api.interceptors.response.use(
       localStorage.removeItem('user')
       window.location.href = '/login'
     }
+    // Render free-tier cold start returns 502/503/504 via Vercel proxy
+    const status = error.response?.status
+    if (!error.response || status === 502 || status === 503 || status === 504) {
+      error.isServerStarting = true
+    }
     return Promise.reject(error)
   },
 )

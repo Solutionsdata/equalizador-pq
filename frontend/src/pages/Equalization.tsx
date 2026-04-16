@@ -72,7 +72,10 @@ export default function Equalization() {
       setForm(EMPTY_FORM)
       navigate(`/projetos/${pid}/propostas/${res.data.id}`)
     },
-    onError: (err: any) => toast.error(err?.response?.data?.detail ?? 'Erro ao criar proposta'),
+    onError: (err: any) => toast.error(
+      err?.response?.data?.detail
+      ?? (err?.isServerStarting ? 'Servidor inicializando… tente novamente em 30s.' : 'Erro ao criar proposta')
+    ),
   })
 
   const deleteMutation = useMutation({
