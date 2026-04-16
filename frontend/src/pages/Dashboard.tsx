@@ -1,14 +1,15 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { projectsAPI } from '../services/api'
+import { projectsAPI, analyticsAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
-import type { Project } from '../types'
-import { TIPO_OBRA_LABELS, STATUS_LABELS } from '../types'
+import type { Project, EqualizationResponse } from '../types'
+import { TIPO_OBRA_LABELS, STATUS_LABELS, formatBRL } from '../types'
 import {
   FolderOpen, Table2, FileText, TrendingUp, Plus,
   ArrowRight, BarChart3, Clock, ShieldCheck, Target,
   LineChart, Building2, ChevronRight, Award, Zap,
+  Scissors, Trophy, Star,
 } from 'lucide-react'
 import GuidedTour, { RestartTourButton } from '../components/GuidedTour'
 
@@ -88,14 +89,144 @@ function NavCard({
   )
 }
 
+// ── Cherry Pick Card ──────────────────────────────────────────────────────────
+
+interface CherryItem {
+  numero_item: string
+  descricao: string
+  bestSupplier: string
+  economia: number
+  economyPct: number
+}
+
+interface SupplierWin {
+  empresa: string
+  wins: number
+  winPct: number
+}
+
+interface CherryData {
+  cherryTotal: number
+  mediaTotal: number
+  economy: number
+  economyPct: number
+  topItems: CherryItem[]
+  topSuppliers: SupplierWin[]
+  totalItems: number
+}
+
+function CherryPickCard({ data, project }: { data: CherryData; project: Project }) {
+  return (
+    <div className="bg-white border border-violet-200 rounded-xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-violet-100 bg-violet-50/40">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+            <Scissors size={15} className="text-violet-600" />
+            Cherry Pick
+          </h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {project.nome} · menor preço por linha · {data.totalItems} itens
+          </p>
+        </div>
+        <Link
+          to={`/projetos/${project.id}/analises`}
+          className="text-xs text-violet-600 font-medium hover:underline flex items-center gap-1"
+        >
+          Ver análise completa <ChevronRight size={11} />
+        </Link>
+      </div>
+
+      {/* Métricas principais */}
+      <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
+        <div className="px-5 py-4">
+          <p className="text-xs text-gray-400 mb-1">Total Cherry Pick</p>
+          <p className="text-xl font-bold text-violet-700">{formatBRL(data.cherryTotal)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">mínimo teórico</p>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-xs text-gray-400 mb-1">Média das propostas</p>
+          <p className="text-xl font-bold text-gray-700">{formatBRL(data.mediaTotal)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">sem cherry pick</p>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-xs text-gray-400 mb-1">Economia potencial</p>
+          <p className="text-xl font-bold text-green-600">{formatBRL(data.economy)}</p>
+          <p className="text-xs text-green-500 font-medium mt-0.5">
+            {data.economyPct.toFixed(1)}% de redução
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+        {/* Top itens */}
+        {data.topItems.length > 0 && (
+          <div className="px-5 py-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <Star size={11} className="text-amber-500" /> Top itens por economia
+            </p>
+            <div className="space-y-2.5">
+              {data.topItems.map((item, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className="text-xs text-gray-300 w-6 flex-shrink-0 pt-0.5">{item.numero_item}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-700 truncate leading-tight">{item.descricao}</p>
+                    <p className="text-xs text-violet-500 mt-0.5">{item.bestSupplier}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs font-semibold text-green-600">−{item.economyPct.toFixed(0)}%</p>
+                    <p className="text-xs text-gray-400">{formatBRL(item.economia)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Fornecedores */}
+        {data.topSuppliers.length > 0 && (
+          <div className="px-5 py-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <Trophy size={11} className="text-amber-500" /> Fornecedores no cherry pick
+            </p>
+            <div className="space-y-3">
+              {data.topSuppliers.map((s, i) => (
+                <div key={i}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-gray-700 truncate max-w-[160px]">{s.empresa}</span>
+                    <span className="text-xs text-gray-500 flex-shrink-0 ml-2">
+                      {s.wins} itens ({s.winPct}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div
+                      className="bg-violet-500 h-1.5 rounded-full transition-all"
+                      style={{ width: `${Math.min(s.winPct, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-4 leading-relaxed">
+              Percentual de itens em que cada fornecedor oferece o menor preço unitário.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Página ────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { data: projects = [] } = useQuery<Project[]>({
+
+  const { data: _rawProjects } = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: () => projectsAPI.list().then((r) => r.data),
   })
+  const projects: Project[] = Array.isArray(_rawProjects) ? _rawProjects : []
 
   const total        = projects.length
   const emAndamento  = projects.filter((p) => p.status === 'EM_ANDAMENTO').length
@@ -104,6 +235,83 @@ export default function Dashboard() {
   const totalItens   = projects.reduce((acc, p) => acc + p.total_pq_items, 0)
   const mediaProp    = total > 0 ? (totalProps / total).toFixed(1) : '—'
   const latest       = projects[0]
+
+  // Projeto com propostas para cherry pick (o mais recente que tenha propostas)
+  const latestWithProposals = projects.find((p) => p.total_proposals > 0 && p.total_pq_items > 0)
+
+  const { data: eqRaw } = useQuery<EqualizationResponse>({
+    queryKey: ['equalization', latestWithProposals?.id],
+    queryFn: () => analyticsAPI.getEqualization(latestWithProposals!.id).then((r) => r.data),
+    enabled: !!latestWithProposals,
+  })
+
+  const cherryData = useMemo((): CherryData | null => {
+    if (!eqRaw) return null
+    const items = Array.isArray(eqRaw.items) ? eqRaw.items : []
+    const proposals = Array.isArray(eqRaw.proposals) ? eqRaw.proposals : []
+    if (items.length === 0 || proposals.length === 0) return null
+
+    let cherryTotal = 0
+    let mediaTotal = 0
+    const winnerCounts: Record<string, number> = {}
+    const cherryItems: CherryItem[] = []
+
+    for (const item of items) {
+      const q = item.quantidade ?? 0
+
+      if (item.preco_minimo != null && q > 0) cherryTotal += item.preco_minimo * q
+      if (item.preco_medio  != null && q > 0) mediaTotal  += item.preco_medio  * q
+
+      // Qual proposta tem o menor preço neste item?
+      let minPrice = Infinity
+      let minPropId: string | null = null
+      for (const [propId, price] of Object.entries(item.precos)) {
+        if (price != null && price < minPrice) { minPrice = price; minPropId = propId }
+      }
+      if (minPropId) winnerCounts[minPropId] = (winnerCounts[minPropId] ?? 0) + 1
+
+      if (item.preco_minimo != null && item.preco_medio != null && q > 0) {
+        const economia = (item.preco_medio - item.preco_minimo) * q
+        if (economia > 0) {
+          const prop = proposals.find((p) => String(p.id) === minPropId)
+          cherryItems.push({
+            numero_item: item.numero_item,
+            descricao:   item.descricao,
+            bestSupplier: prop?.empresa ?? '—',
+            economia,
+            economyPct: ((item.preco_medio - item.preco_minimo) / item.preco_medio) * 100,
+          })
+        }
+      }
+    }
+
+    cherryItems.sort((a, b) => b.economia - a.economia)
+
+    const topSuppliers: SupplierWin[] = Object.entries(winnerCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([propId, wins]) => {
+        const prop = proposals.find((p) => String(p.id) === propId)
+        return {
+          empresa: prop?.empresa ?? `Proposta ${propId}`,
+          wins,
+          winPct: Math.round((wins / items.length) * 100),
+        }
+      })
+
+    const economy    = mediaTotal - cherryTotal
+    const economyPct = mediaTotal > 0 ? (economy / mediaTotal) * 100 : 0
+
+    return {
+      cherryTotal,
+      mediaTotal,
+      economy,
+      economyPct,
+      topItems: cherryItems.slice(0, 5),
+      topSuppliers,
+      totalItems: items.length,
+    }
+  }, [eqRaw])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -202,7 +410,7 @@ export default function Dashboard() {
                         <p className="text-sm font-medium text-gray-800 truncate">{p.nome}</p>
                         <p className="text-xs text-gray-400 mt-0.5">
                           {TIPO_OBRA_LABELS[p.tipo_obra]}
-                          {p.numero_licitacao && ` · ${p.numero_licitacao}`}
+                          {p.numero_licitacao && ` · TR ${p.numero_licitacao}`}
                           {' · '}{p.total_pq_items} itens · {p.total_proposals} proposta{p.total_proposals !== 1 ? 's' : ''}
                         </p>
                       </div>
@@ -229,6 +437,11 @@ export default function Dashboard() {
               )}
             </div>
 
+            {/* Cherry Pick */}
+            {cherryData && latestWithProposals && (
+              <CherryPickCard data={cherryData} project={latestWithProposals} />
+            )}
+
             {/* Acesso rápido */}
             <div>
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -239,7 +452,7 @@ export default function Dashboard() {
                   to="/projetos"
                   icon={FolderOpen}
                   label="Projetos"
-                  description="Gerencie processos licitatórios e acompanhe o status."
+                  description="Gerencie processos e acompanhe o status."
                 />
                 <NavCard
                   to={latest ? `/projetos/${latest.id}/pq` : '/projetos'}
@@ -327,6 +540,21 @@ export default function Dashboard() {
                         Ir para equalização <ArrowRight size={11} />
                       </Link>
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Dica cherry pick */}
+            {!latestWithProposals && total > 0 && totalItens > 0 && (
+              <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <Scissors size={15} className="text-violet-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-violet-800">Ative o Cherry Pick</p>
+                    <p className="text-xs text-violet-600 mt-1 leading-relaxed">
+                      Adicione pelo menos 2 propostas para ver o menor preço por linha e a economia potencial em tempo real.
+                    </p>
                   </div>
                 </div>
               </div>

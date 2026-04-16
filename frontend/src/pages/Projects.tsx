@@ -39,10 +39,11 @@ export default function Projects() {
   const [form, setForm] = useState<ProjectForm>(EMPTY_FORM)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
 
-  const { data: projects = [], isLoading } = useQuery<Project[]>({
+  const { data: _rawProjects, isLoading } = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: () => projectsAPI.list().then((r) => r.data),
   })
+  const projects: Project[] = Array.isArray(_rawProjects) ? _rawProjects : []
 
   const createMutation = useMutation({
     mutationFn: (data: ProjectForm) => projectsAPI.create(data),
@@ -51,7 +52,13 @@ export default function Projects() {
       toast.success('Projeto criado!')
       closeModal()
     },
-    onError: (err: any) => toast.error(err?.response?.data?.detail ?? 'Erro ao criar projeto'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail
+        ?? (err?.code === 'ERR_NETWORK' || !err?.response
+          ? 'Servidor iniciando… aguarde 30s e tente novamente.'
+          : 'Erro ao criar projeto')
+      toast.error(msg)
+    },
   })
 
   const updateMutation = useMutation({
@@ -132,7 +139,7 @@ export default function Projects() {
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 truncate">{project.nome}</h3>
                   {project.numero_licitacao && (
-                    <p className="text-xs text-gray-400 mt-0.5">Licitação: {project.numero_licitacao}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">TR: {project.numero_licitacao}</p>
                   )}
                 </div>
                 <span className={`text-xs px-2 py-1 rounded-full font-medium flex-shrink-0 ${STATUS_COLORS[project.status]}`}>
@@ -254,10 +261,10 @@ export default function Projects() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nº Licitação</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nº Termo de Referência</label>
                   <input
                     className="input"
-                    placeholder="2024/001"
+                    placeholder="TR-2024/001"
                     value={form.numero_licitacao}
                     onChange={(e) => setForm((f) => ({ ...f, numero_licitacao: e.target.value }))}
                   />

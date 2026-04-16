@@ -35,6 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     setIsLoading(false)
+    // Warm up the backend (Render free tier sleeps after inactivity)
+    fetch('/api/health').catch(() => {/* silent — just waking up the server */})
   }, [])
 
   async function login(email: string, password: string) {

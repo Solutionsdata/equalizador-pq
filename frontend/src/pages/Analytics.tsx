@@ -753,15 +753,17 @@ export default function Analytics() {
     queryFn: () => analyticsAPI.getEqualization(pid).then((r) => r.data),
   })
 
-  const { data: disciplines = [] } = useQuery<DisciplineSummary[]>({
+  const { data: _rawDisciplines } = useQuery<DisciplineSummary[]>({
     queryKey: ['disciplines', pid],
     queryFn: () => analyticsAPI.getDisciplines(pid).then((r) => r.data),
   })
+  const disciplines: DisciplineSummary[] = Array.isArray(_rawDisciplines) ? _rawDisciplines : []
 
-  const { data: categorias = [] } = useQuery<CategoriaSummary[]>({
+  const { data: _rawCategorias } = useQuery<CategoriaSummary[]>({
     queryKey: ['categorias', pid],
     queryFn: () => analyticsAPI.getCategorias(pid).then((r) => r.data),
   })
+  const categorias: CategoriaSummary[] = Array.isArray(_rawCategorias) ? _rawCategorias : []
 
   // Build filter options from data
   const categoriasOpts = useMemo(() => {

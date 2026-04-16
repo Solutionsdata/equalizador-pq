@@ -29,10 +29,11 @@ export default function ProposalInput() {
     queryFn: () => proposalsAPI.getWithItems(rid).then((r) => r.data),
   })
 
-  const { data: pqItems = [] } = useQuery<PQItem[]>({
+  const { data: _rawPqItems } = useQuery<PQItem[]>({
     queryKey: ['pq', pid],
     queryFn: () => pqAPI.list(pid).then((r) => r.data),
   })
+  const pqItems: PQItem[] = Array.isArray(_rawPqItems) ? _rawPqItems : []
 
   const [prices, setPrices] = useState<PriceMap>({})
   const [bdiGlobal, setBdiGlobal] = useState<string>('')

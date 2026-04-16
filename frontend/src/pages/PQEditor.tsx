@@ -76,10 +76,11 @@ export default function PQEditor() {
     queryFn: () => projectsAPI.get(pid).then((r) => r.data),
   })
 
-  const { data: serverItems = [], isLoading } = useQuery<PQItem[]>({
+  const { data: _rawItems, isLoading } = useQuery<PQItem[]>({
     queryKey: ['pq', pid],
     queryFn: () => pqAPI.list(pid).then((r) => r.data),
   })
+  const serverItems: PQItem[] = Array.isArray(_rawItems) ? _rawItems : []
 
   const [rows, setRows] = useState<Row[]>([])
   const [dirty, setDirty] = useState(false)

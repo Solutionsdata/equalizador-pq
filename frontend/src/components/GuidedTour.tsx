@@ -25,7 +25,7 @@ const STEPS: Step[] = [
   {
     title: '1. Crie um Projeto',
     description:
-      'Cada processo licitatório é um Projeto. Nele você define o nome, tipo de obra, número da licitação e acompanha o status. Comece criando seu primeiro projeto.',
+      'Cada processo é um Projeto. Nele você define o nome, tipo de obra, número do Termo de Referência e acompanha o status. Comece criando seu primeiro projeto.',
     icon: FolderOpen,
     action: 'Ir para Projetos',
     actionRoute: '/projetos',

@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import {
   Shield, ShieldOff, UserCheck, UserX, Trash2,
   RefreshCw, Crown, Clock, CheckCircle, XCircle,
+  CalendarDays,
 } from 'lucide-react'
 import type { User } from '../types'
 
@@ -47,12 +48,11 @@ function StatusBadge({ active }: { active: boolean }) {
 interface MonthsInputProps {
   userId: number
   onSave: (userId: number, months: number) => void
-  onClear: (userId: number) => void
   pending: boolean
   currentDate?: string | null
 }
 
-function MonthsInput({ userId, onSave, onClear, pending, currentDate }: MonthsInputProps) {
+function MonthsInput({ userId, onSave, pending, currentDate }: MonthsInputProps) {
   const [months, setMonths] = useState(1)
   const [open, setOpen] = useState(false)
   const badge = assinaturaBadge(currentDate)
@@ -63,11 +63,8 @@ function MonthsInput({ userId, onSave, onClear, pending, currentDate }: MonthsIn
         {badge.label}
       </span>
       {!open ? (
-        <button
-          onClick={() => setOpen(true)}
-          className="text-xs text-blue-600 hover:underline"
-        >
-          Definir
+        <button onClick={() => setOpen(true)} className="text-xs text-blue-600 hover:underline">
+          Alterar
         </button>
       ) : (
         <div className="flex items-center gap-1.5">
@@ -95,16 +92,74 @@ function MonthsInput({ userId, onSave, onClear, pending, currentDate }: MonthsIn
           </button>
         </div>
       )}
-      {currentDate && !open && (
+    </div>
+  )
+}
+
+// ── Painel de aprovação (inline, exige período obrigatório) ───────────────────
+
+interface ApproveRowProps {
+  u: User
+  onConfirm: (userId: number, months: number) => void
+  onReject: (userId: number) => void
+  pending: boolean
+}
+
+function ApproveRow({ u, onConfirm, onReject, pending }: ApproveRowProps) {
+  const [months, setMonths] = useState<number>(1)
+  const [etapa, setEtapa] = useState<'idle' | 'choosing'>('idle')
+
+  if (etapa === 'idle') {
+    return (
+      <div className="flex items-center justify-end gap-2">
         <button
-          onClick={() => onClear(userId)}
+          onClick={() => setEtapa('choosing')}
           disabled={pending}
-          className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50"
-          title="Remover vencimento"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50"
         >
-          Remover
+          <CheckCircle size={13} /> Aprovar
         </button>
-      )}
+        <button
+          onClick={() => onReject(u.id)}
+          disabled={pending}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 text-red-600 text-xs font-semibold hover:bg-red-200 disabled:opacity-50"
+        >
+          <XCircle size={13} /> Reprovar
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-2 flex-wrap">
+      <div className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
+        <CalendarDays size={13} className="text-green-700" />
+        <span className="text-xs text-green-700 font-medium">Período:</span>
+        <input
+          type="number"
+          min={1}
+          max={120}
+          value={months}
+          autoFocus
+          onChange={(e) => setMonths(Math.max(1, Number(e.target.value)))}
+          className="border border-green-300 rounded px-2 py-0.5 text-xs w-14 text-center"
+        />
+        <span className="text-xs text-green-700">mes{months !== 1 ? 'es' : ''}</span>
+      </div>
+      <button
+        onClick={() => onConfirm(u.id, months)}
+        disabled={pending || months < 1}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50"
+      >
+        <CheckCircle size={13} /> Confirmar
+      </button>
+      <button
+        onClick={() => setEtapa('idle')}
+        disabled={pending}
+        className="px-2 py-1.5 rounded-lg bg-gray-100 text-gray-500 text-xs hover:bg-gray-200"
+      >
+        Cancelar
+      </button>
     </div>
   )
 }
@@ -118,10 +173,11 @@ export default function AdminUsers() {
 
   if (me && !me.is_admin) return <Navigate to="/" replace />
 
-  const { data: users = [], isLoading } = useQuery<User[]>({
+  const { data: rawUsers, isLoading } = useQuery<User[]>({
     queryKey: ['admin-users'],
     queryFn: () => adminAPI.listUsers().then(r => r.data),
   })
+  const users: User[] = Array.isArray(rawUsers) ? rawUsers : []
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: object }) =>
@@ -147,12 +203,19 @@ export default function AdminUsers() {
     },
   })
 
-  function aprovar(u: User) {
-    updateMutation.mutate({ id: u.id, data: { is_active: true } })
+  // Aprovação exige período obrigatório — envia is_active + assinatura_ate juntos
+  function confirmarAprovacao(userId: number, months: number) {
+    updateMutation.mutate({
+      id: userId,
+      data: {
+        is_active: true,
+        assinatura_ate: addMonths(months),
+      },
+    })
   }
 
-  function reprovar(u: User) {
-    deleteMutation.mutate(u.id)
+  function reprovar(userId: number) {
+    deleteMutation.mutate(userId)
   }
 
   function toggleAdmin(u: User) {
@@ -165,10 +228,6 @@ export default function AdminUsers() {
 
   function saveMonths(userId: number, months: number) {
     updateMutation.mutate({ id: userId, data: { assinatura_ate: addMonths(months) } })
-  }
-
-  function clearAssinatura(userId: number) {
-    updateMutation.mutate({ id: userId, data: { assinatura_ate: null } })
   }
 
   const pending = users.filter(u => !u.is_active)
@@ -184,6 +243,7 @@ export default function AdminUsers() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+
       {/* Cabeçalho */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -225,29 +285,22 @@ export default function AdminUsers() {
                     <td className="px-4 py-3 text-xs text-gray-400">
                       Solicitado em {new Date(u.created_at).toLocaleDateString('pt-BR')}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => aprovar(u)}
-                          disabled={updateMutation.isPending}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50"
-                        >
-                          <CheckCircle size={13} /> Aprovar
-                        </button>
-                        <button
-                          onClick={() => reprovar(u)}
-                          disabled={deleteMutation.isPending}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 text-red-600 text-xs font-semibold hover:bg-red-200 disabled:opacity-50"
-                        >
-                          <XCircle size={13} /> Reprovar
-                        </button>
-                      </div>
+                    <td className="px-4 py-3">
+                      <ApproveRow
+                        u={u}
+                        onConfirm={confirmarAprovacao}
+                        onReject={reprovar}
+                        pending={updateMutation.isPending || deleteMutation.isPending}
+                      />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="text-xs text-amber-700 mt-2 flex items-center gap-1">
+            <CalendarDays size={12} /> Ao aprovar, defina obrigatoriamente o período de acesso em meses.
+          </p>
         </div>
       )}
 
@@ -273,7 +326,6 @@ export default function AdminUsers() {
                 const isMe = u.id === me?.id
                 return (
                   <tr key={u.id} className="hover:bg-gray-50 transition-colors">
-                    {/* Nome */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
@@ -289,19 +341,13 @@ export default function AdminUsers() {
                         </div>
                       </div>
                     </td>
-
-                    {/* Empresa */}
                     <td className="px-4 py-3 text-gray-600">
                       <p>{u.empresa ?? '—'}</p>
                       <p className="text-xs text-gray-400">{u.cargo ?? ''}</p>
                     </td>
-
-                    {/* Status */}
                     <td className="px-4 py-3">
                       <StatusBadge active={u.is_active} />
                     </td>
-
-                    {/* Assinatura em meses */}
                     <td className="px-4 py-3">
                       {u.is_admin ? (
                         <span className="text-xs text-gray-400 italic">Admin — isento</span>
@@ -309,22 +355,16 @@ export default function AdminUsers() {
                         <MonthsInput
                           userId={u.id}
                           onSave={saveMonths}
-                          onClear={clearAssinatura}
                           pending={updateMutation.isPending}
                           currentDate={u.assinatura_ate}
                         />
                       )}
                     </td>
-
-                    {/* Cadastro */}
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
                       {new Date(u.created_at).toLocaleDateString('pt-BR')}
                     </td>
-
-                    {/* Ações */}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        {/* Desativar (volta para pendente) */}
                         <button
                           title="Desativar acesso"
                           onClick={() => toggleActive(u)}
@@ -333,8 +373,6 @@ export default function AdminUsers() {
                         >
                           <UserX size={16} />
                         </button>
-
-                        {/* Admin toggle */}
                         <button
                           title={u.is_admin ? 'Remover admin' : 'Tornar admin'}
                           onClick={() => toggleAdmin(u)}
@@ -347,8 +385,6 @@ export default function AdminUsers() {
                         >
                           {u.is_admin ? <Shield size={16} /> : <ShieldOff size={16} />}
                         </button>
-
-                        {/* Excluir */}
                         <button
                           title="Excluir usuário"
                           onClick={() => setConfirmDelete(u)}
@@ -364,7 +400,6 @@ export default function AdminUsers() {
               })}
             </tbody>
           </table>
-
           {active.length === 0 && (
             <div className="text-center py-12 text-gray-400">Nenhum usuário ativo.</div>
           )}
@@ -385,24 +420,21 @@ export default function AdminUsers() {
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Excluir usuário</h3>
-            <p className="text-gray-600 text-sm mb-1">
-              Tem certeza que deseja excluir <strong>{confirmDelete.nome}</strong>?
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Excluir usuário?</h3>
+            <p className="text-sm text-gray-500 mb-5">
+              <strong>{confirmDelete.nome}</strong> e todos os seus projetos serão removidos permanentemente.
             </p>
-            <p className="text-red-600 text-xs mb-6">
-              Todos os projetos, propostas e dados deste usuário serão removidos permanentemente.
-            </p>
-            <div className="flex gap-3 justify-end">
+            <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDelete(null)}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancelar
               </button>
               <button
                 onClick={() => deleteMutation.mutate(confirmDelete.id)}
                 disabled={deleteMutation.isPending}
-                className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                className="flex-1 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
               >
                 {deleteMutation.isPending ? 'Excluindo…' : 'Excluir'}
               </button>

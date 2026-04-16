@@ -30,6 +30,7 @@ _origins = list({
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://equalizador-pq.vercel.app",
     settings.FRONTEND_URL,
 })
 
