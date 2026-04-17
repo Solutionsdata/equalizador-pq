@@ -155,6 +155,61 @@ export interface CategoriaSummary {
   count_items: number
 }
 
+// ── Revision System ──────────────────────────────────────────────────────────
+export interface ProjectRevision {
+  id: number
+  project_id: number
+  numero: number
+  descricao?: string
+  created_at: string
+}
+
+export interface ScopeChange {
+  numero_item: string
+  descricao_pq: string
+  descricao_proposta?: string
+  unidade_pq: string
+  unidade_proposta?: string
+  quantidade_pq: number
+  quantidade_proposta?: number
+  changed_fields: string[]
+}
+
+export interface ScopeValidationProposal {
+  id: number
+  empresa: string
+  has_changes: boolean
+  changes: ScopeChange[]
+}
+
+export interface ScopeValidationResponse {
+  revision_id: number
+  revision_numero: number
+  proposals: ScopeValidationProposal[]
+  any_changes: boolean
+}
+
+export interface RevisionCompareItem {
+  numero_item: string
+  descricao: string
+  status: 'unchanged' | 'added' | 'removed' | 'changed'
+  valor_a?: number
+  valor_b?: number
+  delta?: number
+  delta_pct?: number
+  pq_change?: { field: string; valor_a: any; valor_b: any }[]
+}
+
+export interface RevisionCompareResponse {
+  rev_a: number
+  rev_b: number
+  global: { total_a: number; total_b: number; delta: number; delta_pct: number }
+  by_discipline: { disciplina: string; total_a: number; total_b: number; delta: number; delta_pct: number }[]
+  by_category: { categoria: string; total_a: number; total_b: number; delta: number; delta_pct: number }[]
+  by_item: RevisionCompareItem[]
+  pq_changes: RevisionCompareItem[]
+}
+
 // ── Utilitários ──────────────────────────────────────────────────────────────
 export const CATEGORIAS = [
   'Terraplenagem', 'Pavimentação', 'Drenagem',

@@ -59,9 +59,21 @@ export const projectsAPI = {
   delete: (id: number) => api.delete(`/projects/${id}`),
 }
 
+// ── Revisions ────────────────────────────────────────────────────────────────
+export const revisionsAPI = {
+  list: (projectId: number) => api.get(`/projects/${projectId}/revisions`),
+  create: (projectId: number, data: { numero: number; descricao?: string }) =>
+    api.post(`/projects/${projectId}/revisions`, data),
+  compare: (projectId: number, revA: number, revB: number) =>
+    api.get(`/projects/${projectId}/revisions/compare`, { params: { rev_a: revA, rev_b: revB } }),
+  scopeValidation: (projectId: number, revisionId?: number) =>
+    api.get(`/analytics/scope-validation/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
+}
+
 // ── PQ Items ─────────────────────────────────────────────────────────────────
 export const pqAPI = {
-  list: (projectId: number) => api.get(`/pq/project/${projectId}`),
+  list: (projectId: number, revisionId?: number) =>
+    api.get(`/pq/project/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
   bulkSave: (projectId: number, items: object[]) =>
     api.put(`/pq/project/${projectId}/bulk`, { items }),
   downloadTemplate: (projectId: number) =>

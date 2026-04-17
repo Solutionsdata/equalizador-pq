@@ -5,6 +5,7 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+
 class ProposalStatus(str, enum.Enum):
     RECEBIDA = "RECEBIDA"
     EM_ANALISE = "EM_ANALISE"
@@ -20,7 +21,8 @@ class Proposal(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    empresa          = Column(String(300), nullable=False)   # Razão social do licitante
+    revision_id      = Column(Integer, ForeignKey("project_revisions.id", ondelete="SET NULL"), nullable=True)
+    empresa          = Column(String(300), nullable=False)   # Razão social do proponente
     cnpj             = Column(String(20))                    # CNPJ formatado
     contato          = Column(String(200))                   # Nome do contato
     email_contato    = Column(String(200))                   # E-mail do contato

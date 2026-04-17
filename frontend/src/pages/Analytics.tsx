@@ -2,10 +2,10 @@ import React, { useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { analyticsAPI, projectsAPI, downloadBlob } from '../services/api'
+import { analyticsAPI, revisionsAPI, projectsAPI, downloadBlob } from '../services/api'
 import type {
   ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary,
-  EqualizationProposal,
+  EqualizationProposal, ScopeValidationResponse, RevisionCompareResponse, ProjectRevision,
 } from '../types'
 import { formatBRL, formatPercent, formatNumber } from '../types'
 import ParetoChart from '../components/Charts/ParetoChart'
@@ -15,12 +15,12 @@ import {
   ArrowLeft, BarChart3, TrendingUp, GitCompare,
   Sparkles, Users, Download, Filter, X,
   ChevronUp, ChevronDown, Trophy, AlertTriangle, CheckCircle,
-  PieChart,
+  PieChart, ShieldCheck, GitBranch,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'pareto' | 'comparativo' | 'cherry' | 'fornecedores' | 'distribuicao'
+type Tab = 'pareto' | 'comparativo' | 'cherry' | 'fornecedores' | 'distribuicao' | 'escopo' | 'revisoes'
 
 interface Filters {
   categoria: string
@@ -791,12 +791,36 @@ export default function Analytics() {
     }
   }
 
+  // ── Revision / Escopo state ───────────────────────────────────────────────
+  const [revA, setRevA] = useState<number | ''>('')
+  const [revB, setRevB] = useState<number | ''>('')
+  const [compareTriggered, setCompareTriggered] = useState(false)
+
+  const { data: revisions } = useQuery<ProjectRevision[]>({
+    queryKey: ['revisions', pid],
+    queryFn: () => revisionsAPI.list(pid).then((r) => r.data),
+  })
+
+  const { data: scopeData, isLoading: loadingScope } = useQuery<ScopeValidationResponse>({
+    queryKey: ['scope-validation', pid],
+    queryFn: () => revisionsAPI.scopeValidation(pid).then((r) => r.data),
+    enabled: tab === 'escopo',
+  })
+
+  const { data: compareData, isLoading: loadingCompare } = useQuery<RevisionCompareResponse>({
+    queryKey: ['revision-compare', pid, revA, revB],
+    queryFn: () => revisionsAPI.compare(pid, revA as number, revB as number).then((r) => r.data),
+    enabled: compareTriggered && revA !== '' && revB !== '',
+  })
+
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: 'pareto', label: 'Curva ABC / Pareto', icon: TrendingUp },
     { id: 'comparativo', label: 'Comparativo', icon: GitCompare },
     { id: 'cherry', label: 'Cherry Picking', icon: Sparkles },
     { id: 'fornecedores', label: 'Por Fornecedor', icon: Users },
     { id: 'distribuicao', label: 'Distribuição', icon: PieChart },
+    { id: 'escopo', label: 'Validação de Escopo', icon: ShieldCheck },
+    { id: 'revisoes', label: 'Revisões', icon: GitBranch },
   ]
 
   const showFilterPanel = ['comparativo', 'cherry', 'fornecedores'].includes(tab)
@@ -980,6 +1004,214 @@ export default function Analytics() {
             {/* ── DISTRIBUIÇÃO ── */}
             {tab === 'distribuicao' && (
               <PanelDistribuicao disciplines={disciplines} categorias={categorias} />
+            )}
+
+            {/* ── VALIDAÇÃO DE ESCOPO ── */}
+            {tab === 'escopo' && (
+              loadingScope ? <Loading /> : !scopeData ? (
+                <EmptyState message="Nenhuma revisão encontrada. Crie uma revisão para validar o escopo." />
+              ) : !scopeData.any_changes ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <CheckCircle size={48} className="text-green-500" />
+                  <p className="text-green-700 font-semibold text-base">Nenhuma alteração de escopo detectada nas propostas em relação à PQ.</p>
+                  <p className="text-gray-400 text-sm">Revisão {scopeData.revision_numero} — todas as propostas estão alinhadas com o escopo da PQ.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <AlertTriangle size={16} />
+                    <span className="text-sm font-medium">
+                      Alterações de escopo detectadas na Revisão {scopeData.revision_numero}
+                    </span>
+                  </div>
+                  {scopeData.proposals.filter((p) => p.has_changes).map((proposal) => (
+                    <div key={proposal.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+                        <Trophy size={14} className="text-gray-400" />
+                        <span className="font-semibold text-gray-800 text-sm">{proposal.empresa}</span>
+                        <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 ml-auto">
+                          {proposal.changes.length} alteração{proposal.changes.length !== 1 ? 'ões' : ''}
+                        </span>
+                      </div>
+                      <div className="overflow-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200">
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Item</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Campo</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600 text-blue-700">Valor PQ</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600 text-amber-700">Valor Proposta</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {proposal.changes.map((change) =>
+                              change.changed_fields.map((field, fi) => (
+                                <tr key={`${change.numero_item}-${field}`} className={`border-b border-gray-100 ${fi % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
+                                  {fi === 0 && (
+                                    <td className="px-3 py-2 font-mono text-gray-500 align-top" rowSpan={change.changed_fields.length}>
+                                      {change.numero_item}
+                                    </td>
+                                  )}
+                                  <td className="px-3 py-2 text-gray-500 capitalize">{field}</td>
+                                  <td className="px-3 py-2 text-blue-700 font-medium">
+                                    {field === 'descricao' ? change.descricao_pq
+                                      : field === 'unidade' ? change.unidade_pq
+                                      : formatNumber(change.quantidade_pq, 4)}
+                                  </td>
+                                  <td className="px-3 py-2 text-amber-700 font-semibold bg-amber-50">
+                                    {field === 'descricao' ? (change.descricao_proposta ?? '—')
+                                      : field === 'unidade' ? (change.unidade_proposta ?? '—')
+                                      : formatNumber(change.quantidade_proposta ?? null, 4)}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* ── REVISÕES ── */}
+            {tab === 'revisoes' && (
+              <div className="space-y-6">
+                {/* Seleção de revisões */}
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Revisão A</label>
+                    <select
+                      value={revA}
+                      onChange={(e) => { setRevA(e.target.value === '' ? '' : Number(e.target.value)); setCompareTriggered(false) }}
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">Selecione…</option>
+                      {(revisions ?? []).map((r) => (
+                        <option key={r.id} value={r.numero}>Rev. {r.numero}{r.descricao ? ` — ${r.descricao}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Revisão B</label>
+                    <select
+                      value={revB}
+                      onChange={(e) => { setRevB(e.target.value === '' ? '' : Number(e.target.value)); setCompareTriggered(false) }}
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">Selecione…</option>
+                      {(revisions ?? []).map((r) => (
+                        <option key={r.id} value={r.numero}>Rev. {r.numero}{r.descricao ? ` — ${r.descricao}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={() => setCompareTriggered(true)}
+                    disabled={revA === '' || revB === '' || revA === revB}
+                    className="bg-blue-600 text-white rounded-xl px-5 py-2 text-sm font-semibold hover:bg-blue-700 disabled:opacity-40"
+                  >
+                    Comparar
+                  </button>
+                </div>
+
+                {loadingCompare && <Loading />}
+
+                {compareData && !loadingCompare && (
+                  <div className="space-y-6">
+                    {/* Global metrics */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {[
+                        { label: `Total Rev. ${compareData.rev_a}`, value: formatBRL(compareData.global.total_a), color: 'text-gray-800' },
+                        { label: `Total Rev. ${compareData.rev_b}`, value: formatBRL(compareData.global.total_b), color: 'text-gray-800' },
+                        { label: 'Delta (R$)', value: (compareData.global.delta >= 0 ? '+' : '') + formatBRL(compareData.global.delta), color: compareData.global.delta >= 0 ? 'text-red-600' : 'text-green-700' },
+                        { label: 'Delta (%)', value: (compareData.global.delta_pct >= 0 ? '+' : '') + formatPercent(compareData.global.delta_pct), color: compareData.global.delta_pct >= 0 ? 'text-red-600' : 'text-green-700' },
+                      ].map((m) => (
+                        <div key={m.label} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                          <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{m.label}</p>
+                          <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* By discipline */}
+                    {compareData.by_discipline.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Por Disciplina</h3>
+                        <div className="overflow-auto rounded-xl border border-gray-200">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-gray-50 border-b border-gray-200">
+                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Disciplina</th>
+                                <th className="px-3 py-2 text-right font-semibold text-gray-600">Rev. A</th>
+                                <th className="px-3 py-2 text-right font-semibold text-gray-600">Rev. B</th>
+                                <th className="px-3 py-2 text-right font-semibold text-gray-600">Delta</th>
+                                <th className="px-3 py-2 text-right font-semibold text-gray-600">%</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {compareData.by_discipline.map((d, i) => (
+                                <tr key={d.disciplina} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                  <td className="px-3 py-2 text-gray-700">{d.disciplina}</td>
+                                  <td className="px-3 py-2 text-right text-gray-600">{formatBRL(d.total_a)}</td>
+                                  <td className="px-3 py-2 text-right text-gray-600">{formatBRL(d.total_b)}</td>
+                                  <td className={`px-3 py-2 text-right font-semibold ${d.delta >= 0 ? 'text-red-600' : 'text-green-700'}`}>{d.delta >= 0 ? '+' : ''}{formatBRL(d.delta)}</td>
+                                  <td className={`px-3 py-2 text-right ${d.delta_pct >= 0 ? 'text-red-600' : 'text-green-700'}`}>{d.delta_pct >= 0 ? '+' : ''}{formatPercent(d.delta_pct)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* By item */}
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Por Item</h3>
+                      <div className="overflow-auto rounded-xl border border-gray-200">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200">
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Item</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Descrição</th>
+                              <th className="px-3 py-2 text-center font-semibold text-gray-600">Status</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Rev. A</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Rev. B</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Delta</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {compareData.by_item.map((item, i) => {
+                              const rowCls = item.status === 'added' ? 'bg-green-50' : item.status === 'removed' ? 'bg-red-50' : item.status === 'changed' ? 'bg-amber-50' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                              const statusBadge = item.status === 'added' ? 'bg-green-100 text-green-700' : item.status === 'removed' ? 'bg-red-100 text-red-600' : item.status === 'changed' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'
+                              const statusLabel = item.status === 'added' ? 'Adicionado' : item.status === 'removed' ? 'Removido' : item.status === 'changed' ? 'Alterado' : 'Igual'
+                              return (
+                                <tr key={item.numero_item} className={`border-b border-gray-100 ${rowCls}`}>
+                                  <td className="px-3 py-2 font-mono text-gray-500">{item.numero_item}</td>
+                                  <td className="px-3 py-2 text-gray-700 max-w-[200px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
+                                  <td className="px-3 py-2 text-center"><span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${statusBadge}`}>{statusLabel}</span></td>
+                                  <td className="px-3 py-2 text-right text-gray-600">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
+                                  <td className="px-3 py-2 text-right text-gray-600">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>
+                                  <td className={`px-3 py-2 text-right font-semibold ${(item.delta ?? 0) >= 0 ? 'text-red-600' : 'text-green-700'}`}>
+                                    {item.delta != null ? `${item.delta >= 0 ? '+' : ''}${formatBRL(item.delta)}` : '—'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!compareData && !loadingCompare && compareTriggered && (
+                  <EmptyState message="Não foi possível comparar as revisões selecionadas." />
+                )}
+                {!compareTriggered && (
+                  <EmptyState message="Selecione duas revisões e clique em Comparar." />
+                )}
+              </div>
             )}
           </div>
         </div>

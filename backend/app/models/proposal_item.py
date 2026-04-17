@@ -1,11 +1,11 @@
 from datetime import datetime
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import relationship
 from app.database import Base
 
 
 class ProposalItem(Base):
-    """Preços ofertados por um licitante para cada item da PQ."""
+    """Preços ofertados por um proponente para cada item da PQ."""
     __tablename__ = "proposal_items"
 
     id            = Column(Integer, primary_key=True, index=True)
@@ -15,6 +15,11 @@ class ProposalItem(Base):
     preco_unitario = Column(Numeric(18, 4))   # Preço unitário ofertado
     bdi            = Column(Numeric(5, 2))    # BDI % (sobrescreve o global da proposta)
     preco_total    = Column(Numeric(18, 4))   # Calculado: qtd × PU × (1 + BDI/100)
+
+    # Escopo capturado do proponente (pode diferir da PQ)
+    descricao_proposta  = Column(String(500), nullable=True)
+    unidade_proposta    = Column(String(20),  nullable=True)
+    quantidade_proposta = Column(Numeric(18, 4), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

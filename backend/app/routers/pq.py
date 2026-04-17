@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from typing import Optional
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
@@ -24,16 +25,15 @@ def _check_project(db: Session, project_id: int, user_id: int) -> Project:
 @router.get("/project/{project_id}", response_model=list[PQItemResponse])
 def list_pq_items(
     project_id: int,
+    revision_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     _check_project(db, project_id, current_user.id)
-    return (
-        db.query(PQItem)
-        .filter(PQItem.project_id == project_id)
-        .order_by(PQItem.ordem, PQItem.numero_item)
-        .all()
-    )
+    q = db.query(PQItem).filter(PQItem.project_id == project_id)
+    if revision_id is not None:
+        q = q.filter(PQItem.revision_id == revision_id)
+    return q.order_by(PQItem.ordem, PQItem.numero_item).all()
 
 
 @router.post("/project/{project_id}", response_model=PQItemResponse, status_code=status.HTTP_201_CREATED)

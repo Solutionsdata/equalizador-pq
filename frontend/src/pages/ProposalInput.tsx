@@ -200,7 +200,7 @@ export default function ProposalInput() {
                 <div className="fixed inset-0 z-10" onClick={() => setExcelMenu(false)} />
                 <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 min-w-52 py-1 overflow-hidden">
                   <p className="px-4 pt-2 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                    Para o licitante
+                    Para o proponente
                   </p>
                   <button
                     onClick={handleDownloadTemplate}

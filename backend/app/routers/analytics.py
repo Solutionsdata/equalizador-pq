@@ -5,9 +5,13 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.models.project import Project
+from app.models.project_revision import ProjectRevision
+from app.models.pq_item import PQItem
+from app.models.proposal import Proposal
 from app.schemas.analytics import ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary
 from app.services.analytics import AnalyticsService
 from app.services.excel import gerar_relatorio_equalizacao
+from typing import Optional
 
 router = APIRouter()
 
@@ -49,6 +53,91 @@ def get_categorias(
     current_user: User = Depends(get_current_user),
 ):
     return AnalyticsService.get_categoria_summary(db, project_id)
+
+
+@router.get("/scope-validation/{project_id}")
+def scope_validation(
+    project_id: int,
+    revision_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Valida diferenças de escopo entre propostas e a PQ para uma revisão."""
+    project = db.query(Project).filter(
+        Project.id == project_id, Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+
+    # Get the target revision (or latest)
+    if revision_id:
+        revision = db.query(ProjectRevision).filter(ProjectRevision.id == revision_id).first()
+        if not revision or revision.project_id != project_id:
+            raise HTTPException(status_code=404, detail="Revisão não encontrada")
+    else:
+        revision = (
+            db.query(ProjectRevision)
+            .filter(ProjectRevision.project_id == project_id)
+            .order_by(ProjectRevision.numero.desc())
+            .first()
+        )
+        if not revision:
+            raise HTTPException(status_code=404, detail="Nenhuma revisão encontrada")
+
+    # Get PQ items for this revision indexed by id
+    pq_items = {
+        item.id: item
+        for item in db.query(PQItem).filter(PQItem.revision_id == revision.id).all()
+    }
+
+    # Get proposals for this revision
+    proposals = db.query(Proposal).filter(
+        Proposal.project_id == project_id,
+        Proposal.revision_id == revision.id,
+    ).all()
+
+    result_proposals = []
+    any_changes = False
+
+    for proposal in proposals:
+        changes = []
+        for pi in proposal.items:
+            pq = pq_items.get(pi.pq_item_id)
+            if not pq:
+                continue
+            changed_fields = []
+            if pi.descricao_proposta and pi.descricao_proposta.strip() != (pq.descricao or "").strip():
+                changed_fields.append("descricao")
+            if pi.unidade_proposta and pi.unidade_proposta.strip() != (pq.unidade or "").strip():
+                changed_fields.append("unidade")
+            if pi.quantidade_proposta is not None and abs(float(pi.quantidade_proposta) - float(pq.quantidade or 0)) > 0.0001:
+                changed_fields.append("quantidade")
+            if changed_fields:
+                changes.append({
+                    "numero_item": pq.numero_item,
+                    "descricao_pq": pq.descricao,
+                    "descricao_proposta": pi.descricao_proposta,
+                    "unidade_pq": pq.unidade,
+                    "unidade_proposta": pi.unidade_proposta,
+                    "quantidade_pq": float(pq.quantidade or 0),
+                    "quantidade_proposta": float(pi.quantidade_proposta) if pi.quantidade_proposta else None,
+                    "changed_fields": changed_fields,
+                })
+        if changes:
+            any_changes = True
+        result_proposals.append({
+            "id": proposal.id,
+            "empresa": proposal.empresa,
+            "has_changes": len(changes) > 0,
+            "changes": changes,
+        })
+
+    return {
+        "revision_id": revision.id,
+        "revision_numero": revision.numero,
+        "proposals": result_proposals,
+        "any_changes": any_changes,
+    }
 
 
 @router.get("/export/{project_id}")

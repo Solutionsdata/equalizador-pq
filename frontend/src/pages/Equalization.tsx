@@ -1,11 +1,12 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { analyticsAPI, proposalsAPI, projectsAPI, downloadBlob } from '../services/api'
-import type { EqualizationResponse, ProposalComparisonItem, EqualizationProposal } from '../types'
+import { analyticsAPI, proposalsAPI, projectsAPI, revisionsAPI, downloadBlob } from '../services/api'
+import type { EqualizationResponse, ProposalComparisonItem, EqualizationProposal, ProjectRevision } from '../types'
 import { PROPOSAL_STATUS_LABELS, formatBRL, formatNumber } from '../types'
 import toast from 'react-hot-toast'
 import { Plus, Pencil, Trash2, ArrowLeft, Trophy, X, Check, Building2, FileDown, FileUp } from 'lucide-react'
+import RevisionSelector from '../components/RevisionSelector'
 
 const PROPOSAL_STATUS_COLORS: Record<string, string> = {
   RECEBIDA: 'bg-gray-100 text-gray-600',
@@ -47,6 +48,7 @@ export default function Equalization() {
   const [categoryFilter, setCategoryFilter] = useState<string>('')
   const [disciplineFilter, setDisciplineFilter] = useState<string>('')
   const [importingId, setImportingId] = useState<number | null>(null)
+  const [currentRevisionId, setCurrentRevisionId] = useState<number | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const pendingImportId = useRef<number | null>(null)
 
@@ -54,6 +56,18 @@ export default function Equalization() {
     queryKey: ['project', pid],
     queryFn: () => projectsAPI.get(pid).then((r) => r.data),
   })
+
+  const { data: revisionsData } = useQuery<ProjectRevision[]>({
+    queryKey: ['revisions', pid],
+    queryFn: () => revisionsAPI.list(pid).then((r) => r.data),
+  })
+  const revisions: ProjectRevision[] = revisionsData ?? []
+
+  useEffect(() => {
+    if (revisions.length > 0 && currentRevisionId === null) {
+      setCurrentRevisionId(revisions[revisions.length - 1].id)
+    }
+  }, [revisionsData])
 
   const { data: equalization, isLoading, refetch } = useQuery<EqualizationResponse>({
     queryKey: ['equalization', pid],
@@ -175,6 +189,19 @@ export default function Equalization() {
         </button>
       </div>
 
+      {/* Revision selector banner */}
+      {revisions.length > 0 && (
+        <div className="mb-5">
+          <RevisionSelector
+            projectId={pid}
+            revisions={revisions}
+            currentRevisionId={currentRevisionId}
+            onRevisionChange={(rev) => setCurrentRevisionId(rev.id)}
+            onRevisionCreated={(rev) => setCurrentRevisionId(rev.id)}
+          />
+        </div>
+      )}
+
       {/* Cards das propostas */}
       {proposals.length > 0 && (
         <div className="flex gap-3 mb-5 overflow-x-auto pb-2">
@@ -231,7 +258,7 @@ export default function Equalization() {
               <div className="flex gap-1 mt-1.5 border-t border-gray-100 pt-1.5">
                 <button
                   onClick={() => handleDownloadTemplate(p.id, p.empresa)}
-                  title="Baixar template para enviar ao licitante"
+                  title="Baixar template para enviar ao proponente"
                   className="flex-1 text-center text-xs py-1.5 rounded bg-gray-50 text-gray-500 hover:bg-green-50 hover:text-green-600 font-medium transition-colors"
                 >
                   <FileDown size={11} className="inline mr-1" />Template
@@ -239,7 +266,7 @@ export default function Equalization() {
                 <button
                   onClick={() => triggerImport(p.id)}
                   disabled={importingId === p.id}
-                  title="Importar Excel preenchido pelo licitante"
+                  title="Importar Excel preenchido pelo proponente"
                   className="flex-1 text-center text-xs py-1.5 rounded bg-gray-50 text-gray-500 hover:bg-orange-50 hover:text-orange-600 font-medium transition-colors disabled:opacity-50"
                 >
                   <FileUp size={11} className="inline mr-1" />
@@ -403,7 +430,7 @@ export default function Equalization() {
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100 inline-block" /> Menor preço</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-100 inline-block" /> Até 10% acima do menor</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 inline-block" /> Maior preço</span>
-          <span className="ml-auto flex items-center gap-1"><FileDown size={11} /> Template = Excel vazio para enviar ao licitante · <FileUp size={11} /> Importar = Excel preenchido recebido</span>
+          <span className="ml-auto flex items-center gap-1"><FileDown size={11} /> Template = Excel vazio para enviar ao proponente · <FileUp size={11} /> Importar = Excel preenchido recebido</span>
         </div>
       )}
 
@@ -422,7 +449,7 @@ export default function Equalization() {
               className="space-y-4"
             >
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Empresa / Licitante *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Empresa / Proponente *</label>
                 <input
                   className="input"
                   placeholder="Razão social"

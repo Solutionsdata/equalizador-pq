@@ -1,7 +1,8 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from typing import Optional
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
@@ -45,16 +46,15 @@ def _to_response(proposal: Proposal) -> ProposalResponse:
 @router.get("/project/{project_id}", response_model=list[ProposalResponse])
 def list_proposals(
     project_id: int,
+    revision_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     _check_project(db, project_id, current_user.id)
-    proposals = (
-        db.query(Proposal)
-        .filter(Proposal.project_id == project_id)
-        .order_by(Proposal.created_at.asc())
-        .all()
-    )
+    q = db.query(Proposal).filter(Proposal.project_id == project_id)
+    if revision_id is not None:
+        q = q.filter(Proposal.revision_id == revision_id)
+    proposals = q.order_by(Proposal.created_at.asc()).all()
     return [_to_response(p) for p in proposals]
 
 
@@ -313,6 +313,13 @@ async def import_proposal(
 
         pi.preco_unitario = row["preco_unitario"]
         pi.bdi = row["bdi"]
+        # Scope capture: only set if values differ from PQ
+        if row.get("descricao_proposta"):
+            pi.descricao_proposta = row["descricao_proposta"]
+        if row.get("unidade_proposta"):
+            pi.unidade_proposta = row["unidade_proposta"]
+        if row.get("quantidade_proposta") is not None:
+            pi.quantidade_proposta = row["quantidade_proposta"]
 
         if pi.preco_unitario and row["pq_item_id"] in pq_map:
             pq_item = pq_map[row["pq_item_id"]]

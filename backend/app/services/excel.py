@@ -2,7 +2,7 @@
 Serviço de geração e importação de arquivos Excel para PQ e Propostas.
 
 Layouts:
-  Planilha PQ  (modelo_pq)      — 10 colunas em azul  (somente leitura para licitantes)
+  Planilha PQ  (modelo_pq)      — 10 colunas em azul  (somente leitura para proponentes)
   Proposta      (modelo_proposta)— 10 colunas azuis + 3 colunas verdes para preenchimento
 """
 
@@ -188,7 +188,7 @@ def gerar_modelo_proposta(
     # Linha 2 — Identificação
     ws.merge_cells(f"A2:{get_column_letter(pq_end//2)}2")
     c = ws["A2"]
-    c.value = f"Empresa / Licitante:  {empresa or '___________________________________'}"
+    c.value = f"Empresa / Proponente:  {empresa or '___________________________________'}"
     c.fill = _fill(CINZA_INFO)
     c.font = _font(bold=True, size=10)
     c.alignment = _align("left")
@@ -371,7 +371,7 @@ def importar_pq_excel(file_bytes: bytes) -> List[dict]:
 
 def importar_proposta_excel(file_bytes: bytes, pq_items: List[PQItem]) -> List[dict]:
     """
-    Lê um Excel de proposta preenchido pelo licitante e retorna
+    Lê um Excel de proposta preenchido pelo proponente e retorna
     lista de {pq_item_id, preco_unitario, bdi}.
     """
     wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
@@ -381,6 +381,9 @@ def importar_proposta_excel(file_bytes: bytes, pq_items: List[PQItem]) -> List[d
 
     MAPA_HEADERS = {
         "item": "numero_item", "nº item": "numero_item",
+        "descrição": "descricao_proposta", "descricao": "descricao_proposta",
+        "un": "unidade_proposta", "unidade": "unidade_proposta",
+        "quantidade": "quantidade_proposta", "qtd": "quantidade_proposta",
         "preço unit. (r$)": "preco_unitario", "preço unit.": "preco_unitario",
         "preco unitario": "preco_unitario", "preço unitário": "preco_unitario",
         "bdi (%)": "bdi", "bdi": "bdi",
@@ -398,9 +401,12 @@ def importar_proposta_excel(file_bytes: bytes, pq_items: List[PQItem]) -> List[d
         if pu is None:
             continue
         result.append({
-            "pq_item_id":    pq_map[num],
-            "preco_unitario": pu,
-            "bdi":           _float(rd.get("bdi")),
+            "pq_item_id":         pq_map[num],
+            "preco_unitario":     pu,
+            "bdi":                _float(rd.get("bdi")),
+            "descricao_proposta": _str(rd.get("descricao_proposta")),
+            "unidade_proposta":   _str(rd.get("unidade_proposta")),
+            "quantidade_proposta":_float(rd.get("quantidade_proposta")),
         })
 
     if not result:

@@ -4,6 +4,7 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+
 class PQItem(Base):
     """
     Planilha de Quantitativos — template base do projeto.
@@ -26,6 +27,8 @@ class PQItem(Base):
     preco_referencia = Column(Numeric(18, 4))                  # Preço unitário de referência
     observacao       = Column(Text)                            # Observações / restrições
     # ───────────────────────────────────────────────────────────────────────
+
+    revision_id = Column(Integer, ForeignKey("project_revisions.id", ondelete="SET NULL"), nullable=True)
 
     ordem = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)

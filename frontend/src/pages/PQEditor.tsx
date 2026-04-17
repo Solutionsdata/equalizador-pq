@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { pqAPI, projectsAPI, downloadBlob } from '../services/api'
-import type { PQItem } from '../types'
+import { pqAPI, projectsAPI, revisionsAPI, downloadBlob } from '../services/api'
+import type { PQItem, ProjectRevision } from '../types'
 import { CATEGORIAS, DISCIPLINAS, UNIDADES, formatBRL } from '../types'
 import toast from 'react-hot-toast'
 import {
   Plus, Trash2, Save, ArrowLeft,
   FileDown, FileUp, FileSpreadsheet, ChevronDown,
 } from 'lucide-react'
+import RevisionSelector from '../components/RevisionSelector'
 
 type Row = Omit<PQItem, 'id' | 'project_id' | 'created_at'> & { _key: string }
 
@@ -70,15 +71,28 @@ export default function PQEditor() {
   const importRef = useRef<HTMLInputElement>(null)
   const [excelMenu, setExcelMenu] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [currentRevisionId, setCurrentRevisionId] = useState<number | null>(null)
 
   const { data: project } = useQuery({
     queryKey: ['project', pid],
     queryFn: () => projectsAPI.get(pid).then((r) => r.data),
   })
 
+  const { data: revisionsData } = useQuery<ProjectRevision[]>({
+    queryKey: ['revisions', pid],
+    queryFn: () => revisionsAPI.list(pid).then((r) => r.data),
+  })
+  const revisions: ProjectRevision[] = revisionsData ?? []
+
+  useEffect(() => {
+    if (revisions.length > 0 && currentRevisionId === null) {
+      setCurrentRevisionId(revisions[revisions.length - 1].id)
+    }
+  }, [revisionsData])
+
   const { data: _rawItems, isLoading } = useQuery<PQItem[]>({
-    queryKey: ['pq', pid],
-    queryFn: () => pqAPI.list(pid).then((r) => r.data),
+    queryKey: ['pq', pid, currentRevisionId],
+    queryFn: () => pqAPI.list(pid, currentRevisionId ?? undefined).then((r) => r.data),
   })
   const serverItems: PQItem[] = Array.isArray(_rawItems) ? _rawItems : []
 
@@ -201,7 +215,7 @@ export default function PQEditor() {
   return (
     <div className="p-6 max-w-full">
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <Link to="/projetos" className="text-gray-400 hover:text-gray-600">
             <ArrowLeft size={20} />
@@ -282,6 +296,19 @@ export default function PQEditor() {
           </button>
         </div>
       </div>
+
+      {/* Revision selector banner */}
+      {revisions.length > 0 && (
+        <div className="mb-4">
+          <RevisionSelector
+            projectId={pid}
+            revisions={revisions}
+            currentRevisionId={currentRevisionId}
+            onRevisionChange={(rev) => setCurrentRevisionId(rev.id)}
+            onRevisionCreated={(rev) => setCurrentRevisionId(rev.id)}
+          />
+        </div>
+      )}
 
       {/* Tabela — 10 colunas de negócio */}
       {isLoading || importing ? (
