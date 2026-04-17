@@ -52,5 +52,6 @@ class PQItemResponse(BaseModel):
 
 
 class PQItemBulkSave(BaseModel):
-    """Salva todos os itens da PQ de uma vez (upsert)."""
+    """Salva todos os itens da PQ de uma vez (upsert), escopado por revisão."""
+    revision_id: Optional[int] = None
     items: List[PQItemCreate]

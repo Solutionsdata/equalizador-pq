@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Equalizador PQ — Apresentação Executiva</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #fff; overflow: hidden; }
+
+    .deck { width: 100vw; height: 100vh; position: relative; }
+    .slide { position: absolute; inset: 0; display: none; overflow: hidden; }
+    .slide.active { display: flex; }
+
+    /* Navigation */
+    .nav { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; z-index: 99; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,.3); cursor: pointer; border: none; transition: background .25s; }
+    .dot.active { background: #fff; width: 24px; border-radius: 4px; }
+    .arrow { position: fixed; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,.12); border: none; color: #fff; width: 44px; height: 44px; border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .2s; z-index: 99; }
+    .arrow:hover { background: rgba(244,121,32,.7); border-color: #F47920; }
+    #prev { left: 20px; }#next { right: 20px; }
+
+    /* ── Slide 1: Cover ── */
+    #s1 { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #0f172a 100%); flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 0; }
+    #s1 .eyebrow { font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: #60a5fa; margin-bottom: 24px; }
+    #s1 h1 { font-size: clamp(36px, 6vw, 72px); font-weight: 800; line-height: 1.1; color: #fff; margin-bottom: 16px; }
+    #s1 h1 span { color: #3b82f6; }
+    #s1 .tagline { font-size: clamp(14px, 2vw, 20px); color: #94a3b8; max-width: 640px; line-height: 1.6; margin-bottom: 56px; }
+    #s1 .metrics { display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; }
+    #s1 .metric { text-align: center; }
+    #s1 .metric .num { font-size: clamp(28px, 4vw, 48px); font-weight: 800; color: #3b82f6; line-height: 1; }
+    #s1 .metric .label { font-size: 12px; color: #64748b; letter-spacing: 1px; text-transform: uppercase; margin-top: 4px; }
+    #s1 .divider { width: 1px; height: 56px; background: rgba(255,255,255,.12); align-self: center; }
+
+    /* ── Slide 2: Antes & Depois ── */
+    #s2 { flex-direction: row; }
+    .panel { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 60px 48px; gap: 28px; }
+    .panel-bad { background: #fff; }
+    .panel-bad .panel-label { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: #ef4444; font-weight: 700; }
+    .panel-bad h2 { font-size: clamp(22px, 3vw, 36px); color: #0f172a; font-weight: 800; }
+    .panel-bad .item { display: flex; align-items: flex-start; gap: 12px; color: #374151; font-size: 15px; line-height: 1.5; }
+    .panel-bad .icon { font-size: 18px; color: #ef4444; flex-shrink: 0; margin-top: 1px; }
+    .panel-good { background: linear-gradient(160deg, #0f172a 0%, #1e3a5f 100%); }
+    .panel-good .panel-label { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: #34d399; font-weight: 700; }
+    .panel-good h2 { font-size: clamp(22px, 3vw, 36px); font-weight: 800; }
+    .panel-good .item { display: flex; align-items: flex-start; gap: 12px; color: #cbd5e1; font-size: 15px; line-height: 1.5; }
+    .panel-good .icon { font-size: 18px; color: #34d399; flex-shrink: 0; margin-top: 1px; }
+    .split-bar { width: 4px; background: linear-gradient(to bottom, #ef4444, #3b82f6, #34d399); flex-shrink: 0; }
+
+    /* ── Slide 3: Features ── */
+    #s3 { background: #f1f5f9; flex-direction: column; align-items: center; justify-content: center; padding: 48px 60px; gap: 40px; }
+    #s3 .eyebrow { font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: #3b82f6; font-weight: 700; }
+    #s3 h2 { font-size: clamp(22px, 3.5vw, 40px); font-weight: 800; color: #0f172a; text-align: center; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; width: 100%; max-width: 1000px; }
+    .card { background: #fff; border-radius: 16px; padding: 28px 24px; box-shadow: 0 2px 12px rgba(0,0,0,.07); display: flex; flex-direction: column; gap: 10px; }
+    .card .icon-box { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .card h3 { font-size: 15px; font-weight: 700; color: #0f172a; }
+    .card p { font-size: 13px; color: #64748b; line-height: 1.5; }
+    .blue { background: #eff6ff; }.green { background: #f0fdf4; }.amber { background: #fffbeb; }
+    .purple { background: #f5f3ff; }.rose { background: #fff1f2; }.cyan { background: #ecfeff; }
+
+    /* ── Slide 4: CTA ── */
+    #s4 { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #0f172a 100%); flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 28px; }
+    #s4 .eyebrow { font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: #60a5fa; }
+    #s4 h2 { font-size: clamp(26px, 5vw, 56px); font-weight: 800; max-width: 700px; line-height: 1.15; }
+    #s4 h2 span { color: #3b82f6; }
+    #s4 p { font-size: 16px; color: #94a3b8; max-width: 500px; line-height: 1.6; }
+    #s4 .url-box { background: rgba(59,130,246,.15); border: 1px solid rgba(59,130,246,.4); border-radius: 12px; padding: 16px 32px; }
+    #s4 .url-box a { color: #60a5fa; font-size: 18px; font-weight: 600; text-decoration: none; letter-spacing: .5px; }
+    #s4 .url-box a:hover { text-decoration: underline; }
+    #s4 .badges { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+    #s4 .badge { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 20px; padding: 6px 18px; font-size: 13px; color: #cbd5e1; }
+  </style>
+</head>
+<body>
+<div class="deck">
+  <div id="s1" class="slide active">
+    <div class="eyebrow">Solução SaaS para Infraestrutura</div>
+    <h1>Equalizador<br><span>de Propostas</span></h1>
+    <p class="tagline">Plataforma digital para análise, comparação e equalização de propostas comerciais em grandes obras de engenharia.</p>
+    <div class="metrics">
+      <div class="metric"><div class="num">+30%</div><div class="label">Ganho de Eficiência</div></div>
+      <div class="divider"></div>
+      <div class="metric"><div class="num">100%</div><div class="label">Comparação Justa</div></div>
+      <div class="divider"></div>
+      <div class="metric"><div class="num">Zero</div><div class="label">Planilha Manual</div></div>
+      <div class="divider"></div>
+      <div class="metric"><div class="num">Web</div><div class="label">Acesso em Nuvem</div></div>
+    </div>
+  </div>
+
+  <div id="s2" class="slide">
+    <div class="panel panel-bad">
+      <div class="panel-label">Antes</div>
+      <h2>O processo sem a plataforma</h2>
+      <div class="item"><span class="icon">✗</span><span>Planilhas Excel espalhadas por e-mail, sem controle de versão</span></div>
+      <div class="item"><span class="icon">✗</span><span>Comparação manual proposta a proposta — dias de trabalho</span></div>
+      <div class="item"><span class="icon">✗</span><span>Risco de erros de digitação e critérios inconsistentes</span></div>
+      <div class="item"><span class="icon">✗</span><span>Sem rastreabilidade das revisões e alterações de escopo</span></div>
+      <div class="item"><span class="icon">✗</span><span>Tomada de decisão lenta e baseada em percepção, não dados</span></div>
+    </div>
+    <div class="split-bar"></div>
+    <div class="panel panel-good">
+      <div class="panel-label">Depois</div>
+      <h2>Com o Equalizador PQ</h2>
+      <div class="item"><span class="icon">✓</span><span>PQ centralizada com revisões versionadas e histórico completo</span></div>
+      <div class="item"><span class="icon">✓</span><span>Equalização automática por linha, disciplina, categoria e global</span></div>
+      <div class="item"><span class="icon">✓</span><span>Validação de escopo — detecta alterações dos proponentes</span></div>
+      <div class="item"><span class="icon">✓</span><span>Análise de Pareto: cherry-pick do menor custo por disciplina</span></div>
+      <div class="item"><span class="icon">✓</span><span>Decisão em horas, auditável, com exportação em Excel</span></div>
+    </div>
+  </div>
+
+  <div id="s3" class="slide">
+    <div class="eyebrow">Funcionalidades</div>
+    <h2>Tudo que você precisa em um só lugar</h2>
+    <div class="grid">
+      <div class="card"><div class="icon-box blue">📋</div><h3>Planilha PQ por Revisão</h3><p>Gerencie a planilha de quantidades com histórico de revisões e compare a evolução ao longo do tempo.</p></div>
+      <div class="card"><div class="icon-box green">⚖️</div><h3>Equalização Automática</h3><p>Compare múltiplas propostas com destaque automático do menor preço por item, disciplina e categoria.</p></div>
+      <div class="card"><div class="icon-box amber">🔍</div><h3>Validação de Escopo</h3><p>Detecta automaticamente quando proponentes alteram descrições, unidades ou quantidades em relação à PQ.</p></div>
+      <div class="card"><div class="icon-box purple">📊</div><h3>Análise de Pareto</h3><p>Identifica os itens de maior impacto e simula o cenário ideal com a combinação mais econômica de fornecedores.</p></div>
+      <div class="card"><div class="icon-box rose">🔄</div><h3>Comparativo de Revisões</h3><p>Visualize o delta de valor entre revisões por linha, disciplina, categoria e total global do projeto.</p></div>
+      <div class="card"><div class="icon-box cyan">📥</div><h3>Import / Export Excel</h3><p>Importe propostas via planilha padronizada e exporte resultados da equalização com um clique.</p></div>
+    </div>
+  </div>
+
+  <div id="s4" class="slide">
+    <div class="eyebrow">Comece agora</div>
+    <h2>Equalize suas propostas com <span>precisão e velocidade</span></h2>
+    <p>Plataforma 100% web, sem instalação. Acesse de qualquer dispositivo e colabore com sua equipe em tempo real.</p>
+    <div class="url-box"><a href="https://equalizador-pq.vercel.app" target="_blank">equalizador-pq.vercel.app</a></div>
+    <div class="badges">
+      <span class="badge">✦ Gratuito para começar</span>
+      <span class="badge">✦ Sem instalação</span>
+      <span class="badge">✦ Dados seguros em nuvem</span>
+    </div>
+  </div>
+</div>
+
+<button class="arrow" id="prev">&#8592;</button>
+<button class="arrow" id="next">&#8594;</button>
+<div class="nav" id="dots"></div>
+
+<script>
+  const slides = document.querySelectorAll('.slide')
+  const dotsEl = document.getElementById('dots')
+  let current = 0
+  slides.forEach((_, i) => {
+    const d = document.createElement('button')
+    d.className = 'dot' + (i === 0 ? ' active' : '')
+    d.onclick = () => go(i)
+    dotsEl.appendChild(d)
+  })
+  function go(n) {
+    slides[current].classList.remove('active'); dotsEl.children[current].classList.remove('active')
+    current = (n + slides.length) % slides.length
+    slides[current].classList.add('active'); dotsEl.children[current].classList.add('active')
+  }
+  document.getElementById('prev').onclick = () => go(current - 1)
+  document.getElementById('next').onclick = () => go(current + 1)
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') go(current + 1)
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   go(current - 1)
+  })
+</script>
+</body>
+</html>

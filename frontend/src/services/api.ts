@@ -64,6 +64,8 @@ export const revisionsAPI = {
   list: (projectId: number) => api.get(`/projects/${projectId}/revisions`),
   create: (projectId: number, data: { numero: number; descricao?: string }) =>
     api.post(`/projects/${projectId}/revisions`, data),
+  delete: (projectId: number, revisionId: number) =>
+    api.delete(`/projects/${projectId}/revisions/${revisionId}`),
   compare: (projectId: number, revA: number, revB: number) =>
     api.get(`/projects/${projectId}/revisions/compare`, { params: { rev_a: revA, rev_b: revB } }),
   scopeValidation: (projectId: number, revisionId?: number) =>
@@ -74,17 +76,18 @@ export const revisionsAPI = {
 export const pqAPI = {
   list: (projectId: number, revisionId?: number) =>
     api.get(`/pq/project/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
-  bulkSave: (projectId: number, items: object[]) =>
-    api.put(`/pq/project/${projectId}/bulk`, { items }),
+  bulkSave: (projectId: number, items: object[], revisionId?: number) =>
+    api.put(`/pq/project/${projectId}/bulk`, { items, revision_id: revisionId ?? null }),
   downloadTemplate: (projectId: number) =>
     api.get(`/pq/project/${projectId}/template`, { responseType: 'blob' }),
   exportExcel: (projectId: number) =>
     api.get(`/pq/project/${projectId}/export`, { responseType: 'blob' }),
-  importExcel: (projectId: number, file: File) => {
+  importExcel: (projectId: number, file: File, revisionId?: number) => {
     const form = new FormData()
     form.append('file', file)
     return api.post(`/pq/project/${projectId}/import`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      params: revisionId ? { revision_id: revisionId } : {},
     })
   },
 }

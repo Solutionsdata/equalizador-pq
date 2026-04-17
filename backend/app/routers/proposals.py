@@ -67,20 +67,25 @@ def create_proposal(
 ):
     _check_project(db, project_id, current_user.id)
 
-    # Limita a 10 propostas por projeto
-    count = db.query(Proposal).filter(Proposal.project_id == project_id).count()
-    if count >= 10:
+    # Limita a 10 propostas por revisão
+    count_q = db.query(Proposal).filter(Proposal.project_id == project_id)
+    if data.revision_id is not None:
+        count_q = count_q.filter(Proposal.revision_id == data.revision_id)
+    if count_q.count() >= 10:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Limite de 10 propostas por projeto atingido",
+            detail="Limite de 10 propostas por revisão atingido",
         )
 
     proposal = Proposal(**data.model_dump(), project_id=project_id, user_id=current_user.id)
     db.add(proposal)
     db.flush()
 
-    # Inicializa ProposalItem para cada item da PQ (preços zerados)
-    pq_items = db.query(PQItem).filter(PQItem.project_id == project_id).all()
+    # Inicializa ProposalItem para cada item da PQ da mesma revisão (preços zerados)
+    pq_q = db.query(PQItem).filter(PQItem.project_id == project_id)
+    if data.revision_id is not None:
+        pq_q = pq_q.filter(PQItem.revision_id == data.revision_id)
+    pq_items = pq_q.all()
     for pq_item in pq_items:
         db.add(ProposalItem(proposal_id=proposal.id, pq_item_id=pq_item.id))
 

@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { revisionsAPI } from '../services/api'
 import type { ProjectRevision } from '../types'
 import toast from 'react-hot-toast'
-import { GitBranch, ChevronDown, Plus, X, Check } from 'lucide-react'
+import { GitBranch, ChevronDown, Plus, X, Check, Trash2, AlertTriangle } from 'lucide-react'
 
 interface Props {
   projectId: number
@@ -11,6 +11,7 @@ interface Props {
   currentRevisionId: number | null
   onRevisionChange: (revision: ProjectRevision) => void
   onRevisionCreated?: (revision: ProjectRevision) => void
+  onRevisionDeleted?: () => void
 }
 
 export default function RevisionSelector({
@@ -19,10 +20,12 @@ export default function RevisionSelector({
   currentRevisionId,
   onRevisionChange,
   onRevisionCreated,
+  onRevisionDeleted,
 }: Props) {
   const qc = useQueryClient()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<ProjectRevision | null>(null)
   const [descricao, setDescricao] = useState('')
 
   const current = revisions.find((r) => r.id === currentRevisionId) ?? revisions[0]
@@ -39,6 +42,21 @@ export default function RevisionSelector({
       onRevisionCreated?.(newRev)
     },
     onError: () => toast.error('Erro ao criar revisão'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (revisionId: number) => revisionsAPI.delete(projectId, revisionId),
+    onSuccess: () => {
+      const deletedRev = deleteConfirm
+      qc.invalidateQueries({ queryKey: ['revisions', projectId] })
+      toast.success(`Revisão ${deletedRev?.numero} excluída`)
+      setDeleteConfirm(null)
+      onRevisionDeleted?.()
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail ?? 'Erro ao excluir revisão')
+      setDeleteConfirm(null)
+    },
   })
 
   function handleCreate() {
@@ -64,26 +82,39 @@ export default function RevisionSelector({
           </button>
 
           {dropdownOpen && (
-            <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg min-w-[220px] py-1">
+            <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg min-w-[260px] py-1">
               {revisions.map((rev) => (
-                <button
+                <div
                   key={rev.id}
-                  onClick={() => {
-                    onRevisionChange(rev)
-                    setDropdownOpen(false)
-                  }}
-                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-gray-50 ${
-                    rev.id === currentRevisionId ? 'text-blue-600 font-semibold' : 'text-gray-700'
+                  className={`flex items-center justify-between px-3 py-2 hover:bg-gray-50 group ${
+                    rev.id === currentRevisionId ? 'text-blue-600' : 'text-gray-700'
                   }`}
                 >
-                  <span>
-                    <span className="font-mono">Rev. {rev.numero}</span>
+                  <button
+                    onClick={() => { onRevisionChange(rev); setDropdownOpen(false) }}
+                    className="flex-1 text-left text-sm flex items-center gap-2"
+                  >
+                    <span className="font-mono font-semibold">Rev. {rev.numero}</span>
                     {rev.descricao && (
-                      <span className="ml-2 text-xs text-gray-400">{rev.descricao}</span>
+                      <span className="text-xs text-gray-400">{rev.descricao}</span>
                     )}
-                  </span>
-                  {rev.id === currentRevisionId && <Check size={12} />}
-                </button>
+                    {rev.id === currentRevisionId && <Check size={12} className="ml-auto" />}
+                  </button>
+                  {/* Delete button — only shown on hover, disabled for Rev 0 */}
+                  {rev.numero !== 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDropdownOpen(false)
+                        setDeleteConfirm(rev)
+                      }}
+                      className="ml-2 p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Excluir revisão"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -154,6 +185,44 @@ export default function RevisionSelector({
                 className="flex-1 bg-blue-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
               >
                 {createMutation.isPending ? 'Criando…' : 'Criar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: confirmar exclusão */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={20} className="text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Excluir revisão?</h3>
+                <p className="text-sm text-gray-500">Rev. {deleteConfirm.numero}{deleteConfirm.descricao ? ` — ${deleteConfirm.descricao}` : ''}</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-6">
+              Todos os itens da PQ e propostas vinculados a esta revisão também serão excluídos. Esta ação é <strong>irreversível</strong>.
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                disabled={deleteMutation.isPending}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => deleteMutation.mutate(deleteConfirm.id)}
+                disabled={deleteMutation.isPending}
+                className="flex-1 bg-red-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleteMutation.isPending ? 'Excluindo…' : 'Excluir'}
               </button>
             </div>
           </div>

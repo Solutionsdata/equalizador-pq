@@ -64,9 +64,9 @@ export default function Equalization() {
   const revisions: ProjectRevision[] = revisionsData ?? []
 
   useEffect(() => {
-    if (revisions.length > 0 && currentRevisionId === null) {
-      setCurrentRevisionId(revisions[revisions.length - 1].id)
-    }
+    if (revisions.length === 0) return
+    const exists = revisions.find((r) => r.id === currentRevisionId)
+    if (!exists) setCurrentRevisionId(revisions[revisions.length - 1].id)
   }, [revisionsData])
 
   const { data: equalization, isLoading, refetch } = useQuery<EqualizationResponse>({
@@ -78,6 +78,7 @@ export default function Equalization() {
     mutationFn: () => proposalsAPI.create(pid, {
       ...form,
       bdi_global: Number(form.bdi_global) || 0,
+      revision_id: currentRevisionId,
     }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['equalization', pid] })

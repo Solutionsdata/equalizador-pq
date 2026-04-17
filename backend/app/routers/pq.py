@@ -59,18 +59,26 @@ def bulk_save_pq_items(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Substitui TODOS os itens da PQ do projeto pelos itens enviados.
+    Substitui os itens da PQ do projeto (escopado por revisão) pelos itens enviados.
     Usado pelo editor de planilha para salvar tudo de uma vez.
     """
     _check_project(db, project_id, current_user.id)
 
-    # Remove itens existentes
-    db.query(PQItem).filter(PQItem.project_id == project_id).delete()
+    # Remove apenas os itens da revisão atual
+    q = db.query(PQItem).filter(PQItem.project_id == project_id)
+    if data.revision_id is not None:
+        q = q.filter(PQItem.revision_id == data.revision_id)
+    q.delete()
 
-    # Insere novos itens
+    # Insere novos itens com revision_id
     new_items = []
     for i, item_data in enumerate(data.items):
-        item = PQItem(**item_data.model_dump(), project_id=project_id, ordem=i)
+        item = PQItem(
+            **item_data.model_dump(),
+            project_id=project_id,
+            ordem=i,
+            revision_id=data.revision_id,
+        )
         db.add(item)
         new_items.append(item)
 
@@ -141,11 +149,12 @@ def export_pq(
 @router.post("/project/{project_id}/import", response_model=list[PQItemResponse])
 async def import_pq(
     project_id: int,
+    revision_id: Optional[int] = Query(default=None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Importa itens da PQ a partir de um arquivo Excel e substitui os itens existentes."""
+    """Importa itens da PQ a partir de um arquivo Excel (escopado por revisão)."""
     _check_project(db, project_id, current_user.id)
 
     file_bytes = await file.read()
@@ -154,11 +163,15 @@ async def import_pq(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    # Substitui todos os itens existentes
-    db.query(PQItem).filter(PQItem.project_id == project_id).delete()
+    # Remove apenas os itens da revisão atual
+    q = db.query(PQItem).filter(PQItem.project_id == project_id)
+    if revision_id is not None:
+        q = q.filter(PQItem.revision_id == revision_id)
+    q.delete()
+
     new_items = []
     for row in rows:
-        item = PQItem(**row, project_id=project_id)
+        item = PQItem(**row, project_id=project_id, revision_id=revision_id)
         db.add(item)
         new_items.append(item)
     db.commit()

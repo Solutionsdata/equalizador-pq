@@ -94,6 +94,26 @@ def create_revision(
     }
 
 
+@router.delete("/projects/{project_id}/revisions/{revision_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_revision(
+    project_id: int,
+    revision_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _check_project(db, project_id, current_user.id)
+    rev = db.query(ProjectRevision).filter(
+        ProjectRevision.id == revision_id,
+        ProjectRevision.project_id == project_id,
+    ).first()
+    if not rev:
+        raise HTTPException(status_code=404, detail="Revisão não encontrada")
+    if rev.numero == 0:
+        raise HTTPException(status_code=400, detail="A Revisão 0 não pode ser excluída")
+    db.delete(rev)
+    db.commit()
+
+
 @router.get("/projects/{project_id}/revisions/compare")
 def compare_revisions(
     project_id: int,

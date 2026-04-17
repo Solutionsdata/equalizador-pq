@@ -85,9 +85,9 @@ export default function PQEditor() {
   const revisions: ProjectRevision[] = revisionsData ?? []
 
   useEffect(() => {
-    if (revisions.length > 0 && currentRevisionId === null) {
-      setCurrentRevisionId(revisions[revisions.length - 1].id)
-    }
+    if (revisions.length === 0) return
+    const exists = revisions.find((r) => r.id === currentRevisionId)
+    if (!exists) setCurrentRevisionId(revisions[revisions.length - 1].id)
   }, [revisionsData])
 
   const { data: _rawItems, isLoading } = useQuery<PQItem[]>({
@@ -113,7 +113,7 @@ export default function PQEditor() {
         ...rest,
         quantidade: Number(rest.quantidade) || 0,
         preco_referencia: rest.preco_referencia ? Number(rest.preco_referencia) : null,
-      }))),
+      })), currentRevisionId ?? undefined),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pq', pid] })
       qc.invalidateQueries({ queryKey: ['projects'] })
@@ -180,7 +180,7 @@ export default function PQEditor() {
     setImporting(true)
     const toastId = toast.loading('Importando planilha…')
     try {
-      await pqAPI.importExcel(pid, file)
+      await pqAPI.importExcel(pid, file, currentRevisionId ?? undefined)
       await qc.invalidateQueries({ queryKey: ['pq', pid] })
       toast.success('Planilha importada com sucesso!', { id: toastId })
       setDirty(false)

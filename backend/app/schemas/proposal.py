@@ -13,6 +13,7 @@ class ProposalCreate(BaseModel):
     telefone: Optional[str] = None
     bdi_global: Decimal = Decimal("0")
     observacao: Optional[str] = None
+    revision_id: Optional[int] = None
 
 
 class ProposalUpdate(BaseModel):
