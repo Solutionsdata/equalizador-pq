@@ -9,9 +9,10 @@ import {
   FolderOpen, Table2, FileText, TrendingUp, Plus,
   ArrowRight, BarChart3, Clock, ShieldCheck, Target,
   LineChart, Building2, ChevronRight, Award, Zap,
-  Scissors, Trophy, Star,
+  Scissors, Trophy, Star, BookOpen, Download, ExternalLink,
 } from 'lucide-react'
 import GuidedTour, { RestartTourButton } from '../components/GuidedTour'
+import { ESTADOS, ANOS, getPaginaUrl, getDownloadUrl } from './Sicro'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -481,6 +482,73 @@ export default function Dashboard() {
 
           {/* Sidebar direita */}
           <div className="space-y-6">
+
+            {/* SICRO Card */}
+            {(() => {
+              const latestAno = ANOS[0]
+              const latestPeriodo = latestAno.periodos[latestAno.periodos.length - 1]
+              return (
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <BookOpen size={15} className="text-blue-600" />
+                      <h2 className="text-sm font-semibold text-gray-800">SICRO — Preços DNIT</h2>
+                    </div>
+                    <Link
+                      to="/sicro"
+                      className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
+                    >
+                      Ver todos <ChevronRight size={11} />
+                    </Link>
+                  </div>
+                  <div className="px-5 py-4 space-y-4">
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      Último período disponível:{' '}
+                      <span className="font-semibold text-gray-700">
+                        {latestPeriodo.label} / {latestAno.ano}
+                      </span>
+                    </p>
+                    {ESTADOS.map((e) => {
+                      const dlUrl = getDownloadUrl(e, latestAno.ano, latestPeriodo)
+                      const pgUrl = getPaginaUrl(e, latestAno.ano, latestPeriodo.slug)
+                      return (
+                        <div key={e.sigla} className={`rounded-lg border p-3 ${e.corBg}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-black ${e.cor}`}>{e.sigla}</span>
+                              <span className="text-xs text-gray-600 font-medium">{e.nome}</span>
+                            </div>
+                            <span className="text-[10px] text-gray-400">Região {e.regiao}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <a
+                              href={pgUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-blue-700 px-2 py-1 rounded bg-white border border-gray-200 hover:border-blue-300 transition-colors"
+                            >
+                              <ExternalLink size={10} />
+                              DNIT
+                            </a>
+                            {dlUrl && (
+                              <a
+                                href={dlUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-[11px] text-green-700 hover:text-green-800 px-2 py-1 rounded bg-white border border-green-200 hover:border-green-400 transition-colors"
+                              >
+                                <Download size={10} />
+                                .7z
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Benchmarks do setor */}
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">

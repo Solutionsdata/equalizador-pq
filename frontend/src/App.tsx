@@ -10,6 +10,7 @@ import ProposalInput from './pages/ProposalInput'
 import Equalization from './pages/Equalization'
 import Analytics from './pages/Analytics'
 import AdminUsers from './pages/AdminUsers'
+import Sicro from './pages/Sicro'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
@@ -45,6 +46,7 @@ function AppRoutes() {
         <Route path="projetos/:projectId/propostas/:proposalId" element={<ProposalInput />} />
         <Route path="projetos/:projectId/equalizacao" element={<Equalization />} />
         <Route path="projetos/:projectId/analises" element={<Analytics />} />
+        <Route path="sicro" element={<Sicro />} />
         <Route
           path="admin/usuarios"
           element={

@@ -96,7 +96,7 @@ def gerar_modelo_pq(project_name: str, pq_items: Optional[List[PQItem]] = None) 
     # Linha 1 — Título
     ws.merge_cells(f"A1:{last_col}1")
     c = ws["A1"]
-    c.value = f"PLANILHA DE QUANTITATIVOS  ·  {project_name.upper()}"
+    c.value = f"PLANILHA DE QUANTIDADES  ·  {project_name.upper()}"
     c.fill = _fill(AZUL_TITULO)
     c.font = _font("FFFFFF", bold=True, size=13)
     c.alignment = _align("center")

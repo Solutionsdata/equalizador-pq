@@ -3,6 +3,6 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --silent
 COPY . .
-ARG VITE_API_URL
+ARG VITE_API_URL=https://equalizador-pq-api.onrender.com/api
 ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
