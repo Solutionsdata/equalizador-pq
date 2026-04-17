@@ -10,6 +10,7 @@ import ProposalInput from './pages/ProposalInput'
 import Equalization from './pages/Equalization'
 import Analytics from './pages/Analytics'
 import AdminUsers from './pages/AdminUsers'
+import AdminMonitoring from './pages/AdminMonitoring'
 import Sicro from './pages/Sicro'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -52,6 +53,14 @@ function AppRoutes() {
           element={
             <AdminRoute>
               <AdminUsers />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/monitoramento"
+          element={
+            <AdminRoute>
+              <AdminMonitoring />
             </AdminRoute>
           }
         />

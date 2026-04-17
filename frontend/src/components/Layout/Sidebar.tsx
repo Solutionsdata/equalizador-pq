@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import {
   LayoutDashboard, FolderOpen, Table2, FileText,
   BarChart3, LineChart, LogOut, Crown, ChevronDown,
-  Building2, Settings, BookOpen,
+  Building2, Settings, BookOpen, Monitor,
 } from 'lucide-react'
 
 function NavItem({
@@ -117,6 +117,7 @@ export default function Sidebar() {
               </p>
             </div>
             <NavItem to="/admin/usuarios" icon={Crown} label="Usuários" />
+            <NavItem to="/admin/monitoramento" icon={Monitor} label="Monitoramento" />
           </>
         )}
       </nav>

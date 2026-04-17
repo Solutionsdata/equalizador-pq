@@ -3,8 +3,10 @@ from app.models.project import Project, WorkType, ProjectStatus
 from app.models.pq_item import PQItem
 from app.models.proposal import Proposal, ProposalStatus
 from app.models.proposal_item import ProposalItem
+from app.models.activity_log import ActivityLog
 
 __all__ = [
     "User", "Project", "WorkType", "ProjectStatus",
     "PQItem", "Proposal", "ProposalStatus", "ProposalItem",
+    "ActivityLog",
 ]

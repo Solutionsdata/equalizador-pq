@@ -126,4 +126,12 @@ export const adminAPI = {
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
 }
 
+// ── Monitoring ───────────────────────────────────────────────────────────────
+export const monitoringAPI = {
+  overview:   () => api.get('/admin/monitoring/overview'),
+  db:         () => api.get('/admin/monitoring/db'),
+  projects:   () => api.get('/admin/monitoring/projects'),
+  activity:   (days = 30) => api.get('/admin/monitoring/activity', { params: { days } }),
+}
+
 export default api
