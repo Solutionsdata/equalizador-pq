@@ -47,6 +47,7 @@ class ProposalItemResponse(BaseModel):
 class ProposalResponse(BaseModel):
     id: int
     project_id: int
+    revision_id: Optional[int] = None
     empresa: str
     cnpj: Optional[str] = None
     contato: Optional[str] = None

@@ -54,6 +54,7 @@ export interface PQItem {
 export interface Proposal {
   id: number
   project_id: number
+  revision_id?: number | null
   empresa: string
   cnpj?: string
   contato?: string

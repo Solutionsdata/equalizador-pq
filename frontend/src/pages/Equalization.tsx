@@ -5,7 +5,8 @@ import { analyticsAPI, proposalsAPI, projectsAPI, revisionsAPI, downloadBlob } f
 import type { EqualizationResponse, ProposalComparisonItem, EqualizationProposal, ProjectRevision } from '../types'
 import { PROPOSAL_STATUS_LABELS, formatBRL, formatNumber } from '../types'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, ArrowLeft, Trophy, X, Check, Building2, FileDown, FileUp } from 'lucide-react'
+import { Plus, Pencil, Trash2, ArrowLeft, Trophy, X, Check, Building2, FileDown, FileUp, Users, UserPlus } from 'lucide-react'
+import type { Proposal } from '../types'
 import RevisionSelector from '../components/RevisionSelector'
 
 const PROPOSAL_STATUS_COLORS: Record<string, string> = {
@@ -43,6 +44,9 @@ export default function Equalization() {
   const qc = useQueryClient()
 
   const [modal, setModal] = useState(false)
+  const [modalTab, setModalTab] = useState<'existing' | 'new'>('existing')
+  const [selectedProponente, setSelectedProponente] = useState<Proposal | null>(null)
+  const [existingBdi, setExistingBdi] = useState('0')
   const [form, setForm] = useState<NewProposalForm>(EMPTY_FORM)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
   const [categoryFilter, setCategoryFilter] = useState<string>('')
@@ -74,6 +78,33 @@ export default function Equalization() {
     queryFn: () => analyticsAPI.getEqualization(pid).then((r) => r.data),
   })
 
+  // Todos os proponentes do projeto (todas as revisões) — para re-uso em novas revisões
+  const { data: allProposals = [] } = useQuery<Proposal[]>({
+    queryKey: ['all-proposals', pid],
+    queryFn: () => proposalsAPI.list(pid).then((r) => r.data),
+  })
+
+  // Proponentes de revisões anteriores que ainda não têm proposta na revisão atual
+  const currentRevisionEmpresas = new Set(
+    allProposals.filter((p) => p.revision_id === currentRevisionId).map((p) => p.empresa)
+  )
+  const existingProponentes: Proposal[] = Object.values(
+    allProposals
+      .filter((p) => p.revision_id !== currentRevisionId)
+      .reduce<Record<string, Proposal>>((acc, p) => {
+        if (!acc[p.empresa]) acc[p.empresa] = p
+        return acc
+      }, {})
+  ).filter((p) => !currentRevisionEmpresas.has(p.empresa))
+
+  function openModal() {
+    setSelectedProponente(null)
+    setExistingBdi('0')
+    setForm(EMPTY_FORM)
+    setModalTab(existingProponentes.length > 0 ? 'existing' : 'new')
+    setModal(true)
+  }
+
   const createMutation = useMutation({
     mutationFn: () => proposalsAPI.create(pid, {
       ...form,
@@ -82,6 +113,7 @@ export default function Equalization() {
     }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['equalization', pid] })
+      qc.invalidateQueries({ queryKey: ['all-proposals', pid] })
       toast.success('Proposta criada!')
       setModal(false)
       setForm(EMPTY_FORM)
@@ -90,6 +122,33 @@ export default function Equalization() {
     onError: (err: any) => toast.error(
       err?.response?.data?.detail
       ?? (err?.isServerStarting ? 'Servidor inicializando… tente novamente em 30s.' : 'Erro ao criar proposta')
+    ),
+  })
+
+  // Vincular proponente existente à revisão atual (copia os dados, cria nova proposta)
+  const linkExistingMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedProponente) throw new Error('Nenhum proponente selecionado')
+      return proposalsAPI.create(pid, {
+        empresa: selectedProponente.empresa,
+        cnpj: selectedProponente.cnpj,
+        contato: selectedProponente.contato,
+        email_contato: selectedProponente.email_contato,
+        telefone: selectedProponente.telefone,
+        bdi_global: Number(existingBdi) || 0,
+        revision_id: currentRevisionId,
+      })
+    },
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['equalization', pid] })
+      qc.invalidateQueries({ queryKey: ['all-proposals', pid] })
+      toast.success(`${selectedProponente?.empresa} vinculado à revisão atual!`)
+      setModal(false)
+      setSelectedProponente(null)
+      navigate(`/projetos/${pid}/propostas/${res.data.id}`)
+    },
+    onError: (err: any) => toast.error(
+      err?.response?.data?.detail ?? 'Erro ao vincular proponente'
     ),
   })
 
@@ -181,10 +240,10 @@ export default function Equalization() {
           </div>
         </div>
         <button
-          onClick={() => setModal(true)}
+          onClick={openModal}
           disabled={proposals.length >= 10}
           className="btn-primary"
-          title={proposals.length >= 10 ? 'Limite de 10 propostas atingido' : ''}
+          title={proposals.length >= 10 ? 'Limite de 10 propostas por revisão atingido' : ''}
         >
           <Plus size={16} /> Nova Proposta ({proposals.length}/10)
         </button>
@@ -319,7 +378,7 @@ export default function Equalization() {
         <div className="card py-20 text-center">
           <Building2 size={52} className="mx-auto text-gray-300 mb-3" />
           <p className="text-gray-400 mb-4">Nenhuma proposta cadastrada.</p>
-          <button onClick={() => setModal(true)} className="btn-primary mx-auto">
+          <button onClick={openModal} className="btn-primary mx-auto">
             <Plus size={16} /> Adicionar primeira proposta
           </button>
         </div>
@@ -438,60 +497,178 @@ export default function Equalization() {
       {/* Modal nova proposta */}
       {modal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold">Nova Proposta</h2>
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900">Adicionar Proposta</h2>
               <button onClick={() => setModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
             </div>
-            <form
-              onSubmit={(e) => { e.preventDefault(); createMutation.mutate() }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Empresa / Proponente *</label>
-                <input
-                  className="input"
-                  placeholder="Razão social"
-                  value={form.empresa}
-                  onChange={(e) => setForm((f) => ({ ...f, empresa: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
-                  <input className="input" placeholder="00.000.000/0001-00" value={form.cnpj} onChange={(e) => setForm((f) => ({ ...f, cnpj: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">BDI Global (%)</label>
-                  <input
-                    className="input text-center"
-                    type="number" step="0.01" min="0" max="100"
-                    placeholder="0.00"
-                    value={form.bdi_global}
-                    onChange={(e) => setForm((f) => ({ ...f, bdi_global: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contato</label>
-                  <input className="input" placeholder="Nome" value={form.contato} onChange={(e) => setForm((f) => ({ ...f, contato: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
-                  <input className="input" type="email" placeholder="email@empresa.com" value={form.email_contato} onChange={(e) => setForm((f) => ({ ...f, email_contato: e.target.value }))} />
-                </div>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setModal(false)} className="btn-secondary flex-1 justify-center">Cancelar</button>
-                <button type="submit" disabled={createMutation.isPending} className="btn-primary flex-1 justify-center">
-                  {createMutation.isPending ? 'Criando…' : 'Criar e inserir preços'}
+
+            {/* Tabs — só aparecem quando há proponentes de outras revisões */}
+            {existingProponentes.length > 0 && (
+              <div className="flex border-b border-gray-100 px-6 pt-3">
+                <button
+                  onClick={() => { setModalTab('existing'); setSelectedProponente(null) }}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    modalTab === 'existing'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Users size={14} />
+                  Proponente existente
+                  <span className="ml-1 bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                    {existingProponentes.length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => { setModalTab('new'); setSelectedProponente(null) }}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    modalTab === 'new'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <UserPlus size={14} />
+                  Novo proponente
                 </button>
               </div>
-            </form>
+            )}
+
+            <div className="p-6 space-y-4">
+
+              {/* ── Aba: Proponente existente ── */}
+              {(modalTab === 'existing' && existingProponentes.length > 0) && (
+                <>
+                  <p className="text-sm text-gray-500">
+                    Selecione o proponente que enviará proposta nesta revisão. Os dados cadastrais serão copiados automaticamente.
+                  </p>
+
+                  {/* Lista de proponentes existentes */}
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {existingProponentes.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          setSelectedProponente(p)
+                          setExistingBdi(String(p.bdi_global ?? 0))
+                        }}
+                        className={`w-full text-left border rounded-xl px-4 py-3 transition-all ${
+                          selectedProponente?.empresa === p.empresa
+                            ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                            : 'border-gray-200 hover:border-blue-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{p.empresa}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {p.cnpj && <span>{p.cnpj} · </span>}
+                              {p.contato && <span>{p.contato}</span>}
+                              {p.email_contato && <span> · {p.email_contato}</span>}
+                            </p>
+                          </div>
+                          {selectedProponente?.empresa === p.empresa && (
+                            <Check size={16} className="text-blue-600 flex-shrink-0 ml-2" />
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* BDI para esta revisão */}
+                  {selectedProponente && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        BDI Global para esta revisão (%)
+                      </label>
+                      <input
+                        className="input w-40"
+                        type="number" step="0.01" min="0" max="100"
+                        value={existingBdi}
+                        onChange={(e) => setExistingBdi(e.target.value)}
+                        autoFocus
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        BDI anterior: {selectedProponente.bdi_global?.toFixed(2)}%
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setModal(false)}
+                      className="btn-secondary flex-1 justify-center"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => linkExistingMutation.mutate()}
+                      disabled={!selectedProponente || linkExistingMutation.isPending}
+                      className="btn-primary flex-1 justify-center"
+                    >
+                      {linkExistingMutation.isPending ? 'Vinculando…' : 'Vincular à revisão atual'}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* ── Aba: Novo proponente ── */}
+              {(modalTab === 'new' || existingProponentes.length === 0) && (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); createMutation.mutate() }}
+                  className="space-y-4"
+                >
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Empresa / Proponente *</label>
+                    <input
+                      className="input"
+                      placeholder="Razão social"
+                      value={form.empresa}
+                      onChange={(e) => setForm((f) => ({ ...f, empresa: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
+                      <input className="input" placeholder="00.000.000/0001-00" value={form.cnpj} onChange={(e) => setForm((f) => ({ ...f, cnpj: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">BDI Global (%)</label>
+                      <input
+                        className="input text-center"
+                        type="number" step="0.01" min="0" max="100"
+                        placeholder="0.00"
+                        value={form.bdi_global}
+                        onChange={(e) => setForm((f) => ({ ...f, bdi_global: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Contato</label>
+                      <input className="input" placeholder="Nome" value={form.contato} onChange={(e) => setForm((f) => ({ ...f, contato: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+                      <input className="input" type="email" placeholder="email@empresa.com" value={form.email_contato} onChange={(e) => setForm((f) => ({ ...f, email_contato: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="flex gap-3 pt-1">
+                    <button type="button" onClick={() => setModal(false)} className="btn-secondary flex-1 justify-center">Cancelar</button>
+                    <button type="submit" disabled={createMutation.isPending} className="btn-primary flex-1 justify-center">
+                      {createMutation.isPending ? 'Criando…' : 'Criar e inserir preços'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+            </div>
           </div>
         </div>
       )}
