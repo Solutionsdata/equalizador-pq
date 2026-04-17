@@ -6,10 +6,9 @@ import { useAuth } from '../context/AuthContext'
 import type { Project, EqualizationResponse } from '../types'
 import { TIPO_OBRA_LABELS, STATUS_LABELS, formatBRL } from '../types'
 import {
-  FolderOpen, Table2, FileText, TrendingUp, Plus,
-  ArrowRight, BarChart3, Clock, ShieldCheck, Target,
-  LineChart, Building2, ChevronRight, Award, Zap,
-  Scissors, Trophy, Star, BookOpen, Download, ExternalLink,
+  FolderOpen, Plus, ArrowRight,
+  ChevronRight, Zap, Scissors, Trophy, Star,
+  BookOpen, Download, ExternalLink,
 } from 'lucide-react'
 import GuidedTour, { RestartTourButton } from '../components/GuidedTour'
 import { ESTADOS, ANOS, getPaginaUrl, getDownloadUrl } from './Sicro'
@@ -42,54 +41,6 @@ function MetricCard({ label, value, sub }: { label: string; value: string | numb
   )
 }
 
-function BenchmarkRow({
-  icon: Icon, value, title, description,
-}: {
-  icon: React.ElementType; value: string; title: string; description: string
-}) {
-  return (
-    <div className="flex items-start gap-4 py-4 border-b border-gray-100 last:border-0">
-      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Icon size={15} className="text-blue-600" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-3 flex-wrap">
-          <span className="text-lg font-bold text-gray-900">{value}</span>
-          <span className="text-sm font-medium text-gray-700">{title}</span>
-        </div>
-        <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{description}</p>
-      </div>
-    </div>
-  )
-}
-
-function NavCard({
-  to, icon: Icon, label, description, disabled,
-}: {
-  to: string; icon: React.ElementType; label: string; description: string; disabled?: boolean
-}) {
-  const base = 'group block bg-white border rounded-xl p-5 transition-all'
-  if (disabled) {
-    return (
-      <div className={`${base} border-gray-200 opacity-40 cursor-not-allowed`}>
-        <Icon size={18} className="text-gray-400 mb-3" />
-        <p className="text-sm font-semibold text-gray-600">{label}</p>
-        <p className="text-xs text-gray-400 mt-1 leading-relaxed">{description}</p>
-      </div>
-    )
-  }
-  return (
-    <Link to={to} className={`${base} border-gray-200 hover:border-blue-300 hover:shadow-sm`}>
-      <Icon size={18} className="text-blue-600 mb-3" />
-      <p className="text-sm font-semibold text-gray-800 group-hover:text-blue-700 transition-colors">{label}</p>
-      <p className="text-xs text-gray-400 mt-1 leading-relaxed">{description}</p>
-      <div className="flex items-center gap-1 text-xs text-blue-600 font-medium mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
-        Acessar <ChevronRight size={11} />
-      </div>
-    </Link>
-  )
-}
-
 // ── Cherry Pick Card ──────────────────────────────────────────────────────────
 
 interface CherryItem {
@@ -116,11 +67,22 @@ interface CherryData {
   totalItems: number
 }
 
+const RANK_MEDALS = ['🥇', '🥈', '🥉']
+
+function economyColor(pct: number) {
+  if (pct >= 20) return { badge: 'bg-red-50 text-red-600', bar: '#ef4444' }
+  if (pct >= 10) return { badge: 'bg-amber-50 text-amber-600', bar: '#f59e0b' }
+  return { badge: 'bg-green-50 text-green-600', bar: '#22c55e' }
+}
+
 function CherryPickCard({ data, project }: { data: CherryData; project: Project }) {
+  const maxWinPct = data.topSuppliers[0]?.winPct ?? 1
+  const maxEconomy = data.topItems[0]?.economia ?? 1
+
   return (
-    <div className="bg-white border border-violet-200 rounded-xl overflow-hidden">
+    <div className="bg-white border border-violet-200 rounded-xl overflow-hidden shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-violet-100 bg-violet-50/40">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white">
         <div>
           <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
             <Scissors size={15} className="text-violet-600" />
@@ -132,54 +94,67 @@ function CherryPickCard({ data, project }: { data: CherryData; project: Project 
         </div>
         <Link
           to={`/projetos/${project.id}/analises`}
-          className="text-xs text-violet-600 font-medium hover:underline flex items-center gap-1"
+          className="flex items-center gap-1 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-lg transition-colors"
         >
-          Ver análise completa <ChevronRight size={11} />
+          Ver análise <ChevronRight size={11} />
         </Link>
       </div>
 
       {/* Métricas principais */}
-      <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
+      <div className="grid grid-cols-3 border-b border-gray-100">
         <div className="px-5 py-4">
-          <p className="text-xs text-gray-400 mb-1">Total Cherry Pick</p>
-          <p className="text-xl font-bold text-violet-700">{formatBRL(data.cherryTotal)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">mínimo teórico</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Cherry Pick</p>
+          <p className="text-lg font-bold text-violet-700 leading-none">{formatBRL(data.cherryTotal)}</p>
+          <p className="text-[10px] text-gray-400 mt-1">mínimo teórico</p>
         </div>
-        <div className="px-5 py-4">
-          <p className="text-xs text-gray-400 mb-1">Média das propostas</p>
-          <p className="text-xl font-bold text-gray-700">{formatBRL(data.mediaTotal)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">sem cherry pick</p>
+        <div className="px-5 py-4 border-x border-gray-100">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Média</p>
+          <p className="text-lg font-bold text-gray-700 leading-none">{formatBRL(data.mediaTotal)}</p>
+          <p className="text-[10px] text-gray-400 mt-1">sem cherry pick</p>
         </div>
-        <div className="px-5 py-4">
-          <p className="text-xs text-gray-400 mb-1">Economia potencial</p>
-          <p className="text-xl font-bold text-green-600">{formatBRL(data.economy)}</p>
-          <p className="text-xs text-green-500 font-medium mt-0.5">
-            {data.economyPct.toFixed(1)}% de redução
-          </p>
+        <div className="px-5 py-4 bg-green-50/40">
+          <p className="text-[10px] font-semibold text-green-600 uppercase tracking-wider mb-1.5">Economia potencial</p>
+          <p className="text-lg font-bold text-green-600 leading-none">{formatBRL(data.economy)}</p>
+          <p className="text-[10px] text-green-500 font-semibold mt-1">↓ {data.economyPct.toFixed(1)}%</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
-        {/* Top itens */}
+
+        {/* Top itens por economia */}
         {data.topItems.length > 0 && (
           <div className="px-5 py-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <Star size={11} className="text-amber-500" /> Top itens por economia
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <Star size={10} className="text-amber-400" /> Top itens por economia
             </p>
-            <div className="space-y-2.5">
-              {data.topItems.map((item, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  <span className="text-xs text-gray-300 w-6 flex-shrink-0 pt-0.5">{item.numero_item}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-700 truncate leading-tight">{item.descricao}</p>
-                    <p className="text-xs text-violet-500 mt-0.5">{item.bestSupplier}</p>
+            <div className="space-y-3">
+              {data.topItems.map((item, i) => {
+                const barPct = Math.round((item.economia / maxEconomy) * 100)
+                const { badge, bar } = economyColor(item.economyPct)
+                return (
+                  <div key={i} className="group rounded-lg hover:bg-gray-50 p-2 -mx-2 transition-colors cursor-default">
+                    <div className="flex items-start gap-2 mb-1.5">
+                      <span className="text-[10px] text-gray-300 w-5 flex-shrink-0 pt-0.5 font-mono">{item.numero_item}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-gray-700 leading-tight font-medium truncate">{item.descricao}</p>
+                        <p className="text-[10px] text-violet-500 mt-0.5 truncate">{item.bestSupplier}</p>
+                      </div>
+                      <div className="flex-shrink-0 text-right">
+                        <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${badge}`}>
+                          −{item.economyPct.toFixed(0)}%
+                        </span>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{formatBRL(item.economia)}</p>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-1 ml-7">
+                      <div
+                        className="h-1 rounded-full transition-all duration-500"
+                        style={{ width: `${barPct}%`, backgroundColor: bar }}
+                      />
+                    </div>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-xs font-semibold text-green-600">−{item.economyPct.toFixed(0)}%</p>
-                    <p className="text-xs text-gray-400">{formatBRL(item.economia)}</p>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
@@ -187,29 +162,40 @@ function CherryPickCard({ data, project }: { data: CherryData; project: Project 
         {/* Fornecedores */}
         {data.topSuppliers.length > 0 && (
           <div className="px-5 py-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <Trophy size={11} className="text-amber-500" /> Fornecedores no cherry pick
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <Trophy size={10} className="text-amber-400" /> Fornecedores no cherry pick
             </p>
             <div className="space-y-3">
-              {data.topSuppliers.map((s, i) => (
-                <div key={i}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-700 truncate max-w-[160px]">{s.empresa}</span>
-                    <span className="text-xs text-gray-500 flex-shrink-0 ml-2">
-                      {s.wins} itens ({s.winPct}%)
-                    </span>
+              {data.topSuppliers.map((s, i) => {
+                const barPct = Math.round((s.winPct / maxWinPct) * 100)
+                const gradients = [
+                  'from-violet-500 to-violet-400',
+                  'from-indigo-500 to-indigo-400',
+                  'from-blue-500 to-blue-400',
+                  'from-slate-400 to-slate-300',
+                ]
+                return (
+                  <div key={i} className="group rounded-lg hover:bg-gray-50 p-2 -mx-2 transition-colors cursor-default">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-sm flex-shrink-0">{RANK_MEDALS[i] ?? '·'}</span>
+                      <span className="text-xs text-gray-800 font-medium truncate flex-1">{s.empresa}</span>
+                      <div className="flex-shrink-0 text-right">
+                        <span className="text-xs font-bold text-violet-700">{s.winPct}%</span>
+                        <span className="text-[10px] text-gray-400 ml-1">({s.wins} itens)</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2 ml-6">
+                      <div
+                        className={`bg-gradient-to-r ${gradients[i] ?? gradients[3]} h-2 rounded-full transition-all duration-700`}
+                        style={{ width: `${barPct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-1.5">
-                    <div
-                      className="bg-violet-500 h-1.5 rounded-full transition-all"
-                      style={{ width: `${Math.min(s.winPct, 100)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
-            <p className="text-xs text-gray-400 mt-4 leading-relaxed">
-              Percentual de itens em que cada fornecedor oferece o menor preço unitário.
+            <p className="text-[10px] text-gray-400 mt-4 leading-relaxed border-t border-gray-100 pt-3">
+              % de itens em que cada fornecedor oferece o menor preço unitário.
             </p>
           </div>
         )}
@@ -443,41 +429,6 @@ export default function Dashboard() {
               <CherryPickCard data={cherryData} project={latestWithProposals} />
             )}
 
-            {/* Acesso rápido */}
-            <div>
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                Acesso rápido
-              </h2>
-              <div className="grid grid-cols-2 gap-3">
-                <NavCard
-                  to="/projetos"
-                  icon={FolderOpen}
-                  label="Projetos"
-                  description="Gerencie processos e acompanhe o status."
-                />
-                <NavCard
-                  to={latest ? `/projetos/${latest.id}/pq` : '/projetos'}
-                  icon={Table2}
-                  label="Planilha PQ"
-                  description="Monte quantitativos e importe via Excel."
-                  disabled={!latest}
-                />
-                <NavCard
-                  to={latest ? `/projetos/${latest.id}/equalizacao` : '/projetos'}
-                  icon={Building2}
-                  label="Equalização"
-                  description="Compare propostas e identifique desvios por item."
-                  disabled={!latest}
-                />
-                <NavCard
-                  to={latest ? `/projetos/${latest.id}/analises` : '/projetos'}
-                  icon={LineChart}
-                  label="Análises"
-                  description="Curva ABC, Pareto e comparativos visuais."
-                  disabled={!latest}
-                />
-              </div>
-            </div>
           </div>
 
           {/* Sidebar direita */}
@@ -549,46 +500,6 @@ export default function Dashboard() {
                 </div>
               )
             })()}
-
-            {/* Benchmarks do setor */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100">
-                <h2 className="text-sm font-semibold text-gray-800">Impacto da equalização estruturada</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Benchmarks do setor de grandes obras</p>
-              </div>
-              <div className="px-5">
-                <BenchmarkRow
-                  icon={Target}
-                  value="12% – 22%"
-                  title="Economia identificada"
-                  description="Sobrepreço médio revelado em processos com análise comparativa estruturada."
-                />
-                <BenchmarkRow
-                  icon={Clock}
-                  value="8h → 40min"
-                  title="Tempo de equalização"
-                  description="10 propostas com 200 itens: manual vs. software."
-                />
-                <BenchmarkRow
-                  icon={ShieldCheck}
-                  value="95%"
-                  title="Redução de erros"
-                  description="Eliminação de erros de transcrição e cálculo na análise manual."
-                />
-                <BenchmarkRow
-                  icon={Award}
-                  value="80 / 20"
-                  title="Regra da Curva ABC"
-                  description="20% dos itens concentram 80% do valor. Negociar esses itens gera impacto máximo."
-                />
-                <BenchmarkRow
-                  icon={BarChart3}
-                  value="1 em 3"
-                  title="Propostas com desvio crítico"
-                  description="Proporção média de propostas com ao menos um item acima de 30% da referência."
-                />
-              </div>
-            </div>
 
             {/* Dica contextual */}
             {total > 0 && totalProps === 0 && (
