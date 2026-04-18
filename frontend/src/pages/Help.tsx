@@ -1,120 +1,172 @@
 import React, { useState, useEffect } from 'react'
 import {
-  BookOpen, LayoutDashboard, FolderPlus, Table2, GitBranch,
-  Building2, BarChart3, Trophy, Lightbulb, ChevronRight,
-  ChevronLeft, CheckCircle2, Upload, Download, Plus,
-  ArrowRight, Play, Star, Zap, Target, TrendingUp, FileSpreadsheet,
-  Filter, Award, AlertCircle, Info,
+  Play, LayoutDashboard, FolderPlus, Table2, GitBranch,
+  Building2, BarChart3, Trophy, Lightbulb, ChevronRight, ChevronLeft,
+  CheckCircle2, Upload, Download, Plus, ArrowRight, Star, Zap,
+  Target, TrendingUp, FileSpreadsheet, Filter, Award, AlertCircle,
+  Info, BookOpen, GitCommit, Layers,
 } from 'lucide-react'
 
-// ─── Tiny shared components ───────────────────────────────────────────────────
-function Step({ n, title, children }: { n: number; title: string; children?: React.ReactNode }) {
+// ── Animation CSS ─────────────────────────────────────────────────────────────
+const ANIM_CSS = `
+  @keyframes heroIn {
+    from { opacity:0; transform: translateY(28px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+  @keyframes panelIn {
+    from { opacity:0; transform: translateX(32px); }
+    to   { opacity:1; transform: translateX(0); }
+  }
+  @keyframes fadeUp {
+    from { opacity:0; transform: translateY(14px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+  @keyframes scaleIn {
+    from { opacity:0; transform: scale(0.93); }
+    to   { opacity:1; transform: scale(1); }
+  }
+  @keyframes dotPulse {
+    0%,100% { transform: scale(1); }
+    50%      { transform: scale(1.25); }
+  }
+  .anim-hero  { animation: heroIn  0.55s cubic-bezier(.22,1,.36,1) both; }
+  .anim-panel { animation: panelIn 0.55s cubic-bezier(.22,1,.36,1) both; }
+  .anim-up    { animation: fadeUp  0.45s cubic-bezier(.22,1,.36,1) both; }
+  .anim-scale { animation: scaleIn 0.4s  cubic-bezier(.22,1,.36,1) both; }
+  .d1 { animation-delay:.05s } .d2 { animation-delay:.10s } .d3 { animation-delay:.15s }
+  .d4 { animation-delay:.20s } .d5 { animation-delay:.25s } .d6 { animation-delay:.30s }
+  .dot-active { animation: dotPulse .4s ease; }
+  .step-line::before {
+    content:''; position:absolute; left:11px; top:24px; bottom:-8px;
+    width:1px; background: rgba(255,255,255,.15);
+  }
+`
+
+// ── Chapter themes ─────────────────────────────────────────────────────────────
+const THEMES = [
+  { grad: 'from-blue-600 via-blue-700 to-indigo-800',   accent: '#3b82f6', light: 'bg-blue-50',   ring: 'ring-blue-200'  },
+  { grad: 'from-slate-700 via-slate-800 to-gray-900',   accent: '#64748b', light: 'bg-slate-50',  ring: 'ring-slate-200' },
+  { grad: 'from-indigo-600 via-indigo-700 to-purple-800',accent: '#6366f1', light: 'bg-indigo-50', ring: 'ring-indigo-200'},
+  { grad: 'from-emerald-600 via-green-700 to-teal-800', accent: '#10b981', light: 'bg-emerald-50', ring: 'ring-emerald-200'},
+  { grad: 'from-violet-600 via-purple-700 to-fuchsia-800',accent:'#8b5cf6',light:'bg-violet-50',  ring: 'ring-violet-200'},
+  { grad: 'from-amber-500 via-orange-600 to-orange-700',accent: '#f59e0b', light: 'bg-amber-50',  ring: 'ring-amber-200' },
+  { grad: 'from-teal-600 via-cyan-700 to-sky-800',      accent: '#14b8a6', light: 'bg-teal-50',   ring: 'ring-teal-200'  },
+  { grad: 'from-rose-600 via-pink-700 to-red-800',      accent: '#f43f5e', light: 'bg-rose-50',   ring: 'ring-rose-200'  },
+  { grad: 'from-yellow-500 via-amber-600 to-orange-600',accent: '#eab308', light: 'bg-yellow-50', ring: 'ring-yellow-200'},
+  { grad: 'from-orange-600 via-red-600 to-rose-700',    accent: '#ea580c', light: 'bg-orange-50', ring: 'ring-orange-200'},
+]
+
+// ── Shared mini-components ─────────────────────────────────────────────────────
+function Bullet({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex gap-2.5 items-start">
-      <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">{n}</div>
-      <div>
-        <p className="text-sm font-semibold text-gray-800 leading-snug">{title}</p>
-        {children && <p className="text-xs text-gray-500 leading-relaxed mt-0.5">{children}</p>}
-      </div>
+    <li className="flex items-start gap-2 text-white/80 text-xs leading-relaxed">
+      <CheckCircle2 size={12} className="flex-shrink-0 mt-0.5 text-white/50" />
+      <span>{children}</span>
+    </li>
+  )
+}
+
+function ContentCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-4 ${className}`}>
+      {children}
     </div>
   )
 }
 
-function Tip({ children, type = 'info' }: { children: React.ReactNode; type?: 'info' | 'warn' | 'success' }) {
-  const s = {
-    info:    { box: 'bg-blue-50 border-blue-200',   icon: 'text-blue-500',  text: 'text-blue-800',  Icon: Info },
-    warn:    { box: 'bg-amber-50 border-amber-200',  icon: 'text-amber-500', text: 'text-amber-800', Icon: AlertCircle },
-    success: { box: 'bg-green-50 border-green-200',  icon: 'text-green-500', text: 'text-green-800', Icon: CheckCircle2 },
-  }[type]
-  return (
-    <div className={`flex gap-2 p-3 rounded-lg border ${s.box}`}>
-      <s.Icon size={14} className={`flex-shrink-0 mt-0.5 ${s.icon}`} />
-      <p className={`text-xs leading-relaxed ${s.text}`}>{children}</p>
-    </div>
-  )
-}
-
-function SLabel({ children }: { children: React.ReactNode }) {
+function Label({ children }: { children: React.ReactNode }) {
   return <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">{children}</p>
 }
 
-function MiniCard({ icon: Icon, title, desc, color = 'blue' }: { icon: React.ElementType; title: string; desc: string; color?: string }) {
-  const c: Record<string, string> = {
-    blue: 'bg-blue-50 text-blue-600', green: 'bg-green-50 text-green-600',
-    amber: 'bg-amber-50 text-amber-600', purple: 'bg-purple-50 text-purple-600',
-    rose: 'bg-rose-50 text-rose-600', indigo: 'bg-indigo-50 text-indigo-600',
-    slate: 'bg-slate-100 text-slate-600', teal: 'bg-teal-50 text-teal-600',
-    yellow: 'bg-yellow-50 text-yellow-600',
-  }
+function Row({ n, title, sub }: { n: number; title: string; sub?: string }) {
   return (
-    <div className="flex gap-2.5 p-3 bg-white rounded-xl border border-gray-100 shadow-sm items-start">
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${c[color]}`}>
-        <Icon size={16} />
-      </div>
+    <div className="flex items-start gap-2.5">
+      <div className="w-5 h-5 rounded-full bg-gray-900 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">{n}</div>
       <div>
-        <p className="font-semibold text-gray-800 text-xs leading-tight">{title}</p>
-        <p className="text-gray-500 text-[11px] mt-0.5 leading-snug">{desc}</p>
+        <p className="text-xs font-semibold text-gray-800 leading-tight">{title}</p>
+        {sub && <p className="text-[11px] text-gray-500 mt-0.5">{sub}</p>}
       </div>
     </div>
   )
 }
 
-// ─── Chapter data ─────────────────────────────────────────────────────────────
-interface Chapter {
-  id: number
-  icon: React.ElementType
-  color: string
-  bg: string
-  title: string
-  subtitle: string
-  content: React.ReactNode
+function Pill({ icon: Icon, label, color }: { icon: React.ElementType; label: string; color: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white ${color}`}>
+      <Icon size={11} />{label}
+    </span>
+  )
 }
 
-const chapters: Chapter[] = [
+function TipBox({ children, type = 'info' }: { children: React.ReactNode; type?: 'info'|'warn'|'ok' }) {
+  const s = {
+    info: { bg: 'bg-blue-50 border-blue-200',  ic: 'text-blue-500',  tx: 'text-blue-800',  I: Info },
+    warn: { bg: 'bg-amber-50 border-amber-200', ic: 'text-amber-500', tx: 'text-amber-800', I: AlertCircle },
+    ok:   { bg: 'bg-green-50 border-green-200', ic: 'text-green-500', tx: 'text-green-800', I: CheckCircle2 },
+  }[type]
+  return (
+    <div className={`flex gap-2 p-3 rounded-xl border ${s.bg}`}>
+      <s.I size={13} className={`flex-shrink-0 mt-0.5 ${s.ic}`} />
+      <p className={`text-[11px] leading-relaxed ${s.tx}`}>{children}</p>
+    </div>
+  )
+}
+
+// ── Chapter definitions ────────────────────────────────────────────────────────
+interface ChapterDef {
+  icon: React.ElementType
+  title: string
+  sub: string
+  bullets: string[]
+  right: React.ReactNode
+}
+
+const CHAPTERS: ChapterDef[] = [
   // ── 1. Bem-vindo ─────────────────────────────────────────────────────────────
   {
-    id: 1, icon: Play, color: 'text-blue-600', bg: 'bg-blue-100',
-    title: 'Bem-vindo', subtitle: 'O que é e para quem é',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        {/* Left */}
-        <div className="flex flex-col gap-4">
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-5 text-white">
-            <div className="flex items-center gap-1.5 text-blue-200 text-xs font-medium mb-2">
-              <Star size={11} /> Software de Equalização de Propostas
+    icon: Play, title: 'Bem-vindo', sub: 'O que é e para quem é',
+    bullets: ['Entenda o propósito da plataforma', 'Conheça os 5 módulos principais', 'Saiba como o guia está estruturado'],
+    right: (
+      <div className="grid grid-cols-2 gap-3 h-full content-start">
+        <div className="col-span-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-3 bg-red-50 border border-red-100 rounded-xl anim-up d1">
+              <p className="text-[10px] font-bold text-red-400 uppercase tracking-wider mb-2">Sem o sistema</p>
+              {['Excel descentralizado','Sem controle de revisões','Comparação manual e lenta','Zero rastreabilidade'].map(t => (
+                <p key={t} className="flex items-center gap-1.5 text-xs text-red-700 py-0.5">
+                  <span className="font-bold text-red-400">✕</span>{t}
+                </p>
+              ))}
             </div>
-            <h2 className="text-lg font-bold mb-2 leading-tight">Plataforma completa para análise e equalização de licitações</h2>
-            <p className="text-blue-100 text-xs leading-relaxed">
-              Do quantitativo até a premiação — digital, rastreável e auditável.
-            </p>
-          </div>
-          <div>
-            <SLabel>O problema resolvido</SLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="p-3 bg-red-50 border border-red-100 rounded-xl">
-                <p className="text-[10px] font-bold text-red-400 uppercase tracking-wider mb-1.5">Sem o sistema</p>
-                {['Excel descentralizado', 'Sem histórico de revisões', 'Difícil comparar fornecedores', 'Zero rastreabilidade'].map((t) => (
-                  <p key={t} className="flex items-center gap-1.5 text-xs text-red-700 py-0.5"><span className="text-red-400 font-bold">✕</span>{t}</p>
-                ))}
-              </div>
-              <div className="p-3 bg-green-50 border border-green-100 rounded-xl">
-                <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider mb-1.5">Com o sistema</p>
-                {['Tudo centralizado', 'Revisões versionadas', 'Equalização lado a lado', 'Baseline completo'].map((t) => (
-                  <p key={t} className="flex items-center gap-1.5 text-xs text-green-700 py-0.5"><CheckCircle2 size={11} className="text-green-500" />{t}</p>
-                ))}
-              </div>
+            <div className="p-3 bg-green-50 border border-green-100 rounded-xl anim-up d2">
+              <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider mb-2">Com o sistema</p>
+              {['Tudo centralizado','Revisões versionadas','Equalização automática','Histórico completo'].map(t => (
+                <p key={t} className="flex items-center gap-1.5 text-xs text-green-700 py-0.5">
+                  <CheckCircle2 size={11} className="text-green-500" />{t}
+                </p>
+              ))}
             </div>
           </div>
-          <Tip type="success">Este guia tem 10 capítulos. Use o menu lateral ou as teclas <strong>← →</strong> para navegar.</Tip>
         </div>
-        {/* Right */}
-        <div className="flex flex-col gap-3">
-          <SLabel>Os 5 módulos principais</SLabel>
-          <MiniCard icon={Table2} title="Planilha PQ" desc="Quantitativos: itens, unidades, quantidades e preço de referência." color="blue" />
-          <MiniCard icon={GitBranch} title="Revisões" desc="Versiona o PQ. Cada revisão é um snapshot imutável e comparável." color="indigo" />
-          <MiniCard icon={Building2} title="Propostas & Equalização" desc="Cadastre fornecedores e compare preços lado a lado por item." color="amber" />
-          <MiniCard icon={BarChart3} title="Análises" desc="Curva ABC/Pareto, disciplinas, delta entre revisões e rankings." color="green" />
-          <MiniCard icon={Trophy} title="Baseline" desc="Registra a empresa vencedora de cada contrato e valor premiado." color="purple" />
+        <div className="col-span-2">
+          <Label>5 módulos do sistema</Label>
+          <div className="grid grid-cols-1 gap-1.5">
+            {[
+              { icon: Table2,       label: 'Planilha PQ',    desc: 'Quantitativos, unidades e referência', c: 'text-blue-600 bg-blue-50' },
+              { icon: GitBranch,    label: 'Revisões',       desc: 'Snapshots imutáveis do PQ',            c: 'text-indigo-600 bg-indigo-50' },
+              { icon: Building2,    label: 'Equalização',    desc: 'Compare fornecedores item a item',     c: 'text-amber-600 bg-amber-50' },
+              { icon: BarChart3,    label: 'Análises',       desc: 'Pareto, disciplinas e delta',          c: 'text-emerald-600 bg-emerald-50' },
+              { icon: Trophy,       label: 'Baseline',       desc: 'Registro de premiações',               c: 'text-yellow-600 bg-yellow-50' },
+            ].map(({ icon: Icon, label, desc, c }, i) => (
+              <div key={label} className={`flex items-center gap-2.5 p-2.5 bg-white border border-gray-100 rounded-xl shadow-sm anim-up d${i+2}`}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${c}`}><Icon size={14} /></div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-800 leading-tight">{label}</p>
+                  <p className="text-[11px] text-gray-400">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     ),
@@ -122,72 +174,73 @@ const chapters: Chapter[] = [
 
   // ── 2. Dashboard ─────────────────────────────────────────────────────────────
   {
-    id: 2, icon: LayoutDashboard, color: 'text-slate-600', bg: 'bg-slate-100',
-    title: 'Dashboard', subtitle: 'Visão executiva do portfólio',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        <div className="flex flex-col gap-4">
-          <SLabel>O que você vai encontrar</SLabel>
-          <div className="grid grid-cols-2 gap-2">
-            <MiniCard icon={Target} title="KPIs do portfólio" desc="Total de projetos, em andamento, concluídos e valor total." color="blue" />
-            <MiniCard icon={TrendingUp} title="Evolução temporal" desc="Gráfico de área com toggle semana / mês / ano." color="indigo" />
-            <MiniCard icon={BarChart3} title="Top projetos" desc="Ranking dos projetos com maior valor premiado." color="green" />
-            <MiniCard icon={FolderPlus} title="Projetos recentes" desc="Acesso rápido com valores por proposta vencedora." color="amber" />
-          </div>
-          <Tip type="info">
-            Os valores do Dashboard vêm do Baseline (propostas premiadas). Se ainda não há premiação, os gráficos ficam em estado vazio.
-          </Tip>
+    icon: LayoutDashboard, title: 'Dashboard', sub: 'Visão executiva do portfólio',
+    bullets: ['KPIs consolidados do portfólio', 'Gráfico de evolução de valores', 'Acesso rápido a projetos recentes'],
+    right: (
+      <div className="flex flex-col gap-3 h-full content-start">
+        <Label>O que você encontra</Label>
+        <div className="grid grid-cols-2 gap-2 anim-up d1">
+          {[
+            { icon: Target,    title: 'KPIs do portfólio', desc: 'Projetos, valores e status em tempo real', c: 'text-blue-600 bg-blue-50' },
+            { icon: TrendingUp,title: 'Gráfico temporal',  desc: 'Toggle semana / mês / ano',               c: 'text-indigo-600 bg-indigo-50' },
+            { icon: BarChart3, title: 'Top projetos',      desc: 'Ranking por valor premiado',              c: 'text-green-600 bg-green-50' },
+            { icon: FolderPlus,title: 'Recentes',          desc: 'Atalhos para PQ, Equalização e Análises', c: 'text-amber-600 bg-amber-50' },
+          ].map(({ icon: Icon, title, desc, c }) => (
+            <div key={title} className="flex gap-2 p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${c}`}><Icon size={14} /></div>
+              <div>
+                <p className="text-xs font-semibold text-gray-800 leading-tight">{title}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">{desc}</p>
+              </div>
+            </div>
+          ))}
         </div>
-        <div className="flex flex-col gap-4">
-          <SLabel>Como navegar</SLabel>
-          <div className="flex flex-col gap-3">
-            <Step n={1} title="Acesse o Dashboard">Clique em Dashboard no menu lateral — é sempre a primeira opção.</Step>
-            <Step n={2} title="Escolha o período">No gráfico de valores, use os botões Semana / Mês / Ano para alterar a granularidade.</Step>
-            <Step n={3} title="Acesse projetos rapidamente">Em Projetos Recentes, passe o mouse sobre o card para revelar os atalhos: PQ, Equalização e Análises.</Step>
+        <Label>Como usar</Label>
+        <ContentCard className="anim-up d2">
+          <div className="flex flex-col gap-2.5">
+            <Row n={1} title="Acesse o Dashboard" sub="Primeira opção no menu lateral esquerdo." />
+            <Row n={2} title="Alterne o período" sub="Botões Semana / Mês / Ano no gráfico de valores." />
+            <Row n={3} title="Acesse um projeto" sub="Passe o mouse sobre o card para ver os atalhos." />
           </div>
-        </div>
+        </ContentCard>
+        <TipBox type="info">Os valores vêm do Baseline. Sem premiação registrada, os gráficos ficam em estado vazio.</TipBox>
       </div>
     ),
   },
 
   // ── 3. Projetos ───────────────────────────────────────────────────────────────
   {
-    id: 3, icon: FolderPlus, color: 'text-indigo-600', bg: 'bg-indigo-100',
-    title: 'Projetos', subtitle: 'Criar e organizar licitações',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        <div className="flex flex-col gap-4">
-          <SLabel>Criando um projeto</SLabel>
-          <div className="flex flex-col gap-3">
-            <Step n={1} title="Vá até Projetos">Menu lateral → ícone de pasta → Projetos.</Step>
-            <Step n={2} title="Clique em Novo Projeto">Botão azul no canto superior direito da listagem.</Step>
-            <Step n={3} title="Preencha os dados">Nome, descrição, empresa contratante e status inicial.</Step>
-            <Step n={4} title="Salve e acesse">O projeto aparece na lista. Clique para entrar e ver o menu Projeto Atual na sidebar.</Step>
-          </div>
-          <Tip type="warn">Ao excluir um projeto, <strong>todos os dados vinculados</strong> (PQ, propostas, revisões) são removidos permanentemente.</Tip>
+    icon: FolderPlus, title: 'Projetos', sub: 'Criar e organizar licitações',
+    bullets: ['Criar e configurar projetos', 'Entender os campos e status', 'Excluir projetos com segurança'],
+    right: (
+      <div className="grid grid-cols-2 gap-3 h-full content-start">
+        <div className="flex flex-col gap-3">
+          <Label>Criando um projeto</Label>
+          <ContentCard>
+            <div className="flex flex-col gap-2.5">
+              <Row n={1} title="Acesse Projetos" sub="Menu lateral → ícone de pasta." />
+              <Row n={2} title="Novo Projeto" sub="Botão azul no canto superior direito." />
+              <Row n={3} title="Preencha os dados" sub="Nome, descrição, empresa, status." />
+              <Row n={4} title="Salve e entre" sub="O menu Projeto Atual aparece na sidebar." />
+            </div>
+          </ContentCard>
+          <TipBox type="warn">Excluir um projeto remove <strong>todos os dados vinculados</strong> permanentemente.</TipBox>
         </div>
-        <div className="flex flex-col gap-4">
-          <SLabel>Campos do projeto</SLabel>
-          <div className="overflow-hidden rounded-xl border border-gray-200">
+        <div className="flex flex-col gap-3">
+          <Label>Campos do projeto</Label>
+          <ContentCard>
             <table className="w-full text-xs">
-              <thead className="bg-gray-50">
-                <tr>{['Campo', 'Exemplo', 'Req.'].map((h) => <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">{h}</th>)}</tr>
-              </thead>
               <tbody className="divide-y divide-gray-100">
-                {[['Nome', 'Reforma Sede 2025', '✓'], ['Descrição', 'Obras civis — escopo reduzido', '—'], ['Empresa', 'Construtora ABC', '—'], ['Status', 'Em andamento', '✓']].map(([c, e, r]) => (
-                  <tr key={c} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium text-gray-700">{c}</td>
-                    <td className="px-3 py-2 text-gray-400 font-mono text-[11px]">{e}</td>
-                    <td className="px-3 py-2 text-center">{r === '✓' ? <span className="text-green-500 font-bold">✓</span> : <span className="text-gray-300">—</span>}</td>
-                  </tr>
+                {[['Nome','Reforma Sede 2025','✓'],['Descrição','Obras civis','—'],['Empresa','Construtora ABC','—'],['Status','Em andamento','✓']].map(([c,e,r]) => (
+                  <tr key={c}><td className="py-1.5 font-medium text-gray-700 w-1/3">{c}</td><td className="py-1.5 text-gray-400 text-[11px]">{e}</td><td className="py-1.5 text-center">{r==='✓'?<span className="text-green-500 font-bold">✓</span>:<span className="text-gray-200">—</span>}</td></tr>
                 ))}
               </tbody>
             </table>
-          </div>
-          <SLabel>Status disponíveis</SLabel>
-          <div className="grid grid-cols-3 gap-2">
-            {[{ label: 'Em Andamento', c: 'bg-blue-50 text-blue-700 border-blue-100' }, { label: 'Concluído', c: 'bg-green-50 text-green-700 border-green-100' }, { label: 'Cancelado', c: 'bg-gray-50 text-gray-500 border-gray-100' }].map((s) => (
-              <div key={s.label} className={`text-center p-2 rounded-xl border text-xs font-semibold ${s.c}`}>{s.label}</div>
+          </ContentCard>
+          <Label>Status disponíveis</Label>
+          <div className="grid grid-cols-1 gap-1.5">
+            {[{ l:'Em Andamento',c:'bg-blue-50 text-blue-700 border-blue-100' },{ l:'Concluído',c:'bg-green-50 text-green-700 border-green-100' },{ l:'Cancelado',c:'bg-gray-100 text-gray-500 border-gray-100' }].map(s => (
+              <div key={s.l} className={`px-3 py-2 rounded-xl border text-xs font-semibold text-center ${s.c}`}>{s.l}</div>
             ))}
           </div>
         </div>
@@ -197,67 +250,44 @@ const chapters: Chapter[] = [
 
   // ── 4. Planilha PQ ────────────────────────────────────────────────────────────
   {
-    id: 4, icon: Table2, color: 'text-green-600', bg: 'bg-green-100',
-    title: 'Planilha PQ', subtitle: 'Quantitativos do projeto',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        <div className="flex flex-col gap-4">
-          <SLabel>Estrutura de um item PQ</SLabel>
-          <div className="overflow-hidden rounded-xl border border-gray-200">
+    icon: Table2, title: 'Planilha PQ', sub: 'Quantitativos do projeto',
+    bullets: ['Estrutura de um item PQ', 'Inserir manualmente ou via Excel', 'Exportar para auditoria'],
+    right: (
+      <div className="grid grid-cols-2 gap-3 h-full content-start">
+        <div className="flex flex-col gap-3">
+          <Label>Campos de cada item</Label>
+          <ContentCard>
             <table className="w-full text-xs">
-              <thead className="bg-gray-50">
-                <tr>{['Campo', 'Exemplo', 'Req.'].map((h) => <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">{h}</th>)}</tr>
-              </thead>
               <tbody className="divide-y divide-gray-100">
-                {[
-                  ['Código', 'EST-001', '✓'],
-                  ['Descrição', 'Escavação mecânica em solo', '✓'],
-                  ['Unidade', 'm³', '✓'],
-                  ['Quantidade', '1.500,00', '✓'],
-                  ['Preço Ref.', 'R$ 45,00', '—'],
-                  ['Disciplina', 'Terraplenagem', '—'],
-                  ['Categoria', 'Serviços', '—'],
-                ].map(([c, e, r]) => (
-                  <tr key={c} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium text-gray-700">{c}</td>
-                    <td className="px-3 py-2 text-gray-400 font-mono text-[11px]">{e}</td>
-                    <td className="px-3 py-2 text-center">{r === '✓' ? <span className="text-green-500 font-bold">✓</span> : <span className="text-gray-300">—</span>}</td>
-                  </tr>
+                {[['Código','EST-001','✓'],['Descrição','Escavação mecânica','✓'],['Unidade','m³','✓'],['Quantidade','1.500','✓'],['Preço Ref.','R$ 45,00','—'],['Disciplina','Terraplenagem','—'],['Categoria','Serviços','—']].map(([c,e,r]) => (
+                  <tr key={c}><td className="py-1.5 font-medium text-gray-700 w-1/3 text-[11px]">{c}</td><td className="py-1.5 text-gray-400 font-mono text-[11px]">{e}</td><td className="py-1.5 text-center text-[11px]">{r==='✓'?<span className="text-green-500 font-bold">✓</span>:<span className="text-gray-200">—</span>}</td></tr>
                 ))}
               </tbody>
             </table>
-          </div>
-          <Tip type="info">Use Disciplina e Categoria consistentemente — eles alimentam os gráficos de Análises e permitem filtrar na Equalização.</Tip>
+          </ContentCard>
+          <TipBox type="info">Use Disciplina e Categoria consistentemente — alimentam os gráficos de Análises.</TipBox>
         </div>
         <div className="flex flex-col gap-3">
-          <SLabel>Formas de inserir dados</SLabel>
-          <div className="p-3 bg-white border border-blue-100 rounded-xl">
-            <div className="flex items-center gap-2 mb-1.5">
-              <div className="w-6 h-6 rounded bg-blue-100 flex items-center justify-center"><Plus size={12} className="text-blue-600" /></div>
-              <span className="font-semibold text-sm text-gray-800">Inserção manual</span>
-            </div>
-            <p className="text-xs text-gray-500">Clique em <strong>+ Adicionar Item</strong> e preencha os campos na tabela. Ideal para projetos pequenos ou ajustes pontuais.</p>
-          </div>
-          <div className="p-3 bg-white border border-green-100 rounded-xl">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded bg-green-100 flex items-center justify-center"><Upload size={12} className="text-green-600" /></div>
-                <span className="font-semibold text-sm text-gray-800">Importar Excel</span>
-              </div>
-              <span className="text-[10px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-semibold">Recomendado</span>
-            </div>
-            <ol className="text-xs text-gray-500 space-y-0.5 list-decimal list-inside">
-              <li>Clique em <strong>Baixar Template</strong> para obter o modelo</li>
-              <li>Preencha a planilha com seus quantitativos</li>
-              <li>Faça upload com <strong>Importar</strong></li>
-            </ol>
-          </div>
-          <div className="p-3 bg-white border border-amber-100 rounded-xl">
-            <div className="flex items-center gap-2 mb-1.5">
-              <div className="w-6 h-6 rounded bg-amber-100 flex items-center justify-center"><Download size={12} className="text-amber-600" /></div>
-              <span className="font-semibold text-sm text-gray-800">Exportar Excel</span>
-            </div>
-            <p className="text-xs text-gray-500">Baixe o PQ atual em .xlsx para compartilhar com a equipe ou auditar.</p>
+          <Label>Como inserir dados</Label>
+          <div className="flex flex-col gap-2">
+            {[
+              { icon: Plus, title: 'Inserção manual', desc: '+ Adicionar Item na tabela. Ideal para ajustes pontuais.', c: 'bg-blue-100 text-blue-600', border: 'border-blue-100' },
+              { icon: Upload, title: 'Importar Excel', desc: 'Baixe o Template, preencha e faça upload. Recomendado para grandes quantitativos.', c: 'bg-green-100 text-green-600', border: 'border-green-100', tag: true },
+              { icon: Download, title: 'Exportar Excel', desc: 'Baixe o PQ atual em .xlsx para compartilhar ou auditar.', c: 'bg-amber-100 text-amber-600', border: 'border-amber-100' },
+            ].map(({ icon: Icon, title, desc, c, border, tag }) => (
+              <ContentCard key={title} className={`border ${border}`}>
+                <div className="flex items-start gap-2.5">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${c}`}><Icon size={14} /></div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold text-gray-800">{title}</p>
+                      {tag && <span className="text-[9px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded-full font-bold">Recomendado</span>}
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">{desc}</p>
+                  </div>
+                </div>
+              </ContentCard>
+            ))}
           </div>
         </div>
       </div>
@@ -266,63 +296,55 @@ const chapters: Chapter[] = [
 
   // ── 5. Revisões ──────────────────────────────────────────────────────────────
   {
-    id: 5, icon: GitBranch, color: 'text-violet-600', bg: 'bg-violet-100',
-    title: 'Revisões', subtitle: 'Versionamento do PQ',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        <div className="flex flex-col gap-4">
-          <SLabel>Como revisões funcionam</SLabel>
-          <p className="text-xs text-gray-500 leading-relaxed">Revisões são <strong>snapshots imutáveis</strong> do PQ em um determinado momento. Permitem rastrear mudanças de escopo ao longo do processo licitatório.</p>
-          <div className="flex items-center gap-2 py-2">
-            {[{ label: 'Rev 0', desc: 'Inicial', c: 'bg-blue-600' }, { label: 'Rev 1', desc: 'Addendum', c: 'bg-violet-600' }, { label: 'Rev 2', desc: 'Retificação', c: 'bg-indigo-600' }].map((r, i, arr) => (
-              <React.Fragment key={r.label}>
-                <div className="flex flex-col items-center gap-1">
-                  <div className={`w-10 h-10 rounded-full ${r.c} text-white flex items-center justify-center text-xs font-bold shadow`}>{r.label}</div>
-                  <span className="text-[10px] text-gray-400">{r.desc}</span>
-                </div>
-                {i < arr.length - 1 && <div className="flex-1 h-0.5 bg-gradient-to-r from-blue-200 to-violet-200 mt-3" />}
-              </React.Fragment>
-            ))}
-          </div>
-          <SLabel>Criando uma revisão</SLabel>
-          <div className="flex flex-col gap-2">
-            <Step n={1} title="Acesse Equalização do projeto" />
-            <Step n={2} title="Clique em + Nova Revisão">O sistema sugere o próximo número automaticamente.</Step>
-            <Step n={3} title="Defina número e descrição">Ex.: "Addendum 01 — inclusão de itens de drenagem"</Step>
-            <Step n={4} title="Revisão criada com dados atuais do PQ">Alterações futuras no PQ não afetam revisões já criadas.</Step>
-          </div>
+    icon: GitBranch, title: 'Revisões', sub: 'Versionamento do PQ',
+    bullets: ['Criar snapshots do PQ', 'Rastrear mudanças de escopo', 'Comparar duas revisões automaticamente'],
+    right: (
+      <div className="grid grid-cols-2 gap-3 h-full content-start">
+        <div className="flex flex-col gap-3">
+          <Label>O que são revisões</Label>
+          <ContentCard>
+            <p className="text-xs text-gray-600 leading-relaxed mb-3">Snapshots <strong>imutáveis</strong> do PQ em um momento específico. Alterações futuras não afetam revisões já criadas.</p>
+            <div className="flex items-center gap-1 mt-2">
+              {[{l:'Rev 0',c:'bg-blue-600'},{l:'Rev 1',c:'bg-violet-600'},{l:'Rev 2',c:'bg-indigo-600'}].map((r,i,arr) => (
+                <React.Fragment key={r.l}>
+                  <div className={`${r.c} text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg`}>{r.l}</div>
+                  {i < arr.length-1 && <ArrowRight size={12} className="text-gray-300" />}
+                </React.Fragment>
+              ))}
+            </div>
+          </ContentCard>
+          <Label>Criando uma revisão</Label>
+          <ContentCard>
+            <div className="flex flex-col gap-2">
+              <Row n={1} title="Acesse Equalização" sub="Menu lateral → Projeto Atual → Equalização." />
+              <Row n={2} title="+ Nova Revisão" sub="O sistema sugere o próximo número." />
+              <Row n={3} title="Defina a descrição" sub="Ex.: Addendum 01 — itens de drenagem." />
+            </div>
+          </ContentCard>
+          <TipBox type="ok">Crie uma revisão <strong>antes</strong> de alterar o PQ para garantir rastreabilidade.</TipBox>
         </div>
-        <div className="flex flex-col gap-4">
-          <SLabel>Comparando revisões em Análises</SLabel>
+        <div className="flex flex-col gap-3">
+          <Label>Comparando em Análises</Label>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { label: 'Itens Adicionados', c: 'bg-green-50 text-green-700 border-green-200' },
-              { label: 'Itens Removidos', c: 'bg-red-50 text-red-700 border-red-200' },
-              { label: 'Itens Alterados', c: 'bg-amber-50 text-amber-700 border-amber-200' },
-              { label: 'Sem Alteração', c: 'bg-gray-50 text-gray-500 border-gray-200' },
-            ].map((b) => (
-              <div key={b.label} className={`p-3 rounded-xl border text-center text-xs font-semibold ${b.c}`}>{b.label}</div>
+              { l:'Adicionados',  c:'bg-green-50 text-green-700 border-green-100' },
+              { l:'Removidos',    c:'bg-red-50 text-red-700 border-red-100' },
+              { l:'Alterados',    c:'bg-amber-50 text-amber-700 border-amber-100' },
+              { l:'Sem alteração',c:'bg-gray-50 text-gray-500 border-gray-100' },
+            ].map(b => (
+              <div key={b.l} className={`p-2.5 rounded-xl border text-center text-xs font-semibold ${b.c}`}>{b.l}</div>
             ))}
           </div>
-          <p className="text-xs text-gray-500 leading-relaxed">
-            Na aba <strong>Revisões</strong> dentro de Análises, selecione duas revisões para ver automaticamente os deltas de quantidade e valor por item.
-          </p>
-          <Tip type="success">
-            <strong>Boa prática:</strong> Crie uma revisão <em>antes</em> de fazer alterações significativas no PQ para garantir rastreabilidade completa.
-          </Tip>
-          <SLabel>Informações exibidas nos itens alterados</SLabel>
-          <div className="overflow-hidden rounded-xl border border-gray-200">
+          <Label>Colunas nos itens alterados</Label>
+          <ContentCard>
             <table className="w-full text-xs">
-              <thead className="bg-gray-50">
-                <tr>{['Coluna', 'O que mostra'].map((h) => <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-gray-400 uppercase">{h}</th>)}</tr>
-              </thead>
               <tbody className="divide-y divide-gray-100">
-                {[['Qtd A / Qtd B', 'Quantidade nas duas revisões'], ['Δ Qtd', 'Variação numérica de quantidade'], ['Valor A / B', 'Valor total calculado'], ['Δ Valor', 'Diferença de valor em R$'], ['Campos', 'Outros campos que mudaram']].map(([c, d]) => (
-                  <tr key={c}><td className="px-3 py-1.5 font-mono text-[11px] text-gray-600">{c}</td><td className="px-3 py-1.5 text-gray-400">{d}</td></tr>
+                {[['Qtd A / Qtd B','Quantidade nas duas revisões'],['Δ Qtd','Variação numérica'],['Valor A / B','Total calculado'],['Δ Valor','Diferença em R$'],['Campos','Outros campos alterados']].map(([c,d]) => (
+                  <tr key={c}><td className="py-1 font-mono text-[11px] text-gray-600 w-1/3">{c}</td><td className="py-1 text-gray-400 text-[11px]">{d}</td></tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </ContentCard>
         </div>
       </div>
     ),
@@ -330,51 +352,50 @@ const chapters: Chapter[] = [
 
   // ── 6. Propostas ─────────────────────────────────────────────────────────────
   {
-    id: 6, icon: FileSpreadsheet, color: 'text-amber-600', bg: 'bg-amber-100',
-    title: 'Propostas', subtitle: 'Cadastrar fornecedores e preços',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        <div className="flex flex-col gap-4">
-          <SLabel>Criando uma proposta</SLabel>
-          <div className="flex flex-col gap-2.5">
-            <Step n={1} title="Vá para Equalização">Menu lateral → Projeto Atual → Equalização.</Step>
-            <Step n={2} title="Escolha a revisão destino">As propostas são vinculadas a uma revisão específica.</Step>
-            <Step n={3} title="Clique em + Nova Proposta">Dentro do painel da revisão correta.</Step>
-            <Step n={4} title="Preencha os dados da proposta">Empresa, número/protocolo e data de recebimento.</Step>
-          </div>
-          <Tip type="warn">Se o PQ mudar e você criar uma nova revisão, será necessário criar novas propostas nessa revisão — as antigas ficam vinculadas à revisão original.</Tip>
+    icon: FileSpreadsheet, title: 'Propostas', sub: 'Fornecedores e preços',
+    bullets: ['Cadastrar uma nova proposta', 'Importar preços via Excel', 'Inserir preços manualmente'],
+    right: (
+      <div className="grid grid-cols-2 gap-3 h-full content-start">
+        <div className="flex flex-col gap-3">
+          <Label>Criando uma proposta</Label>
+          <ContentCard>
+            <div className="flex flex-col gap-2.5">
+              <Row n={1} title="Equalização do projeto" sub="Menu lateral → Projeto Atual → Equalização." />
+              <Row n={2} title="Escolha a revisão" sub="Propostas são vinculadas a uma revisão." />
+              <Row n={3} title="+ Nova Proposta" sub="Dentro do painel da revisão correta." />
+              <Row n={4} title="Preencha os dados" sub="Empresa, nº protocolo e data." />
+            </div>
+          </ContentCard>
+          <TipBox type="warn">Nova revisão = novas propostas. As propostas da revisão antiga ficam vinculadas a ela.</TipBox>
         </div>
         <div className="flex flex-col gap-3">
-          <SLabel>Inserindo preços</SLabel>
-          <div className="p-3 bg-white border border-amber-100 rounded-xl">
+          <Label>Inserindo preços</Label>
+          <ContentCard className="border border-amber-100">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-semibold text-sm text-gray-800">Template Excel</span>
-              <span className="text-[10px] bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full font-semibold">Recomendado</span>
+              <p className="text-xs font-semibold text-gray-800">Template Excel</p>
+              <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full font-bold">Recomendado</span>
             </div>
-            <ol className="text-xs text-gray-500 space-y-1 list-decimal list-inside">
-              <li>Clique em <strong>Baixar Template</strong> da proposta</li>
-              <li>O arquivo já vem com todos os itens do PQ</li>
-              <li>Preencha a coluna <em>Preço Unitário</em></li>
-              <li>Faça upload com <strong>Importar Excel</strong></li>
+            <ol className="text-[11px] text-gray-500 space-y-1 list-decimal list-inside">
+              <li>Clique em <strong>Baixar Template</strong></li>
+              <li>Arquivo já vem com os itens do PQ</li>
+              <li>Preencha a coluna Preço Unitário</li>
+              <li>Faça upload com <strong>Importar</strong></li>
             </ol>
-          </div>
-          <div className="p-3 bg-white border border-gray-100 rounded-xl">
-            <span className="font-semibold text-sm text-gray-800">Inserção manual</span>
-            <p className="text-xs text-gray-500 mt-1">Clique sobre a proposta para expandir e edite os preços diretamente na tabela. Use Tab para navegar entre campos.</p>
-          </div>
-          <SLabel>Campos da proposta</SLabel>
-          <div className="overflow-hidden rounded-xl border border-gray-200">
+          </ContentCard>
+          <ContentCard>
+            <p className="text-xs font-semibold text-gray-800 mb-1">Inserção manual</p>
+            <p className="text-[11px] text-gray-500">Expanda a proposta e edite os preços na tabela. Use <kbd className="font-mono bg-gray-100 px-1 rounded text-[10px]">Tab</kbd> para navegar entre campos.</p>
+          </ContentCard>
+          <Label>Campos da proposta</Label>
+          <ContentCard>
             <table className="w-full text-xs">
               <tbody className="divide-y divide-gray-100">
-                {[['Empresa', 'Nome do licitante'], ['Nº / Protocolo', 'Referência da proposta'], ['Data', 'Data de recebimento']].map(([c, d]) => (
-                  <tr key={c} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium text-gray-700 w-1/3">{c}</td>
-                    <td className="px-3 py-2 text-gray-400">{d}</td>
-                  </tr>
+                {[['Empresa','Nome do licitante'],['Nº/Protocolo','Referência da proposta'],['Data','Data de recebimento']].map(([c,d]) => (
+                  <tr key={c}><td className="py-1 font-medium text-gray-700 text-[11px] w-1/3">{c}</td><td className="py-1 text-gray-400 text-[11px]">{d}</td></tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </ContentCard>
         </div>
       </div>
     ),
@@ -382,64 +403,59 @@ const chapters: Chapter[] = [
 
   // ── 7. Equalização ───────────────────────────────────────────────────────────
   {
-    id: 7, icon: Building2, color: 'text-teal-600', bg: 'bg-teal-100',
-    title: 'Equalização', subtitle: 'Comparar e selecionar propostas',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        <div className="flex flex-col gap-4">
-          <SLabel>Lendo a tabela de equalização</SLabel>
-          <div className="overflow-hidden rounded-xl border border-gray-200">
-            <table className="w-full text-xs">
-              <thead className="bg-gray-800 text-white">
-                <tr>
-                  <th className="px-3 py-2.5 text-left">Item</th>
-                  <th className="px-3 py-2.5 text-right">Referência</th>
-                  <th className="px-3 py-2.5 text-right text-green-300">Fornec. A</th>
-                  <th className="px-3 py-2.5 text-right">Fornec. B</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                <tr>
-                  <td className="px-3 py-2 text-gray-700">EST-001</td>
-                  <td className="px-3 py-2 text-right text-gray-400">R$ 67.500</td>
-                  <td className="px-3 py-2 text-right font-bold text-green-600 bg-green-50">R$ 58.200</td>
-                  <td className="px-3 py-2 text-right text-gray-400">R$ 72.000</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-2 text-gray-700">DRE-001</td>
-                  <td className="px-3 py-2 text-right text-gray-400">R$ 34.000</td>
-                  <td className="px-3 py-2 text-right text-gray-400">R$ 38.500</td>
-                  <td className="px-3 py-2 text-right font-bold text-green-600 bg-green-50">R$ 31.200</td>
-                </tr>
-              </tbody>
-            </table>
-            <div className="bg-gray-50 px-3 py-1.5 text-[10px] text-gray-400 flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded bg-green-100 border border-green-300" /> Menor preço por item destacado em verde
+    icon: Building2, title: 'Equalização', sub: 'Comparar propostas',
+    bullets: ['Ler a tabela de equalização', 'Identificar o menor preço por item', 'Filtrar por disciplina e exportar'],
+    right: (
+      <div className="grid grid-cols-2 gap-3 h-full content-start">
+        <div className="flex flex-col gap-3">
+          <Label>Tabela de equalização</Label>
+          <ContentCard>
+            <div className="overflow-hidden rounded-lg border border-gray-200 text-xs">
+              <table className="w-full">
+                <thead className="bg-gray-800 text-white">
+                  <tr>
+                    <th className="px-2 py-2 text-left text-[10px]">Item</th>
+                    <th className="px-2 py-2 text-right text-[10px]">Ref.</th>
+                    <th className="px-2 py-2 text-right text-green-300 text-[10px]">Forn. A</th>
+                    <th className="px-2 py-2 text-right text-[10px]">Forn. B</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  <tr>
+                    <td className="px-2 py-1.5 text-gray-700 text-[11px]">EST-001</td>
+                    <td className="px-2 py-1.5 text-right text-gray-400 text-[11px]">67.500</td>
+                    <td className="px-2 py-1.5 text-right font-bold text-green-600 bg-green-50 text-[11px]">58.200</td>
+                    <td className="px-2 py-1.5 text-right text-gray-400 text-[11px]">72.000</td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1.5 text-gray-700 text-[11px]">DRE-001</td>
+                    <td className="px-2 py-1.5 text-right text-gray-400 text-[11px]">34.000</td>
+                    <td className="px-2 py-1.5 text-right text-gray-400 text-[11px]">38.500</td>
+                    <td className="px-2 py-1.5 text-right font-bold text-green-600 bg-green-50 text-[11px]">31.200</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
-          <Tip type="info">A equalização não premia automaticamente. O registro da empresa vencedora é feito manualmente no <strong>Baseline</strong> após a decisão.</Tip>
+            <p className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
+              <span className="w-3 h-3 rounded bg-green-100 border border-green-300 inline-block" /> Menor preço por item destacado em verde
+            </p>
+          </ContentCard>
+          <TipBox type="info">A equalização não premia automaticamente — registre a vencedora no Baseline após a decisão.</TipBox>
         </div>
-        <div className="flex flex-col gap-4">
-          <SLabel>Fluxo de trabalho</SLabel>
-          <div className="flex flex-col gap-2.5">
-            <Step n={1} title="Verifique que todas as propostas estão preenchidas">Confira se os preços foram importados corretamente para todos os itens.</Step>
-            <Step n={2} title="Analise os totais por fornecedor">O cabeçalho de cada coluna exibe o valor total da proposta.</Step>
-            <Step n={3} title="Use filtros por disciplina"><Filter size={11} className="inline" /> Segmente a visualização para analisar por disciplina ou categoria.</Step>
-            <Step n={4} title="Exporte para referência">Gere um Excel com a equalização completa para apresentação interna.</Step>
-          </div>
-          <SLabel>Atalhos úteis</SLabel>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { icon: Filter, label: 'Filtrar por disciplina', color: 'slate' },
-              { icon: Download, label: 'Exportar equalização', color: 'green' },
-            ].map(({ icon: Icon, label, color }) => (
-              <div key={label} className="flex items-center gap-2 p-2.5 bg-white border border-gray-100 rounded-lg">
-                <div className={`w-6 h-6 rounded flex items-center justify-center bg-${color}-100`}>
-                  <Icon size={12} className={`text-${color}-600`} />
-                </div>
-                <span className="text-xs text-gray-600">{label}</span>
-              </div>
-            ))}
+        <div className="flex flex-col gap-3">
+          <Label>Fluxo de trabalho</Label>
+          <ContentCard>
+            <div className="flex flex-col gap-2.5">
+              <Row n={1} title="Verifique os preços" sub="Confirme 100% dos itens preenchidos por fornecedor." />
+              <Row n={2} title="Analise os totais" sub="Cabeçalho de cada coluna = valor total da proposta." />
+              <Row n={3} title="Filtre por disciplina" sub="Segmente para análise parcial do escopo." />
+              <Row n={4} title="Exporte a equalização" sub="Excel completo para apresentação interna." />
+            </div>
+          </ContentCard>
+          <Label>Ações disponíveis</Label>
+          <div className="flex flex-wrap gap-2">
+            <Pill icon={Filter}   label="Filtrar disciplina" color="bg-slate-700" />
+            <Pill icon={Download} label="Exportar Excel"     color="bg-emerald-600" />
           </div>
         </div>
       </div>
@@ -448,42 +464,43 @@ const chapters: Chapter[] = [
 
   // ── 8. Análises ───────────────────────────────────────────────────────────────
   {
-    id: 8, icon: BarChart3, color: 'text-rose-600', bg: 'bg-rose-100',
-    title: 'Análises', subtitle: 'Gráficos, Pareto e Revisões',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        <div className="flex flex-col gap-3">
-          <SLabel>As 4 abas de análise</SLabel>
+    icon: BarChart3, title: 'Análises', sub: 'Gráficos, Pareto e Revisões',
+    bullets: ['Curva ABC / Pareto por valor', 'Análise por disciplina e categoria', 'Comparativo automático entre revisões'],
+    right: (
+      <div className="grid grid-cols-2 gap-3 h-full content-start">
+        <div className="flex flex-col gap-2">
+          <Label>As 4 abas</Label>
           {[
-            { border: 'border-blue-400', title: 'Curva ABC / Pareto', desc: 'Classifica itens por valor acumulado: A (70%), B (70–90%), C (acima de 90%). Total Geral aparece ao lado dos badges. Troque entre Referência e Propostas.' },
-            { border: 'border-green-400', title: 'Disciplinas', desc: 'Gráfico de barras por disciplina. Identifica onde está concentrado o valor do projeto.' },
-            { border: 'border-amber-400', title: 'Categorias', desc: 'Segmentação por categoria de item (serviços, materiais, equipamentos).' },
-            { border: 'border-violet-400', title: 'Revisões', desc: 'Compare duas revisões e veja itens adicionados, removidos, alterados (com Δ qtd e Δ valor) e sem alteração.' },
-          ].map((tab) => (
-            <div key={tab.title} className={`p-3 bg-white border-l-4 ${tab.border} rounded-r-xl shadow-sm`}>
-              <h4 className="font-semibold text-sm text-gray-900 mb-0.5">{tab.title}</h4>
-              <p className="text-xs text-gray-500 leading-relaxed">{tab.desc}</p>
+            { border: 'border-l-blue-400',   title: 'Curva ABC / Pareto',  desc: 'Classifica itens por valor acumulado: A=70%, B=70–90%, C>90%. Total Geral ao lado dos badges.' },
+            { border: 'border-l-green-400',  title: 'Disciplinas',         desc: 'Gráfico e tabela por disciplina. Identifica onde está o valor do projeto.' },
+            { border: 'border-l-amber-400',  title: 'Categorias',          desc: 'Segmentação por tipo de item: serviços, materiais, equipamentos.' },
+            { border: 'border-l-violet-400', title: 'Revisões',            desc: 'Compare duas revisões: adicionados, removidos, alterados (Δ qtd e Δ valor) e inalterados.' },
+          ].map(t => (
+            <div key={t.title} className={`p-2.5 bg-white border-l-4 ${t.border} rounded-r-xl shadow-sm border border-gray-100 anim-up`}>
+              <p className="font-semibold text-xs text-gray-900">{t.title}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">{t.desc}</p>
             </div>
           ))}
         </div>
-        <div className="flex flex-col gap-4">
-          <SLabel>Seletor de revisão</SLabel>
-          <p className="text-xs text-gray-500 leading-relaxed">
-            Quando há mais de uma revisão, um seletor aparece no topo da página. Trocar a revisão <strong>refaz todos os gráficos</strong> automaticamente.
-          </p>
-          <Tip type="success">
-            <strong>Estratégia Pareto:</strong> itens da classe A concentram 70% do valor. Foque a negociação nesses itens para o maior impacto na redução de custos.
-          </Tip>
-          <SLabel>Exportações disponíveis</SLabel>
-          <div className="grid grid-cols-1 gap-2">
-            <MiniCard icon={Download} title="Exportar Excel completo" desc="Todas as abas em um único arquivo .xlsx com tabelas e totais." color="green" />
-          </div>
-          <SLabel>Como acessar</SLabel>
-          <div className="flex flex-col gap-2">
-            <Step n={1} title="Menu lateral → Projeto Atual → Análises" />
-            <Step n={2} title="Selecione a revisão desejada no seletor do topo" />
-            <Step n={3} title="Clique na aba desejada: ABC, Disciplinas, Categorias ou Revisões" />
-          </div>
+        <div className="flex flex-col gap-3">
+          <Label>Como acessar</Label>
+          <ContentCard>
+            <div className="flex flex-col gap-2">
+              <Row n={1} title="Projeto Atual → Análises" sub="Menu lateral do projeto." />
+              <Row n={2} title="Selecione a revisão" sub="Seletor no topo refaz todos os gráficos." />
+              <Row n={3} title="Escolha a aba" sub="ABC, Disciplinas, Categorias ou Revisões." />
+            </div>
+          </ContentCard>
+          <TipBox type="ok"><strong>Estratégia Pareto:</strong> Itens classe A = 70% do valor. Foque a negociação aí para maior impacto.</TipBox>
+          <ContentCard>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center"><Download size={15} className="text-green-600" /></div>
+              <div>
+                <p className="text-xs font-semibold text-gray-800">Exportar Excel completo</p>
+                <p className="text-[11px] text-gray-400">Todas as abas em um único .xlsx</p>
+              </div>
+            </div>
+          </ContentCard>
         </div>
       </div>
     ),
@@ -491,29 +508,41 @@ const chapters: Chapter[] = [
 
   // ── 9. Baseline ───────────────────────────────────────────────────────────────
   {
-    id: 9, icon: Trophy, color: 'text-yellow-600', bg: 'bg-yellow-100',
-    title: 'Baseline', subtitle: 'Histórico de premiações',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        <div className="flex flex-col gap-4">
-          <SLabel>Como registrar uma premiação</SLabel>
-          <div className="flex flex-col gap-2.5">
-            <Step n={1} title="Acesse o Baseline">Menu lateral principal → ícone de troféu → Baseline.</Step>
-            <Step n={2} title="Localize a proposta vencedora">Propostas listadas e agrupadas por projeto.</Step>
-            <Step n={3} title="Marque como premiada">Informe data de premiação e confirme o valor total do contrato.</Step>
-            <Step n={4} title="Dashboard atualizado automaticamente">O projeto aparece com valor premiado nos gráficos e KPIs.</Step>
-          </div>
-          <Tip type="info">O Baseline é a única fonte de verdade para os valores do Dashboard. Projetos sem premiação não aparecem nos KPIs e gráficos de valor.</Tip>
+    icon: Trophy, title: 'Baseline', sub: 'Histórico de premiações',
+    bullets: ['Registrar empresa vencedora', 'Associar valor e data', 'Alimentar o Dashboard automaticamente'],
+    right: (
+      <div className="grid grid-cols-2 gap-3 h-full content-start">
+        <div className="flex flex-col gap-3">
+          <Label>Registrando uma premiação</Label>
+          <ContentCard>
+            <div className="flex flex-col gap-2.5">
+              <Row n={1} title="Acesse o Baseline" sub="Menu lateral → ícone de troféu." />
+              <Row n={2} title="Localize a proposta" sub="Propostas agrupadas por projeto." />
+              <Row n={3} title="Marque como premiada" sub="Informe data e confirme o valor do contrato." />
+              <Row n={4} title="Dashboard atualizado" sub="KPIs e gráficos refletem a premiação imediatamente." />
+            </div>
+          </ContentCard>
+          <TipBox type="info">Baseline é a única fonte de verdade para os valores do Dashboard.</TipBox>
         </div>
         <div className="flex flex-col gap-3">
-          <SLabel>O que o Baseline consolida</SLabel>
-          <MiniCard icon={Award} title="Empresa vencedora" desc="Por projeto e proposta premiada." color="yellow" />
-          <MiniCard icon={TrendingUp} title="Valor premiado" desc="Total do contrato fechado." color="green" />
-          <MiniCard icon={BarChart3} title="Data de premiação" desc="Para alimentar a análise temporal do Dashboard." color="blue" />
-          <MiniCard icon={Trophy} title="Histórico completo" desc="Todos os contratos premiados em uma visão única." color="slate" />
-          <Tip type="success">
-            Manter o Baseline atualizado garante que o Dashboard reflita o portfólio real de contratos da empresa.
-          </Tip>
+          <Label>O que é consolidado</Label>
+          <div className="flex flex-col gap-2">
+            {[
+              { icon: Award,     title: 'Empresa vencedora', desc: 'Por projeto e proposta',    c: 'bg-yellow-50 text-yellow-600' },
+              { icon: TrendingUp,title: 'Valor premiado',    desc: 'Total do contrato',         c: 'bg-green-50 text-green-600' },
+              { icon: BarChart3, title: 'Data de premiação', desc: 'Para análise temporal',     c: 'bg-blue-50 text-blue-600' },
+              { icon: Layers,    title: 'Histórico completo',desc: 'Todos os contratos',        c: 'bg-slate-100 text-slate-600' },
+            ].map(({ icon: Icon, title, desc, c }) => (
+              <div key={title} className="flex gap-2.5 p-2.5 bg-white border border-gray-100 rounded-xl shadow-sm">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${c}`}><Icon size={14} /></div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-800 leading-tight">{title}</p>
+                  <p className="text-[11px] text-gray-400">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <TipBox type="ok">Mantenha o Baseline atualizado para que o Dashboard reflita o portfólio real.</TipBox>
         </div>
       </div>
     ),
@@ -521,53 +550,44 @@ const chapters: Chapter[] = [
 
   // ── 10. Dicas ────────────────────────────────────────────────────────────────
   {
-    id: 10, icon: Lightbulb, color: 'text-orange-600', bg: 'bg-orange-100',
-    title: 'Dicas Avançadas', subtitle: 'Fluxo ideal e boas práticas',
-    content: (
-      <div className="grid grid-cols-2 gap-5 h-full">
-        <div className="flex flex-col gap-4">
-          <SLabel>Fluxo ideal de trabalho</SLabel>
-          <div className="flex flex-col gap-1.5">
+    icon: Lightbulb, title: 'Dicas Avançadas', sub: 'Fluxo ideal e boas práticas',
+    bullets: ['Fluxo completo de trabalho', 'Checklist de aprovação', 'Perguntas frequentes'],
+    right: (
+      <div className="grid grid-cols-2 gap-3 h-full content-start">
+        <div className="flex flex-col gap-3">
+          <Label>Fluxo ideal</Label>
+          <ContentCard>
             {[
-              { n: '1', l: 'Criar Projeto', s: 'Nome, status, empresa' },
-              { n: '2', l: 'Montar PQ', s: 'Importar Excel ou inserir' },
-              { n: '3', l: 'Criar Rev 0', s: 'Snapshot inicial' },
-              { n: '4', l: 'Receber Propostas', s: 'Uma por fornecedor' },
-              { n: '5', l: 'Equalizar', s: 'Comparar item a item' },
-              { n: '6', l: 'Analisar (Pareto)', s: 'Identificar itens críticos' },
-              { n: '7', l: 'Premiar no Baseline', s: 'Registrar empresa vencedora' },
-            ].map((s) => (
-              <div key={s.n} className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0">{s.n}</div>
-                <div className="flex-1 bg-white border border-gray-100 rounded-lg px-3 py-1.5 shadow-sm flex items-center justify-between">
-                  <span className="font-semibold text-xs text-gray-800">{s.l}</span>
-                  <span className="text-[10px] text-gray-400">{s.s}</span>
-                </div>
+              { n:1, l:'Criar Projeto',    s:'Nome, status, empresa' },
+              { n:2, l:'Montar PQ',        s:'Importar ou inserir itens' },
+              { n:3, l:'Criar Rev 0',      s:'Snapshot inicial' },
+              { n:4, l:'Propostas',        s:'Uma por fornecedor' },
+              { n:5, l:'Equalizar',        s:'Comparar item a item' },
+              { n:6, l:'Analisar (Pareto)',s:'Identificar itens críticos' },
+              { n:7, l:'Premiar',          s:'Registrar no Baseline' },
+            ].map(s => (
+              <div key={s.n} className="flex items-center gap-2 py-1 border-b border-gray-50 last:border-0">
+                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{s.n}</div>
+                <p className="text-xs font-semibold text-gray-800 flex-1">{s.l}</p>
+                <p className="text-[10px] text-gray-400">{s.s}</p>
               </div>
             ))}
-          </div>
+          </ContentCard>
         </div>
-        <div className="flex flex-col gap-4">
-          <SLabel>Checklist de aprovação</SLabel>
-          <div className="bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
-            {[
-              'PQ completo com disciplinas e categorias preenchidas',
-              'Revisão criada antes de qualquer mudança de escopo',
-              'Todas as propostas com 100% dos itens precificados',
-              'Análise Pareto executada',
-              'Comparativo de revisões gerado (se houve mudança)',
-              'Baseline atualizado com a empresa vencedora',
-            ].map((item) => (
-              <div key={item} className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
-                <CheckCircle2 size={13} className="text-green-500 flex-shrink-0" />
-                <span className="text-xs text-gray-600">{item}</span>
+        <div className="flex flex-col gap-3">
+          <Label>Checklist de aprovação</Label>
+          <ContentCard>
+            {['PQ completo com disciplinas e categorias','Revisão criada antes de mudanças de escopo','Todas as propostas 100% precificadas','Análise Pareto executada','Comparativo de revisões gerado','Baseline atualizado'].map(i => (
+              <div key={i} className="flex items-center gap-2 py-1 border-b border-gray-50 last:border-0">
+                <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
+                <p className="text-[11px] text-gray-600">{i}</p>
               </div>
             ))}
-          </div>
-          <div className="mt-auto p-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl text-white text-center">
-            <Zap size={20} className="mx-auto mb-2 text-yellow-300" />
-            <h3 className="font-bold text-sm mb-1">Guia concluído!</h3>
-            <p className="text-blue-100 text-xs">Você tem todos os conhecimentos para usar o sistema com eficiência. Este material está sempre disponível no menu lateral.</p>
+          </ContentCard>
+          <div className="p-4 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl text-white text-center">
+            <Zap size={18} className="mx-auto mb-1.5 text-yellow-300" />
+            <p className="font-bold text-sm mb-0.5">Guia concluído!</p>
+            <p className="text-blue-100 text-[11px] leading-relaxed">Este material está sempre disponível no menu lateral para consulta rápida.</p>
           </div>
         </div>
       </div>
@@ -575,133 +595,148 @@ const chapters: Chapter[] = [
   },
 ]
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function Help() {
-  const [active, setActive] = useState(0)
+  const [active, setActive]       = useState(0)
+  const [animKey, setAnimKey]     = useState(0)
   const [completed, setCompleted] = useState<Set<number>>(new Set())
 
-  const chapter = chapters[active]
+  const ch    = CHAPTERS[active]
+  const theme = THEMES[active]
 
   function goTo(idx: number) {
-    setCompleted((prev) => new Set([...prev, active]))
+    if (idx === active || idx < 0 || idx >= CHAPTERS.length) return
+    setCompleted(p => new Set([...p, active]))
     setActive(idx)
+    setAnimKey(k => k + 1)
   }
-  function next() { if (active < chapters.length - 1) goTo(active + 1) }
-  function prev() { if (active > 0) goTo(active - 1) }
+  function next() { goTo(active + 1) }
+  function prev() { goTo(active - 1) }
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'ArrowRight') next()
-      if (e.key === 'ArrowLeft') prev()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const h = (e: KeyboardEvent) => { if (e.key==='ArrowRight') next(); if (e.key==='ArrowLeft') prev() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
   })
 
-  const progress = Math.round(((active + 1) / chapters.length) * 100)
+  const pct = Math.round(((active + 1) / CHAPTERS.length) * 100)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <>
+      <style>{ANIM_CSS}</style>
+      <div className="flex h-screen overflow-hidden bg-gray-50">
 
-      {/* ── Sidebar ────────────────────────────────────────────────────────────── */}
-      <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="px-4 py-4 border-b border-gray-100 flex-shrink-0">
-          <div className="flex items-center gap-2.5 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
+        {/* ── Left Hero Panel ───────────────────────────────────────────────── */}
+        <div
+          key={`hero-${animKey}`}
+          className={`w-72 flex-shrink-0 bg-gradient-to-b ${theme.grad} flex flex-col overflow-hidden relative anim-hero`}
+        >
+          {/* Decorative big number */}
+          <div className="absolute bottom-24 right-0 text-white/5 font-black leading-none select-none pointer-events-none"
+               style={{ fontSize: 160 }}>
+            {String(active + 1).padStart(2, '0')}
+          </div>
+
+          {/* Logo */}
+          <div className="px-6 py-5 flex items-center gap-2.5 border-b border-white/10 flex-shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
               <BookOpen size={15} className="text-white" />
             </div>
             <div>
-              <p className="font-bold text-gray-900 text-sm leading-tight">Guia do Sistema</p>
-              <p className="text-gray-400 text-[11px]">10 capítulos</p>
+              <p className="text-white font-bold text-xs leading-tight">Guia do Sistema</p>
+              <p className="text-white/50 text-[10px]">10 capítulos</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-600 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
+
+          {/* Chapter content */}
+          <div className="flex-1 px-6 py-6 flex flex-col gap-5 justify-center">
+            {/* Icon */}
+            <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center">
+              <ch.icon size={22} className="text-white" />
             </div>
-            <span className="text-xs text-gray-400 font-medium">{progress}%</span>
-          </div>
-        </div>
-
-        {/* Chapter list */}
-        <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-          {chapters.map((ch, idx) => {
-            const isActive = idx === active
-            const isDone = completed.has(idx) && !isActive
-            return (
-              <button
-                key={ch.id}
-                onClick={() => goTo(idx)}
-                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-all ${
-                  isActive ? 'bg-blue-50 border border-blue-100' : 'hover:bg-gray-50 border border-transparent'
-                }`}
-              >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
-                  isDone ? 'bg-green-100' : isActive ? ch.bg : 'bg-gray-100'
-                }`}>
-                  {isDone
-                    ? <CheckCircle2 size={14} className="text-green-500" />
-                    : <ch.icon size={14} className={isActive ? ch.color : 'text-gray-400'} />
-                  }
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-semibold truncate ${isActive ? 'text-blue-700' : isDone ? 'text-gray-400' : 'text-gray-700'}`}>{ch.title}</p>
-                  <p className="text-[10px] text-gray-400 truncate">{ch.subtitle}</p>
-                </div>
-                <span className={`text-[10px] font-bold flex-shrink-0 ${isActive ? 'text-blue-400' : 'text-gray-200'}`}>{String(ch.id).padStart(2, '0')}</span>
-              </button>
-            )
-          })}
-        </nav>
-
-        {/* Keyboard hint */}
-        <div className="px-4 py-2.5 border-t border-gray-100 flex-shrink-0">
-          <p className="text-[10px] text-gray-400 flex items-center gap-1">
-            <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">←</span>
-            <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">→</span>
-            para navegar entre capítulos
-          </p>
-        </div>
-      </aside>
-
-      {/* ── Main content ───────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-
-        {/* Top bar */}
-        <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${chapter.bg}`}>
-              <chapter.icon size={14} className={chapter.color} />
-            </div>
+            {/* Title */}
             <div>
-              <p className="text-[10px] text-gray-400 leading-none">Capítulo {chapter.id} de {chapters.length}</p>
-              <h1 className="font-bold text-gray-900 text-sm leading-snug">{chapter.title} — <span className="font-normal text-gray-500">{chapter.subtitle}</span></h1>
+              <p className="text-white/50 text-xs font-medium mb-1">Capítulo {active + 1} de {CHAPTERS.length}</p>
+              <h1 className="text-white font-black text-2xl leading-tight">{ch.title}</h1>
+              <p className="text-white/60 text-sm mt-1">{ch.sub}</p>
+            </div>
+            {/* Learning points */}
+            <div>
+              <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-2.5">Neste capítulo</p>
+              <ul className="space-y-1.5">
+                {ch.bullets.map(b => <Bullet key={b}>{b}</Bullet>)}
+              </ul>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={prev} disabled={active === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg transition-all">
-              <ChevronLeft size={13} /> Anterior
-            </button>
-            {active < chapters.length - 1 ? (
-              <button onClick={next}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all">
-                {chapters[active + 1].title} <ArrowRight size={13} />
-              </button>
-            ) : (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg">
-                <CheckCircle2 size={13} /> Concluído
-              </div>
-            )}
+
+          {/* Chapter list (mini) */}
+          <div className="px-4 py-3 border-t border-white/10 flex-shrink-0">
+            <div className="flex gap-1 flex-wrap">
+              {CHAPTERS.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => goTo(i)}
+                  className={`w-6 h-6 rounded-md text-[10px] font-bold transition-all duration-200 ${
+                    i === active
+                      ? 'bg-white text-gray-800 shadow-md scale-110'
+                      : completed.has(i)
+                        ? 'bg-white/30 text-white'
+                        : 'bg-white/10 text-white/50 hover:bg-white/20'
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+            <p className="text-white/30 text-[10px] mt-2 flex items-center gap-1">
+              <kbd className="bg-white/10 px-1 py-0.5 rounded font-mono">←</kbd>
+              <kbd className="bg-white/10 px-1 py-0.5 rounded font-mono">→</kbd>
+              navegar
+            </p>
           </div>
         </div>
 
-        {/* Chapter content — no scroll */}
-        <div className="flex-1 overflow-hidden p-5">
-          {chapter.content}
+        {/* ── Right Content ─────────────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+
+          {/* Top bar */}
+          <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <p className="text-xs text-gray-400">
+                  {completed.size} de {CHAPTERS.length} capítulos concluídos
+                </p>
+                <div className="w-48 h-1.5 bg-gray-100 rounded-full mt-1 overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-700"
+                       style={{ width: `${pct}%`, background: theme.accent }} />
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={prev} disabled={active === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg transition-all">
+                <ChevronLeft size={13} /> Anterior
+              </button>
+              {active < CHAPTERS.length - 1 ? (
+                <button onClick={next}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition-all hover:opacity-90"
+                  style={{ background: theme.accent }}>
+                  {CHAPTERS[active + 1].title} <ChevronRight size={13} />
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg">
+                  <CheckCircle2 size={13} /> Concluído
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Chapter content */}
+          <div key={animKey} className="flex-1 overflow-hidden p-5 anim-panel">
+            {ch.right}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }
