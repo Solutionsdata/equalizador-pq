@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 from pydantic import BaseModel
 from app.models.project import WorkType, ProjectStatus
@@ -9,6 +10,7 @@ class ProjectCreate(BaseModel):
     descricao: Optional[str] = None
     numero_licitacao: Optional[str] = None
     tipo_obra: WorkType = WorkType.INFRAESTRUTURA
+    extensao_km: Optional[Decimal] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -16,6 +18,7 @@ class ProjectUpdate(BaseModel):
     descricao: Optional[str] = None
     numero_licitacao: Optional[str] = None
     tipo_obra: Optional[WorkType] = None
+    extensao_km: Optional[Decimal] = None
     status: Optional[ProjectStatus] = None
 
 
@@ -26,6 +29,7 @@ class ProjectResponse(BaseModel):
     descricao: Optional[str] = None
     numero_licitacao: Optional[str] = None
     tipo_obra: WorkType
+    extensao_km: Optional[Decimal] = None
     status: ProjectStatus
     created_at: datetime
     updated_at: datetime

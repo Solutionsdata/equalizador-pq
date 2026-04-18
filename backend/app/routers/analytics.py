@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -10,8 +11,8 @@ from app.models.pq_item import PQItem
 from app.models.proposal import Proposal
 from app.schemas.analytics import ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary
 from app.services.analytics import AnalyticsService
-from app.services.excel import gerar_relatorio_equalizacao
-from typing import Optional
+from app.services.excel import gerar_relatorio_equalizacao, gerar_baseline_excel
+from typing import List, Optional
 
 router = APIRouter()
 
@@ -138,6 +139,141 @@ def scope_validation(
         "proposals": result_proposals,
         "any_changes": any_changes,
     }
+
+
+@router.get("/baseline")
+def get_baseline(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Retorna todas as propostas vencedoras de todos os projetos do usuário."""
+    projects = db.query(Project).filter(Project.user_id == current_user.id).all()
+    project_map = {p.id: p for p in projects}
+    project_ids = list(project_map.keys())
+
+    if not project_ids:
+        return []
+
+    winners = (
+        db.query(Proposal)
+        .filter(Proposal.project_id.in_(project_ids), Proposal.is_winner == True)  # noqa: E712
+        .order_by(Proposal.updated_at.desc())
+        .all()
+    )
+
+    entries = []
+    for proposal in winners:
+        project = project_map[proposal.project_id]
+
+        pq_q = db.query(PQItem).filter(PQItem.project_id == proposal.project_id)
+        if proposal.revision_id:
+            pq_q = pq_q.filter(PQItem.revision_id == proposal.revision_id)
+        pq_map = {item.id: item for item in pq_q.order_by(PQItem.ordem).all()}
+
+        items = []
+        total = Decimal("0")
+        for pi in proposal.items:
+            pq = pq_map.get(pi.pq_item_id)
+            if not pq:
+                continue
+            preco_total = pi.preco_total or Decimal("0")
+            total += preco_total
+            items.append({
+                "pq_item_id": pi.pq_item_id,
+                "numero_item": pq.numero_item,
+                "descricao": pq.descricao,
+                "unidade": pq.unidade,
+                "quantidade": float(pq.quantidade or 0),
+                "categoria": pq.categoria,
+                "disciplina": pq.disciplina,
+                "preco_unitario": float(pi.preco_unitario) if pi.preco_unitario else None,
+                "preco_total": float(preco_total),
+            })
+
+        entries.append({
+            "project_id": project.id,
+            "project_nome": project.nome,
+            "numero_licitacao": project.numero_licitacao,
+            "tipo_obra": project.tipo_obra.value,
+            "extensao_km": float(project.extensao_km) if project.extensao_km else None,
+            "proposal_id": proposal.id,
+            "empresa": proposal.empresa,
+            "cnpj": proposal.cnpj,
+            "bdi_global": float(proposal.bdi_global or 0),
+            "valor_total": float(total),
+            "data_premiacao": (proposal.updated_at or proposal.created_at).isoformat(),
+            "items": items,
+        })
+
+    return entries
+
+
+@router.get("/baseline/export")
+def export_baseline_excel(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Exporta o Baseline completo em Excel (multi-aba)."""
+    projects = db.query(Project).filter(Project.user_id == current_user.id).all()
+    project_map = {p.id: p for p in projects}
+    project_ids = list(project_map.keys())
+
+    winners = (
+        db.query(Proposal)
+        .filter(Proposal.project_id.in_(project_ids), Proposal.is_winner == True)  # noqa: E712
+        .order_by(Proposal.updated_at.desc())
+        .all()
+    ) if project_ids else []
+
+    entries = []
+    for proposal in winners:
+        project = project_map[proposal.project_id]
+        pq_q = db.query(PQItem).filter(PQItem.project_id == proposal.project_id)
+        if proposal.revision_id:
+            pq_q = pq_q.filter(PQItem.revision_id == proposal.revision_id)
+        pq_map_local = {item.id: item for item in pq_q.order_by(PQItem.ordem).all()}
+
+        items = []
+        total = Decimal("0")
+        for pi in proposal.items:
+            pq = pq_map_local.get(pi.pq_item_id)
+            if not pq:
+                continue
+            preco_total = pi.preco_total or Decimal("0")
+            total += preco_total
+            items.append({
+                "pq_item_id": pi.pq_item_id,
+                "numero_item": pq.numero_item,
+                "descricao": pq.descricao,
+                "unidade": pq.unidade,
+                "quantidade": float(pq.quantidade or 0),
+                "categoria": pq.categoria,
+                "disciplina": pq.disciplina,
+                "preco_unitario": float(pi.preco_unitario) if pi.preco_unitario else None,
+                "preco_total": float(preco_total),
+            })
+
+        entries.append({
+            "project_id": project.id,
+            "project_nome": project.nome,
+            "numero_licitacao": project.numero_licitacao,
+            "tipo_obra": project.tipo_obra.value,
+            "extensao_km": float(project.extensao_km) if project.extensao_km else None,
+            "proposal_id": proposal.id,
+            "empresa": proposal.empresa,
+            "cnpj": proposal.cnpj,
+            "bdi_global": float(proposal.bdi_global or 0),
+            "valor_total": float(total),
+            "data_premiacao": (proposal.updated_at or proposal.created_at).isoformat(),
+            "items": items,
+        })
+
+    buf = gerar_baseline_excel(entries)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="baseline_contratos.xlsx"'},
+    )
 
 
 @router.get("/export/{project_id}")

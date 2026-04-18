@@ -554,7 +554,7 @@ export default function Equalization() {
                         key={p.id}
                         onClick={() => {
                           setSelectedProponente(p)
-                          setExistingBdi(String(p.bdi_global ?? 0))
+                          setExistingBdi(String(Number(p.bdi_global) || 0))
                         }}
                         className={`w-full text-left border rounded-xl px-4 py-3 transition-all ${
                           selectedProponente?.empresa === p.empresa
@@ -593,7 +593,7 @@ export default function Equalization() {
                         autoFocus
                       />
                       <p className="text-xs text-gray-400 mt-1">
-                        BDI anterior: {selectedProponente.bdi_global?.toFixed(2)}%
+                        BDI anterior: {Number(selectedProponente.bdi_global).toFixed(2)}%
                       </p>
                     </div>
                   )}

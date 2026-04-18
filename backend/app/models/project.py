@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -27,6 +27,7 @@ class Project(Base):
     descricao = Column(Text)
     numero_licitacao = Column(String(100))
     tipo_obra = Column(Enum(WorkType), default=WorkType.INFRAESTRUTURA, nullable=False)
+    extensao_km = Column(Numeric(10, 3), nullable=True)   # extensão em km (obrigatório p/ duplicações)
     status = Column(Enum(ProjectStatus), default=ProjectStatus.RASCUNHO, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -25,11 +25,12 @@ interface ProjectForm {
   descricao: string
   numero_licitacao: string
   tipo_obra: WorkType
+  extensao_km: string
   status?: ProjectStatus
 }
 
 const EMPTY_FORM: ProjectForm = {
-  nome: '', descricao: '', numero_licitacao: '', tipo_obra: 'INFRAESTRUTURA',
+  nome: '', descricao: '', numero_licitacao: '', tipo_obra: 'INFRAESTRUTURA', extensao_km: '',
 }
 
 export default function Projects() {
@@ -93,6 +94,7 @@ export default function Projects() {
       descricao: project.descricao ?? '',
       numero_licitacao: project.numero_licitacao ?? '',
       tipo_obra: project.tipo_obra,
+      extensao_km: project.extensao_km != null ? String(project.extensao_km) : '',
       status: project.status,
     })
     setModal('edit')
@@ -102,8 +104,12 @@ export default function Projects() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (modal === 'create') createMutation.mutate(form)
-    else if (modal === 'edit' && selected) updateMutation.mutate({ id: selected.id, data: form })
+    const payload = {
+      ...form,
+      extensao_km: form.extensao_km ? Number(form.extensao_km) : null,
+    }
+    if (modal === 'create') createMutation.mutate(payload as any)
+    else if (modal === 'edit' && selected) updateMutation.mutate({ id: selected.id, data: payload })
   }
 
   return (
@@ -148,10 +154,15 @@ export default function Projects() {
               </div>
 
               {/* Tipo e descrição */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-medium">
                   {TIPO_OBRA_LABELS[project.tipo_obra]}
                 </span>
+                {project.extensao_km != null && (
+                  <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded font-medium">
+                    {Number(project.extensao_km).toFixed(3)} km
+                  </span>
+                )}
               </div>
               {project.descricao && (
                 <p className="text-sm text-gray-500 line-clamp-2">{project.descricao}</p>
@@ -269,6 +280,28 @@ export default function Projects() {
                     onChange={(e) => setForm((f) => ({ ...f, numero_licitacao: e.target.value }))}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Extensão (km)
+                  {form.tipo_obra === 'INFRAESTRUTURA' && (
+                    <span className="ml-2 text-xs text-orange-600 font-normal">● obrigatório para duplicação/restauração</span>
+                  )}
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  placeholder="Ex: 45.320"
+                  value={form.extensao_km}
+                  onChange={(e) => setForm((f) => ({ ...f, extensao_km: e.target.value }))}
+                  required={form.tipo_obra === 'INFRAESTRUTURA'}
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Usado para calcular o custo por km no Baseline.
+                </p>
               </div>
 
               {modal === 'edit' && (

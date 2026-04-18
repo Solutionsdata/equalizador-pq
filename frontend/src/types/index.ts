@@ -24,11 +24,40 @@ export interface Project {
   descricao?: string
   numero_licitacao?: string
   tipo_obra: WorkType
+  extensao_km?: number | null
   status: ProjectStatus
   created_at: string
   updated_at: string
   total_pq_items: number
   total_proposals: number
+}
+
+// ── Baseline ─────────────────────────────────────────────────────────────────
+export interface BaselineItem {
+  pq_item_id: number
+  numero_item: string
+  descricao: string
+  unidade: string
+  quantidade: number
+  categoria?: string
+  disciplina?: string
+  preco_unitario?: number | null
+  preco_total: number
+}
+
+export interface BaselineEntry {
+  project_id: number
+  project_nome: string
+  numero_licitacao?: string
+  tipo_obra: WorkType
+  extensao_km?: number | null
+  proposal_id: number
+  empresa: string
+  cnpj?: string
+  bdi_global: number
+  valor_total: number
+  data_premiacao: string
+  items: BaselineItem[]
 }
 
 /** Planilha de Quantitativos — 10 colunas de negócio */

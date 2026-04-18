@@ -128,6 +128,8 @@ export const analyticsAPI = {
     api.get(`/analytics/categorias/${projectId}`),
   exportExcel: (projectId: number) =>
     api.get(`/analytics/export/${projectId}`, { responseType: 'blob' }),
+  getBaseline: () => api.get('/analytics/baseline'),
+  exportBaseline: () => api.get('/analytics/baseline/export', { responseType: 'blob' }),
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

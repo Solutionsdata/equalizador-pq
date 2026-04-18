@@ -88,6 +88,10 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE proposal_items ADD COLUMN IF NOT EXISTS quantidade_proposta NUMERIC(18,4)"
     ))
+    # Add extensao_km to projects (km de extensão para cálculo de custo/km no Baseline)
+    _conn.execute(text(
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS extensao_km NUMERIC(10,3)"
+    ))
     _conn.commit()
 
 app = FastAPI(

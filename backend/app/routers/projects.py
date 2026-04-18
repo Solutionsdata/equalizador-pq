@@ -17,6 +17,7 @@ def _to_response(project: Project) -> ProjectResponse:
         descricao=project.descricao,
         numero_licitacao=project.numero_licitacao,
         tipo_obra=project.tipo_obra,
+        extensao_km=project.extensao_km,
         status=project.status,
         created_at=project.created_at,
         updated_at=project.updated_at,

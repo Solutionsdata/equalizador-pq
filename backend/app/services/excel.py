@@ -732,6 +732,224 @@ def gerar_relatorio_equalizacao(
 
 # ── Utilitários internos ──────────────────────────────────────────────────────
 
+def gerar_baseline_excel(entries: list) -> io.BytesIO:
+    """
+    Gera o Excel do Baseline de Contratos (multi-aba).
+    `entries` — lista de dicts com keys: project_nome, numero_licitacao, tipo_obra,
+    extensao_km, empresa, cnpj, bdi_global, valor_total, data_premiacao, items[]
+    """
+    from collections import defaultdict
+    import datetime as dt
+
+    wb = Workbook()
+    wb.remove(wb.active)  # remove sheet padrão
+
+    GOLD   = "B45309"
+    GOLD_L = "FEF3C7"
+    GOLD_H = "FDE68A"
+    DARK   = "1E293B"
+    GRAY_H = "F1F5F9"
+    GRAY_A = "F8FAFC"
+    TIPO_LABELS = {
+        "INFRAESTRUTURA": "Infraestrutura",
+        "EDIFICACAO": "Edificação",
+        "OBRA_DE_ARTE": "Obra de Arte Especial",
+    }
+
+    def _hdr(ws, row, cols, bg, fg="FFFFFF", bold=True, size=9):
+        for ci, label in enumerate(cols, 1):
+            c = ws.cell(row=row, column=ci, value=label)
+            c.fill = _fill(bg)
+            c.font = _font(fg, bold=bold, size=size)
+            c.alignment = _align("center")
+            c.border = _border()
+        ws.row_dimensions[row].height = 18
+
+    def _row(ws, row, vals, bg, fmts=None):
+        for ci, val in enumerate(vals, 1):
+            fmt = (fmts or {}).get(ci, "@")
+            c = ws.cell(row=row, column=ci, value=val)
+            c.fill = _fill(bg)
+            c.font = _font(size=9)
+            c.border = _border()
+            c.number_format = FMT.get(fmt, fmt)
+            c.alignment = _align("right" if fmt not in ("@", "text") else "left")
+
+    # ── Sheet 1: Contratos ─────────────────────────────────────────────────────
+    ws1 = wb.create_sheet("Contratos")
+    ws1.sheet_view.showGridLines = False
+
+    title_cols = ["Projeto", "Nº TR", "Tipo de Obra", "Proponente", "CNPJ",
+                  "BDI (%)", "Valor Total (R$)", "Extensão (km)", "R$/km", "Data Premiação"]
+    ncols = len(title_cols)
+    ws1.merge_cells(f"A1:{get_column_letter(ncols)}1")
+    c = ws1["A1"]
+    c.value = "BASELINE — HISTÓRICO DE CONTRATOS PREMIADOS"
+    c.fill = _fill(DARK); c.font = _font("FFFFFF", bold=True, size=13)
+    c.alignment = _align("center"); ws1.row_dimensions[1].height = 28
+
+    _hdr(ws1, 2, title_cols, GOLD)
+    widths = [40, 18, 20, 35, 20, 10, 20, 14, 14, 18]
+    for ci, w in enumerate(widths, 1):
+        ws1.column_dimensions[get_column_letter(ci)].width = w
+    ws1.freeze_panes = "A3"
+
+    total_geral = 0.0
+    for ri, e in enumerate(entries, start=3):
+        bg = GOLD_L if ri % 2 == 0 else GOLD_H
+        ext = e.get("extensao_km")
+        vt  = e.get("valor_total", 0)
+        total_geral += vt
+        rk = (vt / ext) if ext else None
+        ts = e.get("data_premiacao", "")
+        try:
+            ts = dt.datetime.fromisoformat(ts).strftime("%d/%m/%Y")
+        except Exception:
+            pass
+        _row(ws1, ri,
+             [e["project_nome"], e.get("numero_licitacao") or "—",
+              TIPO_LABELS.get(e["tipo_obra"], e["tipo_obra"]),
+              e["empresa"], e.get("cnpj") or "—",
+              e["bdi_global"], vt, ext or "—", rk, ts],
+             bg,
+             {6: "pct", 7: "brl2", 9: "brl2"})
+
+    # Linha de total
+    tr = len(entries) + 3
+    ws1.merge_cells(f"A{tr}:F{tr}")
+    c = ws1[f"A{tr}"]
+    c.value = "TOTAL GERAL"
+    c.fill = _fill(DARK); c.font = _font("FFFFFF", bold=True, size=10)
+    c.alignment = _align("right")
+    ct = ws1.cell(row=tr, column=7, value=total_geral)
+    ct.fill = _fill(DARK); ct.font = _font("FFFFFF", bold=True, size=10)
+    ct.number_format = FMT["brl2"]
+
+    # ── Sheet 2: Itens Detalhados ──────────────────────────────────────────────
+    ws2 = wb.create_sheet("Itens Detalhados")
+    ws2.sheet_view.showGridLines = False
+
+    item_cols = ["Projeto", "Proponente", "Item", "Descrição", "Un",
+                 "Qtd", "Categoria", "Disciplina", "P.Unit.(R$)", "Total(R$)"]
+    ws2.merge_cells(f"A1:{get_column_letter(len(item_cols))}1")
+    c = ws2["A1"]
+    c.value = "BASELINE — ITENS DETALHADOS"
+    c.fill = _fill(DARK); c.font = _font("FFFFFF", bold=True, size=13)
+    c.alignment = _align("center"); ws2.row_dimensions[1].height = 28
+
+    _hdr(ws2, 2, item_cols, AZUL_HEADER)
+    iwidths = [35, 28, 8, 52, 7, 12, 20, 16, 16, 16]
+    for ci, w in enumerate(iwidths, 1):
+        ws2.column_dimensions[get_column_letter(ci)].width = w
+    ws2.freeze_panes = "A3"
+
+    ri2 = 3
+    for e in entries:
+        for item in e.get("items", []):
+            bg = AZUL_LINHA_A if ri2 % 2 == 0 else AZUL_LINHA_B
+            _row(ws2, ri2,
+                 [e["project_nome"], e["empresa"], item["numero_item"],
+                  item["descricao"], item["unidade"], item["quantidade"],
+                  item.get("categoria") or "—", item.get("disciplina") or "—",
+                  item.get("preco_unitario"), item["preco_total"]],
+                 bg, {6: "num4", 9: "brl4", 10: "brl2"})
+            ri2 += 1
+
+    # ── Sheet 3: Por Disciplina ────────────────────────────────────────────────
+    ws3 = wb.create_sheet("Por Disciplina")
+    ws3.sheet_view.showGridLines = False
+
+    disc_agg = defaultdict(float)
+    for e in entries:
+        for item in e.get("items", []):
+            disc = item.get("disciplina") or "Sem disciplina"
+            disc_agg[disc] += item.get("preco_total", 0)
+
+    total_disc = sum(disc_agg.values()) or 1
+    d_cols = ["Disciplina", "Valor Total (R$)", "Participação (%)"]
+    ws3.merge_cells("A1:C1")
+    c = ws3["A1"]
+    c.value = "BASELINE — DISTRIBUIÇÃO POR DISCIPLINA"
+    c.fill = _fill(DARK); c.font = _font("FFFFFF", bold=True, size=13)
+    c.alignment = _align("center"); ws3.row_dimensions[1].height = 28
+    _hdr(ws3, 2, d_cols, AZUL_HEADER)
+    for ci, w in enumerate([30, 20, 16], 1):
+        ws3.column_dimensions[get_column_letter(ci)].width = w
+
+    for ri3, (disc, val) in enumerate(sorted(disc_agg.items(), key=lambda x: -x[1]), start=3):
+        bg = AZUL_LINHA_A if ri3 % 2 == 0 else AZUL_LINHA_B
+        pct = val / total_disc * 100
+        _row(ws3, ri3, [disc, val, pct], bg, {2: "brl2", 3: "pct"})
+
+    # ── Sheet 4: Por Categoria ─────────────────────────────────────────────────
+    ws4 = wb.create_sheet("Por Categoria")
+    ws4.sheet_view.showGridLines = False
+
+    cat_agg = defaultdict(float)
+    for e in entries:
+        for item in e.get("items", []):
+            cat = item.get("categoria") or "Sem categoria"
+            cat_agg[cat] += item.get("preco_total", 0)
+
+    total_cat = sum(cat_agg.values()) or 1
+    c_cols = ["Categoria", "Valor Total (R$)", "Participação (%)"]
+    ws4.merge_cells("A1:C1")
+    c = ws4["A1"]
+    c.value = "BASELINE — DISTRIBUIÇÃO POR CATEGORIA"
+    c.fill = _fill(DARK); c.font = _font("FFFFFF", bold=True, size=13)
+    c.alignment = _align("center"); ws4.row_dimensions[1].height = 28
+    _hdr(ws4, 2, c_cols, VERDE_HEADER)
+    for ci, w in enumerate([30, 20, 16], 1):
+        ws4.column_dimensions[get_column_letter(ci)].width = w
+
+    for ri4, (cat, val) in enumerate(sorted(cat_agg.items(), key=lambda x: -x[1]), start=3):
+        bg = VERDE_LINHA_A if ri4 % 2 == 0 else VERDE_LINHA_B
+        pct = val / total_cat * 100
+        _row(ws4, ri4, [cat, val, pct], bg, {2: "brl2", 3: "pct"})
+
+    # ── Sheet 5: Custo por km (apenas se houver extensao_km) ──────────────────
+    km_entries = [e for e in entries if e.get("extensao_km")]
+    if km_entries:
+        ws5 = wb.create_sheet("Custo por km")
+        ws5.sheet_view.showGridLines = False
+
+        km_cols = ["Projeto", "Tipo", "Extensão (km)", "Valor Total (R$)", "R$/km",
+                   "Disciplina", "Valor Disciplina (R$)", "R$/km Disciplina"]
+        ws5.merge_cells(f"A1:{get_column_letter(len(km_cols))}1")
+        c = ws5["A1"]
+        c.value = "BASELINE — CUSTO POR QUILÔMETRO"
+        c.fill = _fill(DARK); c.font = _font("FFFFFF", bold=True, size=13)
+        c.alignment = _align("center"); ws5.row_dimensions[1].height = 28
+        _hdr(ws5, 2, km_cols, GOLD)
+        for ci, w in enumerate([35, 20, 14, 20, 16, 20, 20, 16], 1):
+            ws5.column_dimensions[get_column_letter(ci)].width = w
+        ws5.freeze_panes = "A3"
+
+        ri5 = 3
+        for e in km_entries:
+            ext = e["extensao_km"]
+            vt  = e["valor_total"]
+            rk  = vt / ext
+            disc_vals = defaultdict(float)
+            for item in e.get("items", []):
+                d = item.get("disciplina") or "Sem disciplina"
+                disc_vals[d] += item.get("preco_total", 0)
+
+            first = True
+            for disc, dval in sorted(disc_vals.items(), key=lambda x: -x[1]):
+                bg = GOLD_L if ri5 % 2 == 0 else GOLD_H
+                _row(ws5, ri5,
+                     [e["project_nome"] if first else "", TIPO_LABELS.get(e["tipo_obra"], e["tipo_obra"]) if first else "",
+                      ext if first else "", vt if first else "", rk if first else "",
+                      disc, dval, dval / ext],
+                     bg,
+                     {3: "num4", 4: "brl2", 5: "brl2", 7: "brl2", 8: "brl2"})
+                first = False
+                ri5 += 1
+
+    return _save(wb)
+
+
 def _save(wb: Workbook) -> io.BytesIO:
     buf = io.BytesIO()
     wb.save(buf)
