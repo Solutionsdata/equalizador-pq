@@ -19,6 +19,13 @@ node_modules/
 frontend/dist/
 frontend/.cache/
 
+# Vercel deploy artifacts (contain API tokens)
+frontend/deploy.ps1
+frontend/deploy_id.txt
+frontend/deploy_result.json
+frontend/files_meta.json
+frontend/dist-vercel/
+
 # Docker volumes (gerados localmente)
 postgres_data/
 
