@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Equalizador PQ — Marketing</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;width:1400px;min-height:900px;overflow:hidden}
+
+/* ── Outer frame ── */
+.frame{width:1400px;height:900px;background:linear-gradient(135deg,#0f172a 0%,#1e2d4a 50%,#0f172a 100%);display:flex;flex-direction:column;position:relative;overflow:hidden}
+
+/* Glow blobs */
+.blob{position:absolute;border-radius:50%;filter:blur(80px);pointer-events:none;opacity:.18}
+.blob1{width:600px;height:600px;background:#3b82f6;top:-150px;left:-100px}
+.blob2{width:500px;height:500px;background:#8b5cf6;bottom:-100px;right:-50px}
+.blob3{width:300px;height:300px;background:#10b981;top:200px;right:300px}
+
+/* ── Top badge ── */
+.top-badge{position:absolute;top:28px;left:50%;transform:translateX(-50%);background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:999px;padding:6px 20px;color:#93c5fd;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;backdrop-filter:blur(8px);z-index:10}
+
+/* ── Browser window ── */
+.browser{position:absolute;top:60px;left:50%;transform:translateX(-50%);width:1280px;height:800px;border-radius:16px;overflow:hidden;box-shadow:0 40px 120px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.08);background:#1e293b}
+
+.browser-bar{height:40px;background:#0f172a;display:flex;align-items:center;padding:0 16px;gap:12px;border-bottom:1px solid rgba(255,255,255,.06)}
+.dots{display:flex;gap:6px}
+.dot{width:12px;height:12px;border-radius:50%}
+.dot-r{background:#ef4444}.dot-y{background:#eab308}.dot-g{background:#22c55e}
+.url-bar{flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:6px;height:22px;display:flex;align-items:center;padding:0 10px;gap:6px;max-width:340px;margin:0 auto}
+.url-bar svg{opacity:.4}
+.url-text{color:rgba(255,255,255,.4);font-size:11px}
+
+/* ── App layout ── */
+.app{display:flex;height:calc(100% - 40px)}
+
+/* Sidebar */
+.sidebar{width:200px;background:#0f172a;border-right:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;flex-shrink:0}
+.logo{padding:16px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:10px}
+.logo-icon{width:32px;height:32px;background:#3b82f6;border-radius:8px;display:flex;align-items:center;justify-content:center}
+.logo-text p{color:#fff;font-size:11px;font-weight:700;line-height:1.2}
+.logo-text span{color:#60a5fa;font-size:11px;font-weight:700}
+.nav{padding:12px 10px;flex:1}
+.nav-label{font-size:9px;color:rgba(255,255,255,.25);font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:0 8px;margin:8px 0 4px}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;color:rgba(255,255,255,.45);font-size:11px;font-weight:500;margin-bottom:1px}
+.nav-item.active{background:rgba(59,130,246,.15);color:#60a5fa}
+.nav-item .ni{width:14px;height:14px;border-radius:3px;background:currentColor;opacity:.6;flex-shrink:0}
+.nav-dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.6;flex-shrink:0}
+
+/* Main */
+.main{flex:1;background:#f8fafc;overflow:hidden;display:flex;flex-direction:column}
+
+/* Header */
+.page-header{padding:16px 20px 0;flex-shrink:0}
+.page-title{font-size:16px;font-weight:800;color:#0f172a;line-height:1}
+.page-sub{font-size:11px;color:#94a3b8;margin-top:2px}
+
+/* KPI row */
+.kpi-row{display:flex;gap:10px;padding:14px 20px 0;flex-shrink:0}
+.kpi{flex:1;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px}
+.kpi-label{font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.kpi-value{font-size:20px;font-weight:800;color:#0f172a;margin-top:2px;line-height:1}
+.kpi-sub{font-size:10px;margin-top:3px;font-weight:500}
+.kpi-sub.up{color:#10b981}.kpi-sub.neutral{color:#64748b}
+.kpi.accent{background:linear-gradient(135deg,#3b82f6,#6366f1);border-color:transparent}
+.kpi.accent .kpi-label,.kpi.accent .kpi-value,.kpi.accent .kpi-sub{color:#fff}
+.kpi.accent .kpi-sub{opacity:.8}
+
+/* Content grid */
+.content-grid{display:grid;grid-template-columns:1fr 340px;gap:12px;padding:12px 20px 0;flex:1;min-height:0}
+
+/* Equalization table */
+.eq-panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.eq-header{padding:12px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between}
+.eq-title{font-size:13px;font-weight:700;color:#0f172a}
+.eq-badges{display:flex;gap:6px}
+.badge{padding:3px 10px;border-radius:999px;font-size:10px;font-weight:600}
+.badge-blue{background:#eff6ff;color:#3b82f6}
+.badge-green{background:#f0fdf4;color:#16a34a}
+.badge-amber{background:#fffbeb;color:#d97706}
+.eq-table{flex:1;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:11px}
+thead tr{background:#f8fafc}
+th{padding:8px 12px;text-align:left;font-weight:600;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #f1f5f9}
+th.right{text-align:right}
+td{padding:7px 12px;border-bottom:1px solid #f8fafc;color:#374151}
+td.right{text-align:right}
+td.code{font-family:monospace;color:#64748b;font-size:10px}
+td.win{color:#16a34a;font-weight:700;background:#f0fdf4}
+td.hi{color:#ef4444;font-weight:600}
+tr:hover td{background:#fafafa}
+.total-row td{background:#f8fafc;font-weight:700;color:#0f172a;border-top:2px solid #e2e8f0}
+
+/* Right column */
+.right-col{display:flex;flex-direction:column;gap:10px;min-height:0}
+
+/* Pareto */
+.pareto-panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden}
+.panel-header{padding:10px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-size:12px;font-weight:700;color:#0f172a}
+.pareto-body{padding:12px 14px}
+.pareto-total{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.pareto-total-label{font-size:10px;color:#94a3b8;font-weight:600}
+.pareto-total-val{font-size:16px;font-weight:800;color:#0f172a}
+.abc-row{display:flex;gap:6px;margin-bottom:10px}
+.abc-card{flex:1;border-radius:8px;padding:8px;text-align:center}
+.abc-a{background:#dbeafe}.abc-b{background:#fef9c3}.abc-c{background:#f1f5f9}
+.abc-letter{font-size:16px;font-weight:800;line-height:1}
+.abc-a .abc-letter{color:#2563eb}.abc-b .abc-letter{color:#d97706}.abc-c .abc-letter{color:#64748b}
+.abc-pct{font-size:10px;font-weight:600;margin-top:1px}
+.abc-a .abc-pct{color:#3b82f6}.abc-b .abc-pct{color:#f59e0b}.abc-c .abc-pct{color:#94a3b8}
+.abc-val{font-size:9px;color:rgba(0,0,0,.4);margin-top:1px}
+.bar-chart{display:flex;flex-direction:column;gap:5px}
+.bar-row{display:flex;align-items:center;gap:6px}
+.bar-label{font-size:10px;color:#64748b;width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.bar-track{flex:1;height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden}
+.bar-fill{height:100%;border-radius:999px}
+.bar-val{font-size:9px;color:#64748b;width:40px;text-align:right;flex-shrink:0}
+
+/* Revision panel */
+.rev-panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;flex:1}
+.rev-body{padding:12px 14px}
+.rev-compare{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.rev-pill{padding:4px 10px;border-radius:8px;font-size:10px;font-weight:700}
+.rev-0{background:#eff6ff;color:#3b82f6}.rev-1{background:#f5f3ff;color:#7c3aed}
+.rev-arrow{color:#94a3b8;font-size:12px}
+.stat-row{display:flex;gap:6px}
+.stat{flex:1;padding:8px;border-radius:8px;text-align:center}
+.stat-add{background:#f0fdf4}.stat-rem{background:#fef2f2}.stat-chg{background:#fffbeb}.stat-same{background:#f8fafc}
+.stat-num{font-size:16px;font-weight:800;line-height:1}
+.stat-add .stat-num{color:#16a34a}.stat-rem .stat-num{color:#ef4444}.stat-chg .stat-num{color:#d97706}.stat-same .stat-num{color:#94a3b8}
+.stat-lbl{font-size:9px;margin-top:2px;font-weight:600}
+.stat-add .stat-lbl{color:#86efac}.stat-rem .stat-lbl{color:#fca5a5}.stat-chg .stat-lbl{color:#fcd34d}.stat-same .stat-lbl{color:#cbd5e1}
+
+/* ── Floating callouts ── */
+.callout{position:absolute;background:#fff;border-radius:14px;padding:12px 16px;box-shadow:0 20px 60px rgba(0,0,0,.25),0 0 0 1px rgba(0,0,0,.06);pointer-events:none;z-index:20}
+.callout-icon{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
+.callout-val{font-size:22px;font-weight:900;color:#0f172a;line-height:1}
+.callout-label{font-size:11px;color:#64748b;margin-top:2px}
+.callout-arrow{position:absolute;width:2px;background:linear-gradient(to bottom,rgba(59,130,246,.6),transparent);pointer-events:none}
+
+/* ── Bottom CTA strip ── */
+.cta-strip{position:absolute;bottom:0;left:0;right:0;height:52px;background:linear-gradient(90deg,#1e3a5f,#1e2d4a,#1e3a5f);border-top:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:space-between;padding:0 50px;z-index:5}
+.cta-left{display:flex;align-items:center;gap:10px}
+.cta-badge{background:rgba(59,130,246,.2);border:1px solid rgba(59,130,246,.3);color:#93c5fd;font-size:10px;font-weight:700;padding:4px 12px;border-radius:999px;letter-spacing:1px;text-transform:uppercase}
+.cta-title{color:#fff;font-size:15px;font-weight:800}
+.cta-title span{color:#60a5fa}
+.cta-right{display:flex;align-items:center;gap:16px}
+.cta-features{display:flex;gap:16px}
+.cta-feat{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.6);font-size:11px}
+.cta-feat::before{content:'✓';color:#34d399;font-weight:700}
+.cta-btn{background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-size:12px;font-weight:700;padding:9px 22px;border-radius:10px;letter-spacing:.5px;box-shadow:0 4px 20px rgba(99,102,241,.4)}
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="blob blob1"></div>
+  <div class="blob blob2"></div>
+  <div class="blob blob3"></div>
+
+  <div class="top-badge">Software de Equalização de Propostas</div>
+
+  <!-- Browser -->
+  <div class="browser">
+    <div class="browser-bar">
+      <div class="dots"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div></div>
+      <div class="url-bar">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span class="url-text">app.equalizadorpq.com.br</span>
+      </div>
+    </div>
+
+    <div class="app">
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="logo">
+          <div class="logo-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </div>
+          <div class="logo-text"><p>Software de</p><span>Equalização</span></div>
+        </div>
+        <div class="nav">
+          <div class="nav-label">Principal</div>
+          <div class="nav-item"><div class="nav-dot" style="background:#60a5fa"></div>Dashboard</div>
+          <div class="nav-item"><div class="nav-dot"></div>Projetos</div>
+          <div class="nav-item"><div class="nav-dot"></div>Baseline</div>
+
+          <div class="nav-label" style="margin-top:16px">Projeto Atual</div>
+          <div class="nav-item active">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            Planilha PQ
+          </div>
+          <div class="nav-item">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><path d="M6 3v12"/><circle cx="6" cy="18" r="3"/><path d="M6 15a9 9 0 0 0 9-9"/></svg>
+            Equalização
+          </div>
+          <div class="nav-item">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            Análises
+          </div>
+        </div>
+        <!-- User -->
+        <div style="padding:12px;border-top:1px solid rgba(255,255,255,.06)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:28px;height:28px;border-radius:50%;background:#3b82f6;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0">F</div>
+            <div>
+              <p style="color:#e2e8f0;font-size:11px;font-weight:600;line-height:1.2">Felipe G.</p>
+              <p style="color:rgba(255,255,255,.35);font-size:10px">Construtora ABC</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main -->
+      <div class="main">
+        <div class="page-header">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between">
+            <div>
+              <div class="page-title">Equalização — Reforma Sede 2025</div>
+              <div class="page-sub">Rev 1 · 3 fornecedores · 18 itens · Atualizado há 2 min</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:600;color:#64748b;display:flex;align-items:center;gap:5px">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Exportar
+              </div>
+              <div style="background:#3b82f6;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:600;color:#fff">+ Proposta</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpi-row">
+          <div class="kpi accent">
+            <div class="kpi-label">Menor Proposta</div>
+            <div class="kpi-value">R$ 1.284.600</div>
+            <div class="kpi-sub">Engenharia Total Ltda</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Referência do Projeto</div>
+            <div class="kpi-value">R$ 1.520.000</div>
+            <div class="kpi-sub up">↓ 15,5% abaixo</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">2ª Proposta</div>
+            <div class="kpi-value">R$ 1.391.200</div>
+            <div class="kpi-sub neutral">Construmax S.A.</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Economia Estimada</div>
+            <div class="kpi-value">R$ 235.400</div>
+            <div class="kpi-sub up">vs. Referência</div>
+          </div>
+        </div>
+
+        <!-- Grid -->
+        <div class="content-grid">
+          <!-- Equalization table -->
+          <div class="eq-panel">
+            <div class="eq-header">
+              <div class="eq-title">Comparativo de Propostas — Item a Item</div>
+              <div class="eq-badges">
+                <span class="badge badge-blue">18 itens</span>
+                <span class="badge badge-green">✓ Menor preço destacado</span>
+              </div>
+            </div>
+            <div class="eq-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Descrição</th>
+                    <th>Un.</th>
+                    <th class="right">Qtd</th>
+                    <th class="right">Referência</th>
+                    <th class="right" style="color:#3b82f6">Engenharia Total</th>
+                    <th class="right">Construmax</th>
+                    <th class="right">Infra Tech</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="code">TER-001</td><td>Escavação mecânica em solo mole</td><td>m³</td><td class="right">2.400</td>
+                    <td class="right">R$ 192.000</td><td class="right win">R$ 168.000</td><td class="right">R$ 194.400</td><td class="right">R$ 211.200</td>
+                  </tr>
+                  <tr>
+                    <td class="code">TER-002</td><td>Aterro compactado c/ material</td><td>m³</td><td class="right">1.800</td>
+                    <td class="right">R$ 126.000</td><td class="right">R$ 131.400</td><td class="right win">R$ 117.000</td><td class="right">R$ 140.400</td>
+                  </tr>
+                  <tr>
+                    <td class="code">DRE-001</td><td>Tubulação PEAD DN 300mm</td><td>m</td><td class="right">650</td>
+                    <td class="right">R$ 97.500</td><td class="right win">R$ 84.500</td><td class="right">R$ 97.500</td><td class="right">R$ 104.000</td>
+                  </tr>
+                  <tr>
+                    <td class="code">EST-001</td><td>Concreto fck 25 MPa — fundações</td><td>m³</td><td class="right">320</td>
+                    <td class="right">R$ 144.000</td><td class="right">R$ 152.000</td><td class="right win">R$ 137.600</td><td class="right">R$ 158.400</td>
+                  </tr>
+                  <tr>
+                    <td class="code">EST-002</td><td>Armação CA-50 — estrutura</td><td>kg</td><td class="right">18.400</td>
+                    <td class="right">R$ 110.400</td><td class="right win">R$ 97.520</td><td class="right">R$ 110.400</td><td class="right">R$ 119.600</td>
+                  </tr>
+                  <tr>
+                    <td class="code">PAV-001</td><td>Pavimentação asfáltica CBUQ 5cm</td><td>m²</td><td class="right">4.200</td>
+                    <td class="right">R$ 126.000</td><td class="right win">R$ 113.400</td><td class="right">R$ 126.000</td><td class="right">R$ 138.600</td>
+                  </tr>
+                  <tr>
+                    <td class="code">PAV-002</td><td>Meio-fio pré-moldado</td><td>m</td><td class="right">1.100</td>
+                    <td class="right">R$ 33.000</td><td class="right">R$ 35.200</td><td class="right win">R$ 30.800</td><td class="right">R$ 36.300</td>
+                  </tr>
+                  <tr>
+                    <td class="code">ELE-001</td><td>Rede elétrica subterrânea BT</td><td>m</td><td class="right">820</td>
+                    <td class="right">R$ 131.200</td><td class="right win">R$ 115.480</td><td class="right">R$ 126.680</td><td class="right">R$ 143.500</td>
+                  </tr>
+                  <tr class="total-row">
+                    <td colspan="4" style="font-weight:700;color:#0f172a">TOTAL GERAL (18 itens)</td>
+                    <td class="right" style="color:#64748b">R$ 1.520.000</td>
+                    <td class="right" style="color:#16a34a">R$ 1.284.600</td>
+                    <td class="right" style="color:#0f172a">R$ 1.391.200</td>
+                    <td class="right" style="color:#0f172a">R$ 1.542.800</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Right column -->
+          <div class="right-col">
+            <!-- Pareto -->
+            <div class="pareto-panel">
+              <div class="panel-header">
+                <span class="panel-title">Curva ABC / Pareto</span>
+                <span style="font-size:10px;color:#94a3b8">Referência</span>
+              </div>
+              <div class="pareto-body">
+                <div class="pareto-total">
+                  <span class="pareto-total-label">TOTAL GERAL</span>
+                  <span class="pareto-total-val">R$ 1,52M</span>
+                </div>
+                <div class="abc-row">
+                  <div class="abc-card abc-a">
+                    <div class="abc-letter">A</div>
+                    <div class="abc-pct">70%</div>
+                    <div class="abc-val">R$ 1,06M</div>
+                  </div>
+                  <div class="abc-card abc-b">
+                    <div class="abc-letter">B</div>
+                    <div class="abc-pct">20%</div>
+                    <div class="abc-val">R$ 304k</div>
+                  </div>
+                  <div class="abc-card abc-c">
+                    <div class="abc-letter">C</div>
+                    <div class="abc-pct">10%</div>
+                    <div class="abc-val">R$ 152k</div>
+                  </div>
+                </div>
+                <div class="bar-chart">
+                  <div class="bar-row"><span class="bar-label">Estrutura</span><div class="bar-track"><div class="bar-fill" style="width:88%;background:#3b82f6"></div></div><span class="bar-val">R$ 427k</span></div>
+                  <div class="bar-row"><span class="bar-label">Terraplenagem</span><div class="bar-track"><div class="bar-fill" style="width:66%;background:#6366f1"></div></div><span class="bar-val">R$ 318k</span></div>
+                  <div class="bar-row"><span class="bar-label">Elétrica</span><div class="bar-track"><div class="bar-fill" style="width:54%;background:#8b5cf6"></div></div><span class="bar-val">R$ 260k</span></div>
+                  <div class="bar-row"><span class="bar-label">Pavimentação</span><div class="bar-track"><div class="bar-fill" style="width:42%;background:#a78bfa"></div></div><span class="bar-val">R$ 202k</span></div>
+                  <div class="bar-row"><span class="bar-label">Drenagem</span><div class="bar-track"><div class="bar-fill" style="width:32%;background:#c4b5fd"></div></div><span class="bar-val">R$ 154k</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Revisions -->
+            <div class="rev-panel">
+              <div class="panel-header">
+                <span class="panel-title">Comparativo Rev 0 → Rev 1</span>
+              </div>
+              <div class="rev-body">
+                <div class="rev-compare">
+                  <span class="rev-pill rev-0">Rev 0 — Original</span>
+                  <span class="rev-arrow">→</span>
+                  <span class="rev-pill rev-1">Rev 1 — Addendum</span>
+                </div>
+                <div class="stat-row">
+                  <div class="stat stat-add"><div class="stat-num">4</div><div class="stat-lbl">Adicionados</div></div>
+                  <div class="stat stat-rem"><div class="stat-num">2</div><div class="stat-lbl">Removidos</div></div>
+                  <div class="stat stat-chg"><div class="stat-num">6</div><div class="stat-lbl">Alterados</div></div>
+                  <div class="stat stat-same"><div class="stat-num">6</div><div class="stat-lbl">Inalterados</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTA Strip -->
+  <div class="cta-strip">
+    <div class="cta-left">
+      <span class="cta-badge">Novo</span>
+      <span class="cta-title">Equalizador <span>PQ</span> — Equalização Profissional de Licitações</span>
+    </div>
+    <div class="cta-right">
+      <div class="cta-features">
+        <span class="cta-feat">100% online</span>
+        <span class="cta-feat">Sem instalação</span>
+        <span class="cta-feat">Relatórios em 1 clique</span>
+        <span class="cta-feat">Garantia 7 dias</span>
+      </div>
+      <div class="cta-btn">ACESSE AGORA</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
