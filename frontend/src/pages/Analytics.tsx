@@ -953,12 +953,23 @@ export default function Analytics() {
                   <EmptyState message="Cadastre preços de referência na Planilha PQ para visualizar o Pareto." />
                 ) : (
                   <>
-                    {/* ABC Summary badges */}
-                    <div className="flex gap-4 flex-wrap">
+                    {/* ABC Summary badges — with Total Global */}
+                    <div className="flex gap-4 flex-wrap items-start">
+                      {/* Total global destacado */}
+                      <div className="border-2 border-blue-300 bg-blue-600 text-white rounded-xl px-5 py-3 shadow-sm">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-xl font-bold">Total Geral</span>
+                          <span className="text-sm font-medium opacity-80">{(paretoData.count_a + paretoData.count_b + paretoData.count_c)} itens</span>
+                        </div>
+                        <p className="text-lg font-bold mt-0.5 opacity-95">{formatBRL(Number(paretoData.total_valor))}</p>
+                      </div>
                       {(['A', 'B', 'C'] as const).map((cls) => {
                         const count = cls === 'A' ? paretoData.count_a : cls === 'B' ? paretoData.count_b : paretoData.count_c
                         const valor = cls === 'A' ? paretoData.valor_a : cls === 'B' ? paretoData.valor_b : paretoData.valor_c
                         const colors = { A: 'border-green-300 bg-green-50 text-green-800', B: 'border-amber-300 bg-amber-50 text-amber-800', C: 'border-gray-300 bg-gray-50 text-gray-700' }
+                        const pct = Number(paretoData.total_valor) > 0
+                          ? Math.round((Number(valor) / Number(paretoData.total_valor)) * 100)
+                          : 0
                         return (
                           <div key={cls} className={`border rounded-xl px-4 py-3 ${colors[cls]}`}>
                             <div className="flex items-baseline gap-2">
@@ -966,6 +977,7 @@ export default function Analytics() {
                               <span className="text-sm font-medium">{count} itens</span>
                             </div>
                             <p className="text-sm font-semibold mt-0.5">{formatBRL(Number(valor))}</p>
+                            <p className="text-xs opacity-60 mt-0.5">{pct}% do total</p>
                           </div>
                         )
                       })}
@@ -1158,15 +1170,20 @@ export default function Analytics() {
 
                 {loadingCompare && <Loading />}
 
-                {compareData && !loadingCompare && (
+                {compareData && !loadingCompare && (() => {
+                  const added    = compareData.by_item.filter((i: any) => i.status === 'added')
+                  const removed  = compareData.by_item.filter((i: any) => i.status === 'removed')
+                  const changed  = compareData.by_item.filter((i: any) => i.status === 'changed')
+                  const unchanged = compareData.by_item.filter((i: any) => i.status === 'unchanged')
+                  return (
                   <div className="space-y-6">
                     {/* Global metrics */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       {[
-                        { label: `Total Rev. ${compareData.rev_a}`, value: formatBRL(compareData.global.total_a), color: 'text-gray-800' },
-                        { label: `Total Rev. ${compareData.rev_b}`, value: formatBRL(compareData.global.total_b), color: 'text-gray-800' },
-                        { label: 'Delta (R$)', value: (compareData.global.delta >= 0 ? '+' : '') + formatBRL(compareData.global.delta), color: compareData.global.delta >= 0 ? 'text-red-600' : 'text-green-700' },
-                        { label: 'Delta (%)', value: (compareData.global.delta_pct >= 0 ? '+' : '') + formatPercent(compareData.global.delta_pct), color: compareData.global.delta_pct >= 0 ? 'text-red-600' : 'text-green-700' },
+                        { label: `Total Rev. ${compareData.rev_a}`, value: formatBRL(compareData.global.total_a), color: 'text-gray-800', sub: null },
+                        { label: `Total Rev. ${compareData.rev_b}`, value: formatBRL(compareData.global.total_b), color: 'text-gray-800', sub: null },
+                        { label: 'Delta (R$)', value: (compareData.global.delta >= 0 ? '+' : '') + formatBRL(compareData.global.delta), color: compareData.global.delta >= 0 ? 'text-red-600' : 'text-green-700', sub: null },
+                        { label: 'Delta (%)', value: (compareData.global.delta_pct >= 0 ? '+' : '') + formatPercent(compareData.global.delta_pct), color: compareData.global.delta_pct >= 0 ? 'text-red-600' : 'text-green-700', sub: null },
                       ].map((m) => (
                         <div key={m.label} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                           <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{m.label}</p>
@@ -1174,6 +1191,81 @@ export default function Analytics() {
                         </div>
                       ))}
                     </div>
+
+                    {/* Item change summary */}
+                    <div className="flex flex-wrap gap-3">
+                      {[
+                        { label: 'Adicionados', count: added.length, cls: 'bg-green-50 border-green-200 text-green-700' },
+                        { label: 'Removidos',   count: removed.length, cls: 'bg-red-50 border-red-200 text-red-600' },
+                        { label: 'Alterados',   count: changed.length, cls: 'bg-amber-50 border-amber-200 text-amber-700' },
+                        { label: 'Sem alteração', count: unchanged.length, cls: 'bg-gray-50 border-gray-200 text-gray-500' },
+                      ].map((s) => (
+                        <div key={s.label} className={`flex items-center gap-2 border rounded-xl px-4 py-2.5 ${s.cls}`}>
+                          <span className="text-2xl font-bold leading-none">{s.count}</span>
+                          <span className="text-xs font-medium">{s.label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Added items */}
+                    {added.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-semibold text-green-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                          Itens Adicionados na Rev. {compareData.rev_b} ({added.length})
+                        </h3>
+                        <div className="overflow-auto rounded-xl border border-green-200">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-green-50 border-b border-green-100">
+                                <th className="px-3 py-2 text-left font-semibold text-green-700">Item</th>
+                                <th className="px-3 py-2 text-left font-semibold text-green-700">Descrição</th>
+                                <th className="px-3 py-2 text-right font-semibold text-green-700">Valor Rev. B</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {added.map((item: any) => (
+                                <tr key={item.numero_item} className="border-b border-green-50 bg-green-50/40 hover:bg-green-50">
+                                  <td className="px-3 py-2 font-mono text-green-700">{item.numero_item}</td>
+                                  <td className="px-3 py-2 text-gray-700 max-w-[300px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
+                                  <td className="px-3 py-2 text-right font-semibold text-green-700">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Removed items */}
+                    {removed.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-semibold text-red-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                          Itens Removidos da Rev. {compareData.rev_b} ({removed.length})
+                        </h3>
+                        <div className="overflow-auto rounded-xl border border-red-200">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-red-50 border-b border-red-100">
+                                <th className="px-3 py-2 text-left font-semibold text-red-700">Item</th>
+                                <th className="px-3 py-2 text-left font-semibold text-red-700">Descrição</th>
+                                <th className="px-3 py-2 text-right font-semibold text-red-700">Valor Rev. A</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {removed.map((item: any) => (
+                                <tr key={item.numero_item} className="border-b border-red-50 bg-red-50/40 hover:bg-red-50">
+                                  <td className="px-3 py-2 font-mono text-red-700">{item.numero_item}</td>
+                                  <td className="px-3 py-2 text-gray-700 max-w-[300px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
+                                  <td className="px-3 py-2 text-right font-semibold text-red-600">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
 
                     {/* By discipline */}
                     {compareData.by_discipline.length > 0 && (
@@ -1191,7 +1283,7 @@ export default function Analytics() {
                               </tr>
                             </thead>
                             <tbody>
-                              {compareData.by_discipline.map((d, i) => (
+                              {compareData.by_discipline.map((d: any, i: number) => (
                                 <tr key={d.disciplina} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                                   <td className="px-3 py-2 text-gray-700">{d.disciplina}</td>
                                   <td className="px-3 py-2 text-right text-gray-600">{formatBRL(d.total_a)}</td>
@@ -1206,9 +1298,74 @@ export default function Analytics() {
                       </div>
                     )}
 
-                    {/* By item */}
+                    {/* Changed items with quantity detail */}
+                    {(changed.length > 0) && (
+                      <div>
+                        <h3 className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                          Itens Alterados ({changed.length})
+                        </h3>
+                        <div className="overflow-auto rounded-xl border border-amber-200">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-amber-50 border-b border-amber-100">
+                                <th className="px-3 py-2 text-left font-semibold text-amber-700">Item</th>
+                                <th className="px-3 py-2 text-left font-semibold text-amber-700">Descrição</th>
+                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Qtd A</th>
+                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Qtd B</th>
+                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Δ Qtd</th>
+                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Valor A</th>
+                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Valor B</th>
+                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Δ Valor</th>
+                                <th className="px-3 py-2 text-left font-semibold text-amber-700">Campos</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {changed.map((item: any, i: number) => {
+                                const qChange = item.pq_change?.find((c: any) => c.field === 'quantidade')
+                                const qtdA = qChange ? Number(qChange.valor_a) : null
+                                const qtdB = qChange ? Number(qChange.valor_b) : null
+                                const qtdDelta = qtdA !== null && qtdB !== null ? qtdB - qtdA : null
+                                const changedFields: string[] = item.pq_change?.map((c: any) =>
+                                  c.field === 'descricao' ? 'Descrição' :
+                                  c.field === 'unidade' ? 'Unidade' :
+                                  c.field === 'quantidade' ? 'Quantidade' : c.field
+                                ) ?? []
+                                return (
+                                  <tr key={item.numero_item} className={`border-b border-amber-50 hover:bg-amber-50/30 ${i % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'}`}>
+                                    <td className="px-3 py-2 font-mono text-amber-700">{item.numero_item}</td>
+                                    <td className="px-3 py-2 text-gray-700 max-w-[200px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
+                                    <td className="px-3 py-2 text-right text-gray-500">{qtdA != null ? formatNumber(qtdA, 3) : '—'}</td>
+                                    <td className={`px-3 py-2 text-right font-semibold ${qtdDelta !== null && qtdDelta !== 0 ? 'text-amber-700' : 'text-gray-500'}`}>
+                                      {qtdB != null ? formatNumber(qtdB, 3) : '—'}
+                                    </td>
+                                    <td className={`px-3 py-2 text-right font-semibold ${qtdDelta === null ? 'text-gray-300' : qtdDelta > 0 ? 'text-red-600' : qtdDelta < 0 ? 'text-green-700' : 'text-gray-400'}`}>
+                                      {qtdDelta !== null ? `${qtdDelta > 0 ? '+' : ''}${formatNumber(qtdDelta, 3)}` : '—'}
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-gray-500">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
+                                    <td className="px-3 py-2 text-right text-gray-600">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>
+                                    <td className={`px-3 py-2 text-right font-semibold ${(item.delta ?? 0) >= 0 ? 'text-red-600' : 'text-green-700'}`}>
+                                      {item.delta != null ? `${item.delta >= 0 ? '+' : ''}${formatBRL(item.delta)}` : '—'}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <div className="flex gap-1 flex-wrap">
+                                        {changedFields.map((f: string) => (
+                                          <span key={f} className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">{f}</span>
+                                        ))}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* All items summary */}
                     <div>
-                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Por Item</h3>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Todos os Itens</h3>
                       <div className="overflow-auto rounded-xl border border-gray-200">
                         <table className="w-full text-xs border-collapse">
                           <thead>
@@ -1216,25 +1373,32 @@ export default function Analytics() {
                               <th className="px-3 py-2 text-left font-semibold text-gray-600">Item</th>
                               <th className="px-3 py-2 text-left font-semibold text-gray-600">Descrição</th>
                               <th className="px-3 py-2 text-center font-semibold text-gray-600">Status</th>
-                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Rev. A</th>
-                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Rev. B</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Qtd A</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Qtd B</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Valor A</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Valor B</th>
                               <th className="px-3 py-2 text-right font-semibold text-gray-600">Delta</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {compareData.by_item.map((item, i) => {
-                              const rowCls = item.status === 'added' ? 'bg-green-50' : item.status === 'removed' ? 'bg-red-50' : item.status === 'changed' ? 'bg-amber-50' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                              const statusBadge = item.status === 'added' ? 'bg-green-100 text-green-700' : item.status === 'removed' ? 'bg-red-100 text-red-600' : item.status === 'changed' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'
-                              const statusLabel = item.status === 'added' ? 'Adicionado' : item.status === 'removed' ? 'Removido' : item.status === 'changed' ? 'Alterado' : 'Igual'
+                            {compareData.by_item.map((item: any, i: number) => {
+                              const rowCls = item.status === 'added' ? 'bg-green-50/60' : item.status === 'removed' ? 'bg-red-50/60' : item.status === 'changed' ? 'bg-amber-50/60' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'
+                              const statusBadge = item.status === 'added' ? 'bg-green-100 text-green-700' : item.status === 'removed' ? 'bg-red-100 text-red-600' : item.status === 'changed' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'
+                              const statusLabel = item.status === 'added' ? '+ Adicionado' : item.status === 'removed' ? '− Removido' : item.status === 'changed' ? '~ Alterado' : 'Igual'
+                              const qChange = item.pq_change?.find((c: any) => c.field === 'quantidade')
                               return (
                                 <tr key={item.numero_item} className={`border-b border-gray-100 ${rowCls}`}>
-                                  <td className="px-3 py-2 font-mono text-gray-500">{item.numero_item}</td>
-                                  <td className="px-3 py-2 text-gray-700 max-w-[200px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
-                                  <td className="px-3 py-2 text-center"><span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${statusBadge}`}>{statusLabel}</span></td>
-                                  <td className="px-3 py-2 text-right text-gray-600">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
-                                  <td className="px-3 py-2 text-right text-gray-600">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>
-                                  <td className={`px-3 py-2 text-right font-semibold ${(item.delta ?? 0) >= 0 ? 'text-red-600' : 'text-green-700'}`}>
-                                    {item.delta != null ? `${item.delta >= 0 ? '+' : ''}${formatBRL(item.delta)}` : '—'}
+                                  <td className="px-3 py-1.5 font-mono text-gray-500 text-[11px]">{item.numero_item}</td>
+                                  <td className="px-3 py-1.5 text-gray-700 max-w-[180px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
+                                  <td className="px-3 py-1.5 text-center"><span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${statusBadge}`}>{statusLabel}</span></td>
+                                  <td className="px-3 py-1.5 text-right text-gray-400">{qChange ? formatNumber(Number(qChange.valor_a), 3) : '—'}</td>
+                                  <td className={`px-3 py-1.5 text-right ${qChange && qChange.valor_a !== qChange.valor_b ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>
+                                    {qChange ? formatNumber(Number(qChange.valor_b), 3) : '—'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right text-gray-500">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
+                                  <td className="px-3 py-1.5 text-right text-gray-600">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>
+                                  <td className={`px-3 py-1.5 text-right font-semibold ${(item.delta ?? 0) > 0 ? 'text-red-600' : (item.delta ?? 0) < 0 ? 'text-green-700' : 'text-gray-300'}`}>
+                                    {item.delta != null && item.delta !== 0 ? `${item.delta > 0 ? '+' : ''}${formatBRL(item.delta)}` : '—'}
                                   </td>
                                 </tr>
                               )
@@ -1244,7 +1408,8 @@ export default function Analytics() {
                       </div>
                     </div>
                   </div>
-                )}
+                  )
+                })()}
 
                 {!compareData && !loadingCompare && compareTriggered && (
                   <EmptyState message="Não foi possível comparar as revisões selecionadas." />

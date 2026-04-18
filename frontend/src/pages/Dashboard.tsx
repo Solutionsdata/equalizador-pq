@@ -1,25 +1,28 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { projectsAPI, analyticsAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
-import type { Project, EqualizationResponse } from '../types'
+import type { Project, BaselineEntry } from '../types'
 import { TIPO_OBRA_LABELS, STATUS_LABELS, formatBRL } from '../types'
 import {
-  FolderOpen, Plus, ArrowRight,
-  ChevronRight, Zap, Scissors, Trophy, Star,
-  BookOpen, Download, ExternalLink,
+  FolderOpen, Plus, ArrowRight, ChevronRight,
+  Zap, Trophy, TrendingUp, BarChart3, Calendar,
+  Building2, Clock, CheckCircle2, Activity,
 } from 'lucide-react'
 import GuidedTour, { RestartTourButton } from '../components/GuidedTour'
-import { ESTADOS, ANOS, getPaginaUrl, getDownloadUrl } from './Sicro'
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, BarChart, Bar, Cell,
+} from 'recharts'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
-  RASCUNHO:    'bg-gray-100 text-gray-500',
-  EM_ANDAMENTO:'bg-blue-50 text-blue-700 border border-blue-200',
-  CONCLUIDO:   'bg-green-50 text-green-700 border border-green-200',
-  ARQUIVADO:   'bg-gray-100 text-gray-400',
+  RASCUNHO:     'bg-gray-100 text-gray-500',
+  EM_ANDAMENTO: 'bg-blue-50 text-blue-700 border border-blue-200',
+  CONCLUIDO:    'bg-green-50 text-green-700 border border-green-200',
+  ARQUIVADO:    'bg-gray-100 text-gray-400',
 }
 
 function greeting() {
@@ -29,185 +32,179 @@ function greeting() {
   return 'Boa noite'
 }
 
-// ── Sub-componentes ───────────────────────────────────────────────────────────
+function formatShort(value: number): string {
+  if (value >= 1_000_000) return `R$\u00a0${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `R$\u00a0${(value / 1_000).toFixed(0)}k`
+  return formatBRL(value)
+}
 
-function MetricCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5">
-      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">{label}</p>
-      <p className="text-3xl font-bold text-gray-900 leading-none">{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-1.5">{sub}</p>}
+type Period = 'semana' | 'mes' | 'ano'
+
+function getPeriodKey(iso: string, period: Period): string {
+  const d = new Date(iso)
+  if (period === 'ano') return String(d.getFullYear())
+  if (period === 'mes') {
+    return d.toLocaleString('pt-BR', { month: 'short', year: '2-digit' }).replace('. ', '/')
+  }
+  // ISO week
+  const tmp = new Date(d.getTime())
+  tmp.setHours(0, 0, 0, 0)
+  tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7))
+  const yearStart = new Date(tmp.getFullYear(), 0, 1)
+  const week = Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+  return `Sem\u00a0${String(week).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`
+}
+
+// ── Timeline chart ────────────────────────────────────────────────────────────
+
+function TimelineChart({ baseline, period }: { baseline: BaselineEntry[]; period: Period }) {
+  const data = useMemo(() => {
+    const map = new Map<string, { valor: number; count: number }>()
+    const sorted = [...baseline].sort(
+      (a, b) => new Date(a.data_premiacao).getTime() - new Date(b.data_premiacao).getTime()
+    )
+    for (const e of sorted) {
+      const key = getPeriodKey(e.data_premiacao, period)
+      const cur = map.get(key) ?? { valor: 0, count: 0 }
+      map.set(key, { valor: cur.valor + e.valor_total, count: cur.count + 1 })
+    }
+    let acumulado = 0
+    return [...map.entries()].map(([key, { valor, count }]) => {
+      acumulado += valor
+      return { periodo: key, valor, acumulado, count }
+    })
+  }, [baseline, period])
+
+  if (data.length === 0) return (
+    <div className="h-48 flex items-center justify-center text-gray-300 text-sm">
+      Nenhum contrato equalizado ainda
     </div>
+  )
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3 text-xs min-w-[180px]">
+        <p className="font-semibold text-gray-700 mb-2 border-b border-gray-100 pb-1">{label}</p>
+        <div className="space-y-1">
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-500">No período:</span>
+            <span className="font-bold text-blue-600">{formatBRL(payload[0]?.value ?? 0)}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-500">Acumulado:</span>
+            <span className="font-bold text-indigo-600">{formatBRL(payload[1]?.value ?? 0)}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-500">Contratos:</span>
+            <span className="font-medium text-gray-600">{payload[0]?.payload?.count}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <defs>
+          <linearGradient id="gValor" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
+            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+          </linearGradient>
+          <linearGradient id="gAcum" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+        <XAxis
+          dataKey="periodo"
+          tick={{ fontSize: 10, fill: '#94a3b8' }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          tick={{ fontSize: 10, fill: '#94a3b8' }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={formatShort}
+          width={72}
+        />
+        <Tooltip content={<CustomTooltip />} />
+        <Area
+          type="monotone"
+          dataKey="valor"
+          stroke="#3b82f6"
+          strokeWidth={2}
+          fill="url(#gValor)"
+          name="Período"
+          dot={{ fill: '#3b82f6', r: 3 }}
+          activeDot={{ r: 5 }}
+        />
+        <Area
+          type="monotone"
+          dataKey="acumulado"
+          stroke="#6366f1"
+          strokeWidth={2}
+          fill="url(#gAcum)"
+          strokeDasharray="5 3"
+          name="Acumulado"
+          dot={false}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
   )
 }
 
-// ── Cherry Pick Card ──────────────────────────────────────────────────────────
+// ── Project winners bar ───────────────────────────────────────────────────────
 
-interface CherryItem {
-  numero_item: string
-  descricao: string
-  bestSupplier: string
-  economia: number
-  economyPct: number
-}
+function ProjectWinnersBar({ entries }: { entries: BaselineEntry[] }) {
+  if (entries.length === 0) return null
+  // Group by project, sum winner values per revision
+  const byProject: Record<number, { nome: string; revisions: { empresa: string; valor: number; date: string }[] }> = {}
+  for (const e of entries) {
+    if (!byProject[e.project_id]) byProject[e.project_id] = { nome: e.project_nome, revisions: [] }
+    byProject[e.project_id].revisions.push({ empresa: e.empresa, valor: e.valor_total, date: e.data_premiacao })
+  }
 
-interface SupplierWin {
-  empresa: string
-  wins: number
-  winPct: number
-}
+  const data = Object.values(byProject)
+    .map((p) => ({ nome: p.nome.slice(0, 22), total: p.revisions.reduce((s, r) => s + r.valor, 0) }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 6)
 
-interface CherryData {
-  cherryTotal: number
-  mediaTotal: number
-  economy: number
-  economyPct: number
-  topItems: CherryItem[]
-  topSuppliers: SupplierWin[]
-  totalItems: number
-}
+  const COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 
-const RANK_MEDALS = ['🥇', '🥈', '🥉']
-
-function economyColor(pct: number) {
-  if (pct >= 20) return { badge: 'bg-red-50 text-red-600', bar: '#ef4444' }
-  if (pct >= 10) return { badge: 'bg-amber-50 text-amber-600', bar: '#f59e0b' }
-  return { badge: 'bg-green-50 text-green-600', bar: '#22c55e' }
-}
-
-function CherryPickCard({ data, project }: { data: CherryData; project: Project }) {
-  const maxWinPct = data.topSuppliers[0]?.winPct ?? 1
-  const maxEconomy = data.topItems[0]?.economia ?? 1
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-xs">
+        <p className="font-semibold text-gray-700 mb-1">{payload[0]?.payload?.nome}</p>
+        <p className="text-blue-600 font-bold">{formatBRL(payload[0]?.value ?? 0)}</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="bg-white border border-violet-200 rounded-xl overflow-hidden shadow-sm">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-            <Scissors size={15} className="text-violet-600" />
-            Cherry Pick
-          </h2>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {project.nome} · menor preço por linha · {data.totalItems} itens
-          </p>
-        </div>
-        <Link
-          to={`/projetos/${project.id}/analises`}
-          className="flex items-center gap-1 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-lg transition-colors"
-        >
-          Ver análise <ChevronRight size={11} />
-        </Link>
-      </div>
-
-      {/* Métricas principais */}
-      <div className="grid grid-cols-3 border-b border-gray-100">
-        <div className="px-5 py-4">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Cherry Pick</p>
-          <p className="text-lg font-bold text-violet-700 leading-none">{formatBRL(data.cherryTotal)}</p>
-          <p className="text-[10px] text-gray-400 mt-1">mínimo teórico</p>
-        </div>
-        <div className="px-5 py-4 border-x border-gray-100">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Média</p>
-          <p className="text-lg font-bold text-gray-700 leading-none">{formatBRL(data.mediaTotal)}</p>
-          <p className="text-[10px] text-gray-400 mt-1">sem cherry pick</p>
-        </div>
-        <div className="px-5 py-4 bg-green-50/40">
-          <p className="text-[10px] font-semibold text-green-600 uppercase tracking-wider mb-1.5">Economia potencial</p>
-          <p className="text-lg font-bold text-green-600 leading-none">{formatBRL(data.economy)}</p>
-          <p className="text-[10px] text-green-500 font-semibold mt-1">↓ {data.economyPct.toFixed(1)}%</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
-
-        {/* Top itens por economia */}
-        {data.topItems.length > 0 && (
-          <div className="px-5 py-4">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <Star size={10} className="text-amber-400" /> Top itens por economia
-            </p>
-            <div className="space-y-3">
-              {data.topItems.map((item, i) => {
-                const barPct = Math.round((item.economia / maxEconomy) * 100)
-                const { badge, bar } = economyColor(item.economyPct)
-                return (
-                  <div key={i} className="group rounded-lg hover:bg-gray-50 p-2 -mx-2 transition-colors cursor-default">
-                    <div className="flex items-start gap-2 mb-1.5">
-                      <span className="text-[10px] text-gray-300 w-5 flex-shrink-0 pt-0.5 font-mono">{item.numero_item}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-gray-700 leading-tight font-medium truncate">{item.descricao}</p>
-                        <p className="text-[10px] text-violet-500 mt-0.5 truncate">{item.bestSupplier}</p>
-                      </div>
-                      <div className="flex-shrink-0 text-right">
-                        <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${badge}`}>
-                          −{item.economyPct.toFixed(0)}%
-                        </span>
-                        <p className="text-[10px] text-gray-400 mt-0.5">{formatBRL(item.economia)}</p>
-                      </div>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-1 ml-7">
-                      <div
-                        className="h-1 rounded-full transition-all duration-500"
-                        style={{ width: `${barPct}%`, backgroundColor: bar }}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Fornecedores */}
-        {data.topSuppliers.length > 0 && (
-          <div className="px-5 py-4">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <Trophy size={10} className="text-amber-400" /> Fornecedores no cherry pick
-            </p>
-            <div className="space-y-3">
-              {data.topSuppliers.map((s, i) => {
-                const barPct = Math.round((s.winPct / maxWinPct) * 100)
-                const gradients = [
-                  'from-violet-500 to-violet-400',
-                  'from-indigo-500 to-indigo-400',
-                  'from-blue-500 to-blue-400',
-                  'from-slate-400 to-slate-300',
-                ]
-                return (
-                  <div key={i} className="group rounded-lg hover:bg-gray-50 p-2 -mx-2 transition-colors cursor-default">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-sm flex-shrink-0">{RANK_MEDALS[i] ?? '·'}</span>
-                      <span className="text-xs text-gray-800 font-medium truncate flex-1">{s.empresa}</span>
-                      <div className="flex-shrink-0 text-right">
-                        <span className="text-xs font-bold text-violet-700">{s.winPct}%</span>
-                        <span className="text-[10px] text-gray-400 ml-1">({s.wins} itens)</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2 ml-6">
-                      <div
-                        className={`bg-gradient-to-r ${gradients[i] ?? gradients[3]} h-2 rounded-full transition-all duration-700`}
-                        style={{ width: `${barPct}%` }}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <p className="text-[10px] text-gray-400 mt-4 leading-relaxed border-t border-gray-100 pt-3">
-              % de itens em que cada fornecedor oferece o menor preço unitário.
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
+    <ResponsiveContainer width="100%" height={180}>
+      <BarChart data={data} margin={{ top: 4, right: 8, bottom: 40, left: 0 }} layout="vertical">
+        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+        <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={formatShort} />
+        <YAxis type="category" dataKey="nome" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} width={120} />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar dataKey="total" radius={[0, 4, 4, 0]}>
+          {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
   )
 }
 
-// ── Página ────────────────────────────────────────────────────────────────────
+// ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const [period, setPeriod] = useState<Period>('mes')
 
   const { data: _rawProjects } = useQuery<Project[]>({
     queryKey: ['projects'],
@@ -215,97 +212,35 @@ export default function Dashboard() {
   })
   const projects: Project[] = Array.isArray(_rawProjects) ? _rawProjects : []
 
-  const total        = projects.length
-  const emAndamento  = projects.filter((p) => p.status === 'EM_ANDAMENTO').length
-  const concluidos   = projects.filter((p) => p.status === 'CONCLUIDO').length
-  const totalProps   = projects.reduce((acc, p) => acc + p.total_proposals, 0)
-  const totalItens   = projects.reduce((acc, p) => acc + p.total_pq_items, 0)
-  const mediaProp    = total > 0 ? (totalProps / total).toFixed(1) : '—'
-  const latest       = projects[0]
-
-  // Projeto com propostas para cherry pick (o mais recente que tenha propostas)
-  const latestWithProposals = projects.find((p) => p.total_proposals > 0 && p.total_pq_items > 0)
-
-  const { data: eqRaw } = useQuery<EqualizationResponse>({
-    queryKey: ['equalization', latestWithProposals?.id],
-    queryFn: () => analyticsAPI.getEqualization(latestWithProposals!.id).then((r) => r.data),
-    enabled: !!latestWithProposals,
+  const { data: _rawBaseline } = useQuery<BaselineEntry[]>({
+    queryKey: ['baseline'],
+    queryFn: () => analyticsAPI.getBaseline().then((r) => r.data),
   })
+  const baseline: BaselineEntry[] = Array.isArray(_rawBaseline) ? _rawBaseline : []
 
-  const cherryData = useMemo((): CherryData | null => {
-    if (!eqRaw) return null
-    const items = Array.isArray(eqRaw.items) ? eqRaw.items : []
-    const proposals = Array.isArray(eqRaw.proposals) ? eqRaw.proposals : []
-    if (items.length === 0 || proposals.length === 0) return null
+  // KPI derivations
+  const total       = projects.length
+  const emAndamento = projects.filter((p) => p.status === 'EM_ANDAMENTO').length
+  const concluidos  = projects.filter((p) => p.status === 'CONCLUIDO').length
+  const totalValorEq = baseline.reduce((s, e) => s + e.valor_total, 0)
 
-    let cherryTotal = 0
-    let mediaTotal = 0
-    const winnerCounts: Record<string, number> = {}
-    const cherryItems: CherryItem[] = []
-
-    for (const item of items) {
-      const q = item.quantidade ?? 0
-
-      if (item.preco_minimo != null && q > 0) cherryTotal += item.preco_minimo * q
-      if (item.preco_medio  != null && q > 0) mediaTotal  += item.preco_medio  * q
-
-      // Qual proposta tem o menor preço neste item?
-      let minPrice = Infinity
-      let minPropId: string | null = null
-      for (const [propId, price] of Object.entries(item.precos)) {
-        if (price != null && price < minPrice) { minPrice = price; minPropId = propId }
-      }
-      if (minPropId) winnerCounts[minPropId] = (winnerCounts[minPropId] ?? 0) + 1
-
-      if (item.preco_minimo != null && item.preco_medio != null && q > 0) {
-        const economia = (item.preco_medio - item.preco_minimo) * q
-        if (economia > 0) {
-          const prop = proposals.find((p) => String(p.id) === minPropId)
-          cherryItems.push({
-            numero_item: item.numero_item,
-            descricao:   item.descricao,
-            bestSupplier: prop?.empresa ?? '—',
-            economia,
-            economyPct: ((item.preco_medio - item.preco_minimo) / item.preco_medio) * 100,
-          })
-        }
-      }
+  // Baseline indexed by project_id → list of entries (multiple revisions possible)
+  const baselineByProject = useMemo(() => {
+    const map: Record<number, BaselineEntry[]> = {}
+    for (const e of baseline) {
+      ;(map[e.project_id] ??= []).push(e)
     }
+    return map
+  }, [baseline])
 
-    cherryItems.sort((a, b) => b.economia - a.economia)
-
-    const topSuppliers: SupplierWin[] = Object.entries(winnerCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4)
-      .map(([propId, wins]) => {
-        const prop = proposals.find((p) => String(p.id) === propId)
-        return {
-          empresa: prop?.empresa ?? `Proposta ${propId}`,
-          wins,
-          winPct: Math.round((wins / items.length) * 100),
-        }
-      })
-
-    const economy    = mediaTotal - cherryTotal
-    const economyPct = mediaTotal > 0 ? (economy / mediaTotal) * 100 : 0
-
-    return {
-      cherryTotal,
-      mediaTotal,
-      economy,
-      economyPct,
-      topItems: cherryItems.slice(0, 5),
-      topSuppliers,
-      totalItems: items.length,
-    }
-  }, [eqRaw])
+  const recentProjects = projects.slice(0, 8)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-blue-50/30">
       <GuidedTour />
-      <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
+      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
-        {/* ── Cabeçalho ────────────────────────────────────────────────── */}
+        {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs text-gray-400 mb-1">
@@ -313,233 +248,339 @@ export default function Dashboard() {
                 weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
               })}
             </p>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
               {greeting()}, {user?.nome?.split(' ')[0]}
             </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Visão geral dos seus processos de equalização
+            <p className="text-sm text-gray-500 mt-1">
+              Central de equalização · {total} projeto{total !== 1 ? 's' : ''} cadastrado{total !== 1 ? 's' : ''}
             </p>
-            <div className="mt-1">
+            <div className="mt-1.5">
               <RestartTourButton />
             </div>
           </div>
           <Link
             to="/projetos"
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors shadow-sm shadow-blue-200"
           >
-            <Plus size={15} /> Novo Projeto
+            <Plus size={16} /> Novo Projeto
           </Link>
         </div>
 
-        {/* ── Métricas ─────────────────────────────────────────────────── */}
+        {/* ── KPI Cards ─────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard
-            label="Projetos"
-            value={total}
-            sub={emAndamento > 0 ? `${emAndamento} em andamento` : 'Nenhum em andamento'}
-          />
-          <MetricCard
-            label="Propostas recebidas"
-            value={totalProps}
-            sub={concluidos > 0 ? `${concluidos} projeto${concluidos > 1 ? 's' : ''} concluído${concluidos > 1 ? 's' : ''}` : undefined}
-          />
-          <MetricCard
-            label="Itens de PQ cadastrados"
-            value={totalItens}
-          />
-          <MetricCard
-            label="Média propostas / projeto"
-            value={mediaProp}
-            sub="Referência: 3 a 5 propostas"
-          />
+          {[
+            {
+              label: 'Total de Projetos',
+              value: total,
+              sub: `${emAndamento} em andamento`,
+              icon: FolderOpen,
+              iconBg: 'bg-blue-50',
+              iconColor: 'text-blue-600',
+              border: 'border-blue-100',
+            },
+            {
+              label: 'Em Andamento',
+              value: emAndamento,
+              sub: 'processos ativos',
+              icon: Activity,
+              iconBg: 'bg-amber-50',
+              iconColor: 'text-amber-600',
+              border: 'border-amber-100',
+            },
+            {
+              label: 'Concluídos',
+              value: concluidos,
+              sub: 'projetos finalizados',
+              icon: CheckCircle2,
+              iconBg: 'bg-green-50',
+              iconColor: 'text-green-600',
+              border: 'border-green-100',
+            },
+            {
+              label: 'Valor Total Equalizado',
+              value: totalValorEq > 0 ? formatShort(totalValorEq) : '—',
+              sub: `${baseline.length} contrato${baseline.length !== 1 ? 's' : ''} premiado${baseline.length !== 1 ? 's' : ''}`,
+              icon: TrendingUp,
+              iconBg: 'bg-indigo-50',
+              iconColor: 'text-indigo-600',
+              border: 'border-indigo-100',
+            },
+          ].map(({ label, value, sub, icon: Icon, iconBg, iconColor, border }) => (
+            <div key={label} className={`bg-white border ${border} rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow`}>
+              <div className="flex items-start justify-between mb-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+                <div className={`w-9 h-9 rounded-xl ${iconBg} flex items-center justify-center flex-shrink-0`}>
+                  <Icon size={16} className={iconColor} />
+                </div>
+              </div>
+              <p className="text-3xl font-bold text-gray-900 leading-none">{value}</p>
+              <p className="text-xs text-gray-400 mt-2">{sub}</p>
+            </div>
+          ))}
         </div>
 
-        {/* ── Layout principal: conteúdo + sidebar ─────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* ── Timeline + Projects grid ─────────────────────────────────── */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-          {/* Coluna principal */}
-          <div className="lg:col-span-2 space-y-6">
-
-            {/* Projetos recentes */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h2 className="text-sm font-semibold text-gray-800">Projetos recentes</h2>
-                <Link
-                  to="/projetos"
-                  className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
-                >
-                  Ver todos <ChevronRight size={11} />
-                </Link>
+          {/* Timeline (spans 2 cols) */}
+          <div className="xl:col-span-2 bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                  <BarChart3 size={15} className="text-blue-600" />
+                  Valores Equalizados ao Longo do Tempo
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Área azul = por período · linha tracejada = acumulado
+                </p>
               </div>
+              <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg">
+                {(['semana', 'mes', 'ano'] as Period[]).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                      period === p
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {p === 'semana' ? 'Semana' : p === 'mes' ? 'Mês' : 'Ano'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="px-4 pt-4 pb-3">
+              <TimelineChart baseline={baseline} period={period} />
+            </div>
+          </div>
 
-              {projects.length === 0 ? (
-                <div className="py-14 text-center px-6">
-                  <FolderOpen size={32} className="mx-auto text-gray-300 mb-3" />
-                  <p className="text-sm font-medium text-gray-600 mb-1">Nenhum projeto criado</p>
-                  <p className="text-xs text-gray-400 mb-5">
-                    Crie seu primeiro projeto para começar a equalizar propostas comerciais.
-                  </p>
-                  <Link to="/projetos" className="btn-primary text-sm mx-auto">
-                    <Plus size={14} /> Criar projeto
-                  </Link>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {projects.slice(0, 7).map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors group"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <FolderOpen size={14} className="text-gray-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{p.nome}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {TIPO_OBRA_LABELS[p.tipo_obra]}
-                          {p.numero_licitacao && ` · TR ${p.numero_licitacao}`}
-                          {' · '}{p.total_pq_items} itens · {p.total_proposals} proposta{p.total_proposals !== 1 ? 's' : ''}
-                        </p>
-                      </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${STATUS_COLORS[p.status]}`}>
-                        {STATUS_LABELS[p.status]}
-                      </span>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                        <Link
-                          to={`/projetos/${p.id}/equalizacao`}
-                          className="text-xs text-blue-600 font-medium px-2 py-1 rounded hover:bg-blue-50 flex items-center gap-1"
-                        >
-                          Equalizar <ArrowRight size={10} />
-                        </Link>
-                        <Link
-                          to={`/projetos/${p.id}/analises`}
-                          className="text-xs text-gray-500 font-medium px-2 py-1 rounded hover:bg-gray-100 flex items-center gap-1"
-                        >
-                          Análises <ArrowRight size={10} />
-                        </Link>
-                      </div>
-                    </div>
-                  ))}
+          {/* Por Projeto */}
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                <Trophy size={14} className="text-amber-500" />
+                Valor por Projeto
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">Contratos equalizados</p>
+            </div>
+            <div className="px-2 py-3">
+              <ProjectWinnersBar entries={baseline} />
+              {baseline.length === 0 && (
+                <div className="h-40 flex flex-col items-center justify-center text-gray-300">
+                  <Trophy size={28} className="mb-2" />
+                  <p className="text-xs">Nenhum contrato equalizado</p>
                 </div>
               )}
             </div>
-
-            {/* Cherry Pick */}
-            {cherryData && latestWithProposals && (
-              <CherryPickCard data={cherryData} project={latestWithProposals} />
-            )}
-
-          </div>
-
-          {/* Sidebar direita */}
-          <div className="space-y-6">
-
-            {/* SICRO Card */}
-            {(() => {
-              const latestAno = ANOS[0]
-              const latestPeriodo = latestAno.periodos[latestAno.periodos.length - 1]
-              return (
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <BookOpen size={15} className="text-blue-600" />
-                      <h2 className="text-sm font-semibold text-gray-800">SICRO — Preços DNIT</h2>
-                    </div>
-                    <Link
-                      to="/sicro"
-                      className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
-                    >
-                      Ver todos <ChevronRight size={11} />
-                    </Link>
-                  </div>
-                  <div className="px-5 py-4 space-y-4">
-                    <p className="text-xs text-gray-400 leading-relaxed">
-                      Último período disponível:{' '}
-                      <span className="font-semibold text-gray-700">
-                        {latestPeriodo.label} / {latestAno.ano}
-                      </span>
-                    </p>
-                    {ESTADOS.map((e) => {
-                      const dlUrl = getDownloadUrl(e, latestAno.ano, latestPeriodo)
-                      const pgUrl = getPaginaUrl(e, latestAno.ano, latestPeriodo.slug)
-                      return (
-                        <div key={e.sigla} className={`rounded-lg border p-3 ${e.corBg}`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs font-black ${e.cor}`}>{e.sigla}</span>
-                              <span className="text-xs text-gray-600 font-medium">{e.nome}</span>
-                            </div>
-                            <span className="text-[10px] text-gray-400">Região {e.regiao}</span>
-                          </div>
-                          <div className="flex gap-2">
-                            <a
-                              href={pgUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-blue-700 px-2 py-1 rounded bg-white border border-gray-200 hover:border-blue-300 transition-colors"
-                            >
-                              <ExternalLink size={10} />
-                              DNIT
-                            </a>
-                            {dlUrl && (
-                              <a
-                                href={dlUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-[11px] text-green-700 hover:text-green-800 px-2 py-1 rounded bg-white border border-green-200 hover:border-green-400 transition-colors"
-                              >
-                                <Download size={10} />
-                                .7z
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* Dica contextual */}
-            {total > 0 && totalProps === 0 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <Zap size={15} className="text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-semibold text-blue-800">Próximo passo</p>
-                    <p className="text-xs text-blue-600 mt-1 leading-relaxed">
-                      Você já tem um projeto. Adicione propostas na aba <strong>Equalização</strong> para começar a análise.
-                    </p>
-                    {latest && (
-                      <Link
-                        to={`/projetos/${latest.id}/equalizacao`}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 mt-2 hover:underline"
-                      >
-                        Ir para equalização <ArrowRight size={11} />
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Dica cherry pick */}
-            {!latestWithProposals && total > 0 && totalItens > 0 && (
-              <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <Scissors size={15} className="text-violet-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-semibold text-violet-800">Ative o Cherry Pick</p>
-                    <p className="text-xs text-violet-600 mt-1 leading-relaxed">
-                      Adicione pelo menos 2 propostas para ver o menor preço por linha e a economia potencial em tempo real.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
+
+        {/* ── Recent Projects ──────────────────────────────────────────── */}
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <Clock size={15} className="text-gray-400" />
+              <h2 className="text-sm font-bold text-gray-800">Projetos Recentes</h2>
+            </div>
+            <Link
+              to="/projetos"
+              className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
+            >
+              Ver todos <ChevronRight size={11} />
+            </Link>
+          </div>
+
+          {recentProjects.length === 0 ? (
+            <div className="py-16 text-center px-6">
+              <FolderOpen size={36} className="mx-auto text-gray-200 mb-3" />
+              <p className="text-sm font-medium text-gray-500 mb-1">Nenhum projeto criado</p>
+              <p className="text-xs text-gray-400 mb-5">Crie seu primeiro projeto para começar.</p>
+              <Link to="/projetos" className="btn-primary text-sm mx-auto">
+                <Plus size={14} /> Criar projeto
+              </Link>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {recentProjects.map((p) => {
+                const winners = baselineByProject[p.id] ?? []
+                // Sort winners by data_premiacao descending
+                const sorted = [...winners].sort(
+                  (a, b) => new Date(b.data_premiacao).getTime() - new Date(a.data_premiacao).getTime()
+                )
+
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-start gap-4 px-6 py-4 hover:bg-gray-50/70 transition-colors group"
+                  >
+                    {/* Status dot */}
+                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5 ${
+                      p.status === 'CONCLUIDO'    ? 'bg-green-500' :
+                      p.status === 'EM_ANDAMENTO' ? 'bg-blue-500 ring-4 ring-blue-100' :
+                      p.status === 'ARQUIVADO'    ? 'bg-gray-300' : 'bg-gray-200'
+                    }`} />
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{p.nome}</p>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${STATUS_COLORS[p.status]}`}>
+                          {STATUS_LABELS[p.status]}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                        <span className="text-xs text-gray-400">{TIPO_OBRA_LABELS[p.tipo_obra]}</span>
+                        {p.numero_licitacao && (
+                          <span className="text-xs text-gray-400">TR: {p.numero_licitacao}</span>
+                        )}
+                        <span className="text-xs text-gray-400">
+                          {p.total_pq_items} itens · {p.total_proposals} proposta{p.total_proposals !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+
+                      {/* Winner values per revision */}
+                      {sorted.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {sorted.map((e, i) => (
+                            <div
+                              key={e.proposal_id}
+                              className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-lg px-2.5 py-1"
+                            >
+                              <Trophy size={10} className="text-green-600 flex-shrink-0" />
+                              <div>
+                                <p className="text-[10px] text-green-600 font-semibold leading-none">
+                                  {formatBRL(e.valor_total)}
+                                </p>
+                                <p className="text-[9px] text-green-500 mt-0.5 truncate max-w-[120px]">
+                                  {e.empresa}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 self-center">
+                      <Link
+                        to={`/projetos/${p.id}/equalizacao`}
+                        className="text-xs text-blue-600 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 flex items-center gap-1 transition-colors"
+                      >
+                        Equalizar <ArrowRight size={10} />
+                      </Link>
+                      <Link
+                        to={`/projetos/${p.id}/analises`}
+                        className="text-xs text-gray-500 font-medium px-3 py-1.5 rounded-lg hover:bg-gray-100 flex items-center gap-1 transition-colors"
+                      >
+                        Análises <ArrowRight size={10} />
+                      </Link>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Contextual tips ─────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {total === 0 && (
+            <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl p-6 shadow-sm shadow-blue-200">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <Building2 size={18} className="text-white" />
+                </div>
+                <div>
+                  <p className="font-bold text-white">Comece criando um projeto</p>
+                  <p className="text-sm text-blue-100 mt-1 leading-relaxed">
+                    Cadastre um projeto, importe a Planilha de Quantitativos (PQ) e adicione propostas para equalizar.
+                  </p>
+                  <Link
+                    to="/projetos"
+                    className="inline-flex items-center gap-1 mt-3 bg-white text-blue-700 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+                  >
+                    Criar projeto <ArrowRight size={11} />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {total > 0 && projects.every((p) => p.total_proposals === 0) && (
+            <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-2xl p-6 shadow-sm">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <Zap size={18} className="text-white" />
+                </div>
+                <div>
+                  <p className="font-bold">Adicione propostas</p>
+                  <p className="text-sm text-amber-100 mt-1 leading-relaxed">
+                    Você tem projetos cadastrados. Adicione propostas para começar a equalização e análise comparativa.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {baseline.length > 0 && (
+            <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white rounded-2xl p-6 shadow-sm shadow-indigo-200">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <TrendingUp size={18} className="text-white" />
+                </div>
+                <div>
+                  <p className="font-bold">Baseline atualizado</p>
+                  <p className="text-sm text-indigo-100 mt-1 leading-relaxed">
+                    {baseline.length} contrato{baseline.length !== 1 ? 's' : ''} premiado{baseline.length !== 1 ? 's' : ''} · valor total equalizado: <strong>{formatBRL(totalValorEq)}</strong>
+                  </p>
+                  <Link
+                    to="/baseline"
+                    className="inline-flex items-center gap-1 mt-3 bg-white text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
+                  >
+                    Ver Baseline completo <ArrowRight size={11} />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {total > 0 && (
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
+                  <Calendar size={18} className="text-gray-500" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-gray-800">Distribuição por Status</p>
+                  <div className="mt-3 space-y-2">
+                    {[
+                      { label: 'Em Andamento', count: emAndamento, color: 'bg-blue-500' },
+                      { label: 'Concluídos',   count: concluidos,  color: 'bg-green-500' },
+                      { label: 'Rascunho',     count: projects.filter((p) => p.status === 'RASCUNHO').length, color: 'bg-gray-300' },
+                      { label: 'Arquivados',   count: projects.filter((p) => p.status === 'ARQUIVADO').length, color: 'bg-gray-200' },
+                    ].filter((s) => s.count > 0).map((s) => (
+                      <div key={s.label} className="flex items-center gap-3">
+                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${s.color}`}
+                            style={{ width: `${(s.count / total) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500 w-28 flex-shrink-0 flex justify-between">
+                          <span>{s.label}</span>
+                          <span className="font-semibold text-gray-700">{s.count}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   )
