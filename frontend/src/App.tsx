@@ -13,6 +13,7 @@ import AdminUsers from './pages/AdminUsers'
 import AdminMonitoring from './pages/AdminMonitoring'
 import Sicro from './pages/Sicro'
 import Baseline from './pages/Baseline'
+import Help from './pages/Help'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
@@ -50,6 +51,7 @@ function AppRoutes() {
         <Route path="projetos/:projectId/analises" element={<Analytics />} />
         <Route path="baseline" element={<Baseline />} />
         <Route path="sicro" element={<Sicro />} />
+        <Route path="ajuda" element={<Help />} />
         <Route
           path="admin/usuarios"
           element={

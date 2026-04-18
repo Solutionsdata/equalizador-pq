@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import {
   LayoutDashboard, FolderOpen, Table2,
   BarChart3, LineChart, LogOut, Crown, ChevronDown,
-  Building2, BookOpen, Monitor, Trophy,
+  Building2, BookOpen, Monitor, Trophy, GraduationCap,
 } from 'lucide-react'
 
 function NavItem({
@@ -68,6 +68,7 @@ export default function Sidebar() {
         <NavItem to="/projetos" icon={FolderOpen} label="Projetos" />
         <NavItem to="/baseline" icon={Trophy} label="Baseline" />
         <NavItem to="/sicro" icon={BookOpen} label="Sicro" />
+        <NavItem to="/ajuda" icon={GraduationCap} label="Guia & Ajuda" />
 
         {/* Projeto atual */}
         {projectId && (
