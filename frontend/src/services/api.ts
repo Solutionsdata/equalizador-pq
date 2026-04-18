@@ -48,6 +48,10 @@ export const authAPI = {
     api.post('/auth/login-json', { email, password }),
   register: (data: { nome: string; email: string; empresa?: string; cargo?: string; password: string }) =>
     api.post('/auth/register', data),
+  checkActivationToken: (token: string) =>
+    api.get(`/auth/activate/check?token=${token}`),
+  activate: (token: string, nome: string, password: string) =>
+    api.post('/auth/activate', { token, nome, password }),
 }
 
 // ── Projects ─────────────────────────────────────────────────────────────────

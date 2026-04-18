@@ -4,7 +4,7 @@ from sqlalchemy import text
 from app.database import engine, Base
 from app.config import settings
 from app.routers import auth, projects, pq, proposals, analytics, admin, revisions
-from app.routers import monitoring, activity
+from app.routers import monitoring, activity, hotmart
 
 # Cria tabelas novas e adiciona colunas ausentes (migração simples sem Alembic)
 Base.metadata.create_all(bind=engine)
@@ -92,6 +92,18 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS extensao_km NUMERIC(10,3)"
     ))
+    # Tabela de tokens de ativação (Hotmart)
+    _conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS activation_tokens (
+            id         SERIAL PRIMARY KEY,
+            token      VARCHAR(64) UNIQUE NOT NULL,
+            email      VARCHAR(200) NOT NULL,
+            expires_at TIMESTAMP NOT NULL
+        )
+    """))
+    _conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_activation_tokens_token ON activation_tokens (token)"
+    ))
     _conn.commit()
 
 app = FastAPI(
@@ -128,6 +140,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["Administração"])
 app.include_router(monitoring.router, prefix="/api/admin/monitoring", tags=["Monitoramento"])
 app.include_router(activity.router, prefix="/api", tags=["Atividade"])
 app.include_router(revisions.router, prefix="/api", tags=["Revisões"])
+app.include_router(hotmart.router, prefix="/api", tags=["Hotmart"])
 
 
 @app.get("/api/health", tags=["Sistema"])

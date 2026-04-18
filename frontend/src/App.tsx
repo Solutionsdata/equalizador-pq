@@ -14,11 +14,17 @@ import AdminMonitoring from './pages/AdminMonitoring'
 import Sicro from './pages/Sicro'
 import Baseline from './pages/Baseline'
 import Help from './pages/Help'
+import Activate from './pages/Activate'
+import SubscriptionExpired from './pages/SubscriptionExpired'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
   if (isLoading) return <div className="flex items-center justify-center h-screen text-gray-500">Carregando…</div>
   if (!user) return <Navigate to="/login" replace />
+  // Assinatura vencida (admins ficam isentos)
+  if (!user.is_admin && user.assinatura_ate && new Date(user.assinatura_ate) < new Date()) {
+    return <SubscriptionExpired />
+  }
   return <>{children}</>
 }
 
@@ -35,6 +41,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/ativar" element={<Activate />} />
       <Route
         path="/"
         element={

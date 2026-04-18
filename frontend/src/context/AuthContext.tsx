@@ -45,11 +45,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   async function login(email: string, password: string) {
-    const res = await authAPI.login(email, password)
-    const { access_token, user: userData } = res.data
-    localStorage.setItem('access_token', access_token)
-    localStorage.setItem('user', JSON.stringify(userData))
-    setUser(userData)
+    try {
+      const res = await authAPI.login(email, password)
+      const { access_token, user: userData } = res.data
+      localStorage.setItem('access_token', access_token)
+      localStorage.setItem('user', JSON.stringify(userData))
+      setUser(userData)
+    } catch (err: any) {
+      // 402 = assinatura vencida — salva usuário mínimo para exibir a tela de renovação
+      if (err.response?.status === 402) {
+        const detail = err.response.data?.detail || 'Assinatura vencida.'
+        const fakeUser = { id: 0, nome: '', email, is_active: false, is_admin: false, assinatura_ate: '2000-01-01', created_at: '' }
+        localStorage.setItem('user', JSON.stringify(fakeUser))
+        setUser(fakeUser as any)
+        throw new Error(detail)
+      }
+      throw err
+    }
   }
 
   async function register(data: RegisterData) {
