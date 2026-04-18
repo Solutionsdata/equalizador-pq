@@ -19,17 +19,15 @@ def _dec(v: float) -> Decimal:
 class AnalyticsService:
 
     @staticmethod
-    def get_pareto(db: Session, project_id: int, source: str = "referencia") -> ParetoData:
+    def get_pareto(db: Session, project_id: int, source: str = "referencia", revision_id: int | None = None) -> ParetoData:
         """
         Curva ABC / Pareto dos itens da PQ.
         source = 'referencia' usa preco_referencia; 'propostas' usa média dos preços ofertados.
         """
-        pq_items = (
-            db.query(PQItem)
-            .filter(PQItem.project_id == project_id)
-            .order_by(PQItem.ordem, PQItem.numero_item)
-            .all()
-        )
+        pq_q = db.query(PQItem).filter(PQItem.project_id == project_id)
+        if revision_id is not None:
+            pq_q = pq_q.filter(PQItem.revision_id == revision_id)
+        pq_items = pq_q.order_by(PQItem.ordem, PQItem.numero_item).all()
 
         raw: list[dict] = []
         for item in pq_items:
@@ -92,15 +90,17 @@ class AnalyticsService:
         )
 
     @staticmethod
-    def get_equalization(db: Session, project_id: int) -> EqualizationResponse:
-        """Tabela de equalização — todas as propostas lado a lado."""
-        pq_items = (
-            db.query(PQItem)
-            .filter(PQItem.project_id == project_id)
-            .order_by(PQItem.ordem, PQItem.numero_item)
-            .all()
-        )
-        proposals = db.query(Proposal).filter(Proposal.project_id == project_id).all()
+    def get_equalization(db: Session, project_id: int, revision_id: int | None = None) -> EqualizationResponse:
+        """Tabela de equalização — todas as propostas lado a lado (escopo de revisão)."""
+        pq_q = db.query(PQItem).filter(PQItem.project_id == project_id)
+        if revision_id is not None:
+            pq_q = pq_q.filter(PQItem.revision_id == revision_id)
+        pq_items = pq_q.order_by(PQItem.ordem, PQItem.numero_item).all()
+
+        prop_q = db.query(Proposal).filter(Proposal.project_id == project_id)
+        if revision_id is not None:
+            prop_q = prop_q.filter(Proposal.revision_id == revision_id)
+        proposals = prop_q.all()
 
         prop_totals = {p.id: 0.0 for p in proposals}
         comparison: list[ProposalComparisonItem] = []
@@ -171,8 +171,11 @@ class AnalyticsService:
         )
 
     @staticmethod
-    def get_discipline_summary(db: Session, project_id: int) -> List[DisciplineSummary]:
-        items = db.query(PQItem).filter(PQItem.project_id == project_id).all()
+    def get_discipline_summary(db: Session, project_id: int, revision_id: int | None = None) -> List[DisciplineSummary]:
+        q = db.query(PQItem).filter(PQItem.project_id == project_id)
+        if revision_id is not None:
+            q = q.filter(PQItem.revision_id == revision_id)
+        items = q.all()
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
         grand = 0.0
@@ -197,8 +200,11 @@ class AnalyticsService:
         ]
 
     @staticmethod
-    def get_categoria_summary(db: Session, project_id: int) -> List[CategoriaSummary]:
-        items = db.query(PQItem).filter(PQItem.project_id == project_id).all()
+    def get_categoria_summary(db: Session, project_id: int, revision_id: int | None = None) -> List[CategoriaSummary]:
+        q = db.query(PQItem).filter(PQItem.project_id == project_id)
+        if revision_id is not None:
+            q = q.filter(PQItem.revision_id == revision_id)
+        items = q.all()
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
         grand = 0.0

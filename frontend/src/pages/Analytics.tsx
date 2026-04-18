@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -736,32 +736,50 @@ export default function Analytics() {
   const [source, setSource] = useState<'referencia' | 'propostas'>('referencia')
   const [filters, setFilters] = useState<Filters>({ categoria: '', disciplina: '', fornecedores: [] })
   const [exporting, setExporting] = useState(false)
-
+  const [selectedRevisionId, setSelectedRevisionId] = useState<number | null>(null)
 
   const { data: project } = useQuery({
     queryKey: ['project', pid],
     queryFn: () => projectsAPI.get(pid).then((r) => r.data),
   })
 
+  // Load revisions early — needed for revision selector
+  const { data: revisionsAll } = useQuery<ProjectRevision[]>({
+    queryKey: ['revisions', pid],
+    queryFn: () => revisionsAPI.list(pid).then((r) => r.data),
+  })
+  const revisionsList: ProjectRevision[] = revisionsAll ?? []
+
+  // Default to latest revision when revisions load
+  useEffect(() => {
+    if (revisionsList.length === 0) return
+    const latestId = revisionsList.reduce((a, b) => (a.numero > b.numero ? a : b)).id
+    setSelectedRevisionId((prev) => prev ?? latestId)
+  }, [revisionsAll])
+
   const { data: paretoData, isLoading: loadingPareto } = useQuery<ParetoData>({
-    queryKey: ['pareto', pid, source],
-    queryFn: () => analyticsAPI.getPareto(pid, source).then((r) => r.data),
+    queryKey: ['pareto', pid, source, selectedRevisionId],
+    queryFn: () => analyticsAPI.getPareto(pid, source, selectedRevisionId).then((r) => r.data),
+    enabled: selectedRevisionId !== null,
   })
 
   const { data: equalization, isLoading: loadingEq } = useQuery<EqualizationResponse>({
-    queryKey: ['equalization', pid],
-    queryFn: () => analyticsAPI.getEqualization(pid).then((r) => r.data),
+    queryKey: ['equalization', pid, selectedRevisionId],
+    queryFn: () => analyticsAPI.getEqualization(pid, selectedRevisionId).then((r) => r.data),
+    enabled: selectedRevisionId !== null,
   })
 
   const { data: _rawDisciplines } = useQuery<DisciplineSummary[]>({
-    queryKey: ['disciplines', pid],
-    queryFn: () => analyticsAPI.getDisciplines(pid).then((r) => r.data),
+    queryKey: ['disciplines', pid, selectedRevisionId],
+    queryFn: () => analyticsAPI.getDisciplines(pid, selectedRevisionId).then((r) => r.data),
+    enabled: selectedRevisionId !== null,
   })
   const disciplines: DisciplineSummary[] = Array.isArray(_rawDisciplines) ? _rawDisciplines : []
 
   const { data: _rawCategorias } = useQuery<CategoriaSummary[]>({
-    queryKey: ['categorias', pid],
-    queryFn: () => analyticsAPI.getCategorias(pid).then((r) => r.data),
+    queryKey: ['categorias', pid, selectedRevisionId],
+    queryFn: () => analyticsAPI.getCategorias(pid, selectedRevisionId).then((r) => r.data),
+    enabled: selectedRevisionId !== null,
   })
   const categorias: CategoriaSummary[] = Array.isArray(_rawCategorias) ? _rawCategorias : []
 
@@ -796,10 +814,8 @@ export default function Analytics() {
   const [revB, setRevB] = useState<number | ''>('')
   const [compareTriggered, setCompareTriggered] = useState(false)
 
-  const { data: revisions } = useQuery<ProjectRevision[]>({
-    queryKey: ['revisions', pid],
-    queryFn: () => revisionsAPI.list(pid).then((r) => r.data),
-  })
+  // revisionsList is loaded above; alias for use in escopo/revisoes panels
+  const revisions = revisionsList
 
   const { data: scopeData, isLoading: loadingScope } = useQuery<ScopeValidationResponse>({
     queryKey: ['scope-validation', pid],
@@ -849,6 +865,31 @@ export default function Analytics() {
             {exporting ? 'Exportando…' : 'Exportar Excel'}
           </button>
         </div>
+
+        {/* Revision Selector */}
+        {revisionsList.length > 1 && (
+          <div className="flex items-center gap-3 mb-5 flex-wrap">
+            <span className="text-sm font-medium text-gray-600 flex items-center gap-1.5">
+              <GitBranch size={14} className="text-blue-600" />
+              Revisão analisada:
+            </span>
+            <div className="flex gap-1 bg-white border border-gray-200 p-0.5 rounded-xl">
+              {[...revisionsList].sort((a, b) => a.numero - b.numero).map((rev) => (
+                <button
+                  key={rev.id}
+                  onClick={() => { setSelectedRevisionId(rev.id); setFilters({ categoria: '', disciplina: '', fornecedores: [] }) }}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                    selectedRevisionId === rev.id
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  Rev. {rev.numero}{rev.descricao ? ` — ${rev.descricao}` : ''}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 bg-white border border-gray-200 p-1 rounded-xl mb-6 overflow-x-auto">

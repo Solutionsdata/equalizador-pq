@@ -21,39 +21,43 @@ router = APIRouter()
 def get_pareto(
     project_id: int,
     source: str = Query(default="referencia", enum=["referencia", "propostas"]),
+    revision_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Curva ABC / Pareto dos itens do projeto."""
-    return AnalyticsService.get_pareto(db, project_id, source)
+    return AnalyticsService.get_pareto(db, project_id, source, revision_id)
 
 
 @router.get("/equalization/{project_id}", response_model=EqualizationResponse)
 def get_equalization(
     project_id: int,
+    revision_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Tabela de equalização — todas as propostas lado a lado."""
-    return AnalyticsService.get_equalization(db, project_id)
+    """Tabela de equalização — todas as propostas lado a lado, filtrada por revisão."""
+    return AnalyticsService.get_equalization(db, project_id, revision_id)
 
 
 @router.get("/disciplines/{project_id}", response_model=list[DisciplineSummary])
 def get_disciplines(
     project_id: int,
+    revision_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return AnalyticsService.get_discipline_summary(db, project_id)
+    return AnalyticsService.get_discipline_summary(db, project_id, revision_id)
 
 
 @router.get("/categorias/{project_id}", response_model=list[CategoriaSummary])
 def get_categorias(
     project_id: int,
+    revision_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return AnalyticsService.get_categoria_summary(db, project_id)
+    return AnalyticsService.get_categoria_summary(db, project_id, revision_id)
 
 
 @router.get("/scope-validation/{project_id}")

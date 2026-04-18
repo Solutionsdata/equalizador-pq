@@ -118,14 +118,14 @@ export const proposalsAPI = {
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
 export const analyticsAPI = {
-  getPareto: (projectId: number, source: 'referencia' | 'propostas' = 'referencia') =>
-    api.get(`/analytics/pareto/${projectId}`, { params: { source } }),
-  getEqualization: (projectId: number) =>
-    api.get(`/analytics/equalization/${projectId}`),
-  getDisciplines: (projectId: number) =>
-    api.get(`/analytics/disciplines/${projectId}`),
-  getCategorias: (projectId: number) =>
-    api.get(`/analytics/categorias/${projectId}`),
+  getPareto: (projectId: number, source: 'referencia' | 'propostas' = 'referencia', revisionId?: number | null) =>
+    api.get(`/analytics/pareto/${projectId}`, { params: { source, ...(revisionId ? { revision_id: revisionId } : {}) } }),
+  getEqualization: (projectId: number, revisionId?: number | null) =>
+    api.get(`/analytics/equalization/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
+  getDisciplines: (projectId: number, revisionId?: number | null) =>
+    api.get(`/analytics/disciplines/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
+  getCategorias: (projectId: number, revisionId?: number | null) =>
+    api.get(`/analytics/categorias/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
   exportExcel: (projectId: number) =>
     api.get(`/analytics/export/${projectId}`, { responseType: 'blob' }),
   getBaseline: () => api.get('/analytics/baseline'),
