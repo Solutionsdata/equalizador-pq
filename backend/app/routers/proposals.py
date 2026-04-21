@@ -119,12 +119,29 @@ def get_proposal_with_items(
         raise HTTPException(status_code=404, detail="Proposta não encontrada")
     _check_project(db, proposal.project_id, current_user.id)
 
-    # Garante que existem ProposalItems para todos os itens da PQ
-    existing_ids = {pi.pq_item_id for pi in proposal.items}
-    pq_items = db.query(PQItem).filter(PQItem.project_id == proposal.project_id).all()
+    # PQ items scoped to the same revision as the proposal
+    pq_items = (
+        db.query(PQItem)
+        .filter(
+            PQItem.project_id == proposal.project_id,
+            PQItem.revision_id == proposal.revision_id,
+        )
+        .all()
+    )
+    valid_pq_ids = {item.id for item in pq_items}
+
+    # Remove ProposalItems that belong to a different revision (cleanup contamination)
+    for pi in list(proposal.items):
+        if pi.pq_item_id not in valid_pq_ids:
+            db.delete(pi)
+    db.flush()
+
+    # Add missing ProposalItems for this revision
+    existing_ids = {pi.pq_item_id for pi in proposal.items if pi.pq_item_id in valid_pq_ids}
     for pq_item in pq_items:
         if pq_item.id not in existing_ids:
             db.add(ProposalItem(proposal_id=proposal.id, pq_item_id=pq_item.id))
+
     db.commit()
     db.refresh(proposal)
 
@@ -166,10 +183,13 @@ def bulk_update_items(
         raise HTTPException(status_code=404, detail="Proposta não encontrada")
     _check_project(db, proposal.project_id, current_user.id)
 
-    # Monta dicionário id→PQItem para calcular totais
+    # Monta dicionário id→PQItem para calcular totais (escopo da revisão da proposta)
     pq_map = {
         pi.id: pi
-        for pi in db.query(PQItem).filter(PQItem.project_id == proposal.project_id).all()
+        for pi in db.query(PQItem).filter(
+            PQItem.project_id == proposal.project_id,
+            PQItem.revision_id == proposal.revision_id,
+        ).all()
     }
 
     for item_data in data.items:
@@ -221,7 +241,10 @@ def download_proposal_template(
 
     pq_items = (
         db.query(PQItem)
-        .filter(PQItem.project_id == proposal.project_id)
+        .filter(
+            PQItem.project_id == proposal.project_id,
+            PQItem.revision_id == proposal.revision_id,
+        )
         .order_by(PQItem.ordem, PQItem.numero_item)
         .all()
     )
@@ -255,7 +278,10 @@ def export_proposal(
 
     pq_items = (
         db.query(PQItem)
-        .filter(PQItem.project_id == proposal.project_id)
+        .filter(
+            PQItem.project_id == proposal.project_id,
+            PQItem.revision_id == proposal.revision_id,
+        )
         .order_by(PQItem.ordem, PQItem.numero_item)
         .all()
     )
@@ -290,7 +316,10 @@ async def import_proposal(
 
     pq_items = (
         db.query(PQItem)
-        .filter(PQItem.project_id == proposal.project_id)
+        .filter(
+            PQItem.project_id == proposal.project_id,
+            PQItem.revision_id == proposal.revision_id,
+        )
         .order_by(PQItem.ordem, PQItem.numero_item)
         .all()
     )
