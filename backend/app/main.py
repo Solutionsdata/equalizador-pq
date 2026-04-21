@@ -4,7 +4,7 @@ from sqlalchemy import text
 from app.database import engine, Base
 from app.config import settings
 from app.routers import auth, projects, pq, proposals, analytics, admin, revisions
-from app.routers import monitoring, activity, hotmart
+from app.routers import monitoring, hotmart
 
 # Cria tabelas novas e adiciona colunas ausentes (migração simples sem Alembic)
 Base.metadata.create_all(bind=engine)
@@ -128,6 +128,33 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "CREATE INDEX IF NOT EXISTS ix_activation_tokens_token ON activation_tokens (token)"
     ))
+    # ── Tabela de logins (substitui activity_logs volumoso) ──────────────────
+    _conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS user_logins (
+            id        SERIAL PRIMARY KEY,
+            user_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            logged_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            ip        VARCHAR(50)
+        )
+    """))
+    _conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_user_logins_logged_at ON user_logins (logged_at)"
+    ))
+    _conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_user_logins_user_id ON user_logins (user_id)"
+    ))
+    # Limpa activity_logs antigos para liberar espaço no banco
+    _conn.execute(text("TRUNCATE TABLE activity_logs"))
+    # ── Índices de performance nas tabelas mais pesadas ───────────────────────
+    _conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_pq_items_project_revision ON pq_items (project_id, revision_id)"
+    ))
+    _conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_proposal_items_proposal_id ON proposal_items (proposal_id)"
+    ))
+    _conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_proposal_items_pq_item_id ON proposal_items (pq_item_id)"
+    ))
     _conn.commit()
 
 app = FastAPI(
@@ -162,7 +189,6 @@ app.include_router(proposals.router, prefix="/api/proposals", tags=["Propostas"]
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Análises"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Administração"])
 app.include_router(monitoring.router, prefix="/api/admin/monitoring", tags=["Monitoramento"])
-app.include_router(activity.router, prefix="/api", tags=["Atividade"])
 app.include_router(revisions.router, prefix="/api", tags=["Revisões"])
 app.include_router(hotmart.router, prefix="/api", tags=["Hotmart"])
 

@@ -1,7 +1,8 @@
+from collections import defaultdict
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
@@ -9,6 +10,7 @@ from app.models.project import Project
 from app.models.project_revision import ProjectRevision
 from app.models.pq_item import PQItem
 from app.models.proposal import Proposal
+from app.models.proposal_item import ProposalItem
 from app.schemas.analytics import ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary
 from app.services.analytics import AnalyticsService
 from app.services.excel import gerar_relatorio_equalizacao, gerar_baseline_excel
@@ -95,11 +97,16 @@ def scope_validation(
         for item in db.query(PQItem).filter(PQItem.revision_id == revision.id).all()
     }
 
-    # Get proposals for this revision
-    proposals = db.query(Proposal).filter(
-        Proposal.project_id == project_id,
-        Proposal.revision_id == revision.id,
-    ).all()
+    # Get proposals for this revision (eager-load items to avoid N+1)
+    proposals = (
+        db.query(Proposal)
+        .options(joinedload(Proposal.items))
+        .filter(
+            Proposal.project_id == project_id,
+            Proposal.revision_id == revision.id,
+        )
+        .all()
+    )
 
     result_proposals = []
     any_changes = False
@@ -158,21 +165,73 @@ def get_baseline(
     if not project_ids:
         return []
 
+    # Eager-load proposal items to avoid N+1 on proposal.items
     winners = (
         db.query(Proposal)
+        .options(joinedload(Proposal.items))
         .filter(Proposal.project_id.in_(project_ids), Proposal.is_winner == True)  # noqa: E712
         .order_by(Proposal.updated_at.desc())
         .all()
     )
 
+    if not winners:
+        return []
+
+    # Batch-load ALL PQ items for all projects at once
+    all_pq_items = (
+        db.query(PQItem)
+        .filter(PQItem.project_id.in_(project_ids))
+        .order_by(PQItem.ordem)
+        .all()
+    )
+    # Group: (project_id, revision_id) → {pq_item_id: PQItem}
+    pq_groups: dict[tuple, dict[int, PQItem]] = defaultdict(dict)
+    for item in all_pq_items:
+        pq_groups[(item.project_id, item.revision_id)][item.id] = item
+
+    # Batch-load all proposals for same (project_id, empresa) combos to find first proposal
+    winner_proj_ids = list({p.project_id for p in winners})
+    winner_empresas = list({p.empresa for p in winners})
+    empresa_props = (
+        db.query(Proposal)
+        .options(joinedload(Proposal.items))
+        .filter(
+            Proposal.project_id.in_(winner_proj_ids),
+            Proposal.empresa.in_(winner_empresas),
+        )
+        .order_by(Proposal.created_at.asc())
+        .all()
+    )
+    # First proposal per (project_id, empresa)
+    first_prop_map: dict[tuple, Proposal] = {}
+    for ep in empresa_props:
+        key = (ep.project_id, ep.empresa)
+        if key not in first_prop_map:
+            first_prop_map[key] = ep
+
     entries = []
     for proposal in winners:
         project = project_map[proposal.project_id]
+        pq_map = pq_groups[(proposal.project_id, proposal.revision_id)]
 
-        pq_q = db.query(PQItem).filter(PQItem.project_id == proposal.project_id)
-        if proposal.revision_id:
-            pq_q = pq_q.filter(PQItem.revision_id == proposal.revision_id)
-        pq_map = {item.id: item for item in pq_q.order_by(PQItem.ordem).all()}
+        valor_referencia_pq = sum(
+            float(item.quantidade) * float(item.preco_referencia)
+            for item in pq_map.values()
+            if item.quantidade and item.preco_referencia
+        )
+
+        first_proposta = first_prop_map.get((proposal.project_id, proposal.empresa))
+        valor_primeira_proposta = None
+        if first_proposta and first_proposta.id != proposal.id:
+            vp = Decimal("0")
+            for pi in first_proposta.items:
+                if pi.pq_item_id in pq_map and pi.preco_total:
+                    vp += pi.preco_total
+            if vp > 0:
+                valor_primeira_proposta = float(vp)
+
+        data_prem = proposal.updated_at or proposal.created_at
+        sla_dias = (data_prem - project.created_at).days if project.created_at and data_prem else None
 
         items = []
         total = Decimal("0")
@@ -197,6 +256,8 @@ def get_baseline(
         entries.append({
             "project_id": project.id,
             "project_nome": project.nome,
+            "project_status": project.status.value if hasattr(project.status, "value") else str(project.status),
+            "project_created_at": project.created_at.isoformat() if project.created_at else None,
             "numero_licitacao": project.numero_licitacao,
             "tipo_obra": project.tipo_obra,
             "extensao_km": float(project.extensao_km) if project.extensao_km else None,
@@ -205,7 +266,10 @@ def get_baseline(
             "cnpj": proposal.cnpj,
             "bdi_global": float(proposal.bdi_global or 0),
             "valor_total": float(total),
-            "data_premiacao": (proposal.updated_at or proposal.created_at).isoformat(),
+            "valor_referencia_pq": valor_referencia_pq if valor_referencia_pq > 0 else None,
+            "valor_primeira_proposta": valor_primeira_proposta,
+            "sla_dias": sla_dias,
+            "data_premiacao": data_prem.isoformat(),
             "items": items,
         })
 

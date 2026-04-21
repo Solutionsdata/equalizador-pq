@@ -20,14 +20,19 @@ class AnalyticsService:
 
     @staticmethod
     def get_pareto(db: Session, project_id: int, source: str = "referencia", revision_id: int | None = None) -> ParetoData:
-        """
-        Curva ABC / Pareto dos itens da PQ.
-        source = 'referencia' usa preco_referencia; 'propostas' usa média dos preços ofertados.
-        """
         pq_q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             pq_q = pq_q.filter(PQItem.revision_id == revision_id)
         pq_items = pq_q.order_by(PQItem.ordem, PQItem.numero_item).all()
+
+        # Batch-load all proposal prices upfront (avoids N+1)
+        pi_by_pq_id: dict[int, list[float]] = {}
+        if source == "propostas":
+            pq_ids = [item.id for item in pq_items]
+            if pq_ids:
+                for pi in db.query(ProposalItem).filter(ProposalItem.pq_item_id.in_(pq_ids)).all():
+                    if pi.preco_unitario:
+                        pi_by_pq_id.setdefault(pi.pq_item_id, []).append(float(pi.preco_unitario))
 
         raw: list[dict] = []
         for item in pq_items:
@@ -36,8 +41,7 @@ class AnalyticsService:
                     valor = float(item.quantidade) * float(item.preco_referencia)
                     raw.append({"item": item, "preco_medio": float(item.preco_referencia), "valor": valor})
             else:
-                prop_items = db.query(ProposalItem).filter(ProposalItem.pq_item_id == item.id).all()
-                prices = [float(pi.preco_unitario) for pi in prop_items if pi.preco_unitario]
+                prices = pi_by_pq_id.get(item.id, [])
                 if prices and item.quantidade:
                     pm = sum(prices) / len(prices)
                     raw.append({"item": item, "preco_medio": pm, "valor": float(item.quantidade) * pm})
@@ -91,7 +95,6 @@ class AnalyticsService:
 
     @staticmethod
     def get_equalization(db: Session, project_id: int, revision_id: int | None = None) -> EqualizationResponse:
-        """Tabela de equalização — todas as propostas lado a lado (escopo de revisão)."""
         pq_q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             pq_q = pq_q.filter(PQItem.revision_id == revision_id)
@@ -102,6 +105,21 @@ class AnalyticsService:
             prop_q = prop_q.filter(Proposal.revision_id == revision_id)
         proposals = prop_q.all()
 
+        # Batch-load ALL ProposalItems in one query (eliminates N×M queries)
+        proposal_ids = [p.id for p in proposals]
+        pq_item_ids = [item.id for item in pq_items]
+        pi_map: dict[tuple[int, int], ProposalItem] = {}
+        if proposal_ids and pq_item_ids:
+            for pi in (
+                db.query(ProposalItem)
+                .filter(
+                    ProposalItem.proposal_id.in_(proposal_ids),
+                    ProposalItem.pq_item_id.in_(pq_item_ids),
+                )
+                .all()
+            ):
+                pi_map[(pi.proposal_id, pi.pq_item_id)] = pi
+
         prop_totals = {p.id: 0.0 for p in proposals}
         comparison: list[ProposalComparisonItem] = []
 
@@ -111,11 +129,7 @@ class AnalyticsService:
             prices_list: list[float] = []
 
             for p in proposals:
-                pi = (
-                    db.query(ProposalItem)
-                    .filter(ProposalItem.proposal_id == p.id, ProposalItem.pq_item_id == item.id)
-                    .first()
-                )
+                pi = pi_map.get((p.id, item.id))
                 if pi and pi.preco_unitario:
                     pu = float(pi.preco_unitario)
                     bdi = float(pi.bdi if pi.bdi is not None else p.bdi_global or 0)
