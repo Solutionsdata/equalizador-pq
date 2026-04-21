@@ -96,7 +96,7 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE projects ALTER COLUMN tipo_obra TYPE VARCHAR(100) USING tipo_obra::text"
     ))
-    # Garante ON DELETE CASCADE em proposal_items → pq_items
+    # Garante ON DELETE CASCADE em proposal_items → pq_items (idempotente)
     _conn.execute(text("""
         DO $$
         DECLARE c text;
@@ -110,12 +110,11 @@ with engine.connect() as _conn:
             IF c IS NOT NULL THEN
                 EXECUTE 'ALTER TABLE proposal_items DROP CONSTRAINT ' || quote_ident(c);
             END IF;
+            ALTER TABLE proposal_items
+                ADD CONSTRAINT proposal_items_pq_item_id_fkey
+                FOREIGN KEY (pq_item_id) REFERENCES pq_items(id) ON DELETE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
         END $$
-    """))
-    _conn.execute(text("""
-        ALTER TABLE proposal_items
-            ADD CONSTRAINT proposal_items_pq_item_id_fkey
-            FOREIGN KEY (pq_item_id) REFERENCES pq_items(id) ON DELETE CASCADE
     """))
     # Tabela de tokens de ativação (Hotmart)
     _conn.execute(text("""

@@ -73,10 +73,11 @@ def bulk_save_pq_items(
     db.flush()
 
     # Insere novos itens com revision_id
+    # model_dump() já inclui 'ordem'; excluímos para evitar TypeError de kwarg duplicado
     new_items = []
     for i, item_data in enumerate(data.items):
         item = PQItem(
-            **item_data.model_dump(),
+            **item_data.model_dump(exclude={'ordem'}),
             project_id=project_id,
             ordem=i,
             revision_id=data.revision_id,
@@ -165,14 +166,17 @@ async def import_pq(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    # Remove apenas os itens da revisão atual
+    # Remove via ORM para respeitar cascade (ProposalItems → PQItem FK)
     q = db.query(PQItem).filter(PQItem.project_id == project_id)
     if revision_id is not None:
         q = q.filter(PQItem.revision_id == revision_id)
-    q.delete()
+    for old_item in q.all():
+        db.delete(old_item)
+    db.flush()
 
     new_items = []
     for row in rows:
+        # 'ordem' já vem dentro de row — não passar explicitamente
         item = PQItem(**row, project_id=project_id, revision_id=revision_id)
         db.add(item)
         new_items.append(item)
