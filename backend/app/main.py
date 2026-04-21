@@ -96,6 +96,27 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE projects ALTER COLUMN tipo_obra TYPE VARCHAR(100) USING tipo_obra::text"
     ))
+    # Garante ON DELETE CASCADE em proposal_items → pq_items
+    _conn.execute(text("""
+        DO $$
+        DECLARE c text;
+        BEGIN
+            SELECT rc.constraint_name INTO c
+            FROM information_schema.referential_constraints rc
+            JOIN information_schema.key_column_usage kcu
+                ON rc.constraint_name = kcu.constraint_name
+            WHERE kcu.table_name = 'proposal_items' AND kcu.column_name = 'pq_item_id'
+            LIMIT 1;
+            IF c IS NOT NULL THEN
+                EXECUTE 'ALTER TABLE proposal_items DROP CONSTRAINT ' || quote_ident(c);
+            END IF;
+        END $$
+    """))
+    _conn.execute(text("""
+        ALTER TABLE proposal_items
+            ADD CONSTRAINT proposal_items_pq_item_id_fkey
+            FOREIGN KEY (pq_item_id) REFERENCES pq_items(id) ON DELETE CASCADE
+    """))
     # Tabela de tokens de ativação (Hotmart)
     _conn.execute(text("""
         CREATE TABLE IF NOT EXISTS activation_tokens (

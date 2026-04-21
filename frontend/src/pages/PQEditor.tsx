@@ -109,19 +109,29 @@ export default function PQEditor() {
   }, [serverItems, isLoading])
 
   const saveMutation = useMutation({
-    mutationFn: (items: Row[]) =>
-      pqAPI.bulkSave(pid, items.map(({ _key, ...rest }) => ({
+    mutationFn: (items: Row[]) => {
+      // Filtra linhas completamente em branco antes de enviar
+      const valid = items.filter((r) => r.descricao.trim() || r.numero_item.trim())
+      if (valid.length === 0) return Promise.reject(new Error('Adicione ao menos um item com descrição ou número.'))
+      const revId = currentRevisionId ?? (revisions[0]?.id ?? undefined)
+      return pqAPI.bulkSave(pid, valid.map(({ _key, ...rest }) => ({
         ...rest,
+        numero_item: rest.numero_item || '—',
+        descricao: rest.descricao || '—',
         quantidade: Number(rest.quantidade) || 0,
         preco_referencia: rest.preco_referencia ? Number(rest.preco_referencia) : null,
-      })), currentRevisionId ?? undefined),
+      })), revId)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pq', pid] })
       qc.invalidateQueries({ queryKey: ['projects'] })
       toast.success('Planilha PQ salva com sucesso!')
       setDirty(false)
     },
-    onError: () => toast.error('Erro ao salvar a planilha'),
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail ?? err?.message ?? 'Erro ao salvar a planilha'
+      toast.error(String(detail))
+    },
   })
 
   function updateRow(key: string, field: keyof Row, value: string) {

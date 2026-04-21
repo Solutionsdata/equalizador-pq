@@ -64,11 +64,13 @@ def bulk_save_pq_items(
     """
     _check_project(db, project_id, current_user.id)
 
-    # Remove apenas os itens da revisão atual
+    # Remove via ORM para respeitar cascade (ProposalItems referencia PQItem)
     q = db.query(PQItem).filter(PQItem.project_id == project_id)
     if data.revision_id is not None:
         q = q.filter(PQItem.revision_id == data.revision_id)
-    q.delete()
+    for old_item in q.all():
+        db.delete(old_item)
+    db.flush()
 
     # Insere novos itens com revision_id
     new_items = []
