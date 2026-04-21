@@ -344,6 +344,24 @@ async def import_proposal(
     )
 
 
+@router.patch("/{proposal_id}/unset-winner", response_model=ProposalResponse)
+def unset_winner(
+    proposal_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.proposal import ProposalStatus
+    proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposta não encontrada")
+    _check_project(db, proposal.project_id, current_user.id)
+    proposal.is_winner = False
+    proposal.status = ProposalStatus.EM_ANALISE
+    db.commit()
+    db.refresh(proposal)
+    return _to_response(proposal)
+
+
 @router.delete("/{proposal_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_proposal(
     proposal_id: int,

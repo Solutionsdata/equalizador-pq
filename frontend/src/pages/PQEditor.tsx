@@ -100,6 +100,7 @@ export default function PQEditor() {
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
+    if (dirty) return
     if (serverItems.length > 0) {
       setRows(serverItems.map((item, i) => ({ ...item, _key: String(item.id), ordem: i })))
     } else if (!isLoading) {

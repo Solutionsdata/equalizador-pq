@@ -92,6 +92,10 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS extensao_km NUMERIC(10,3)"
     ))
+    # Convert tipo_obra from Postgres enum to plain VARCHAR (allows free-text values)
+    _conn.execute(text(
+        "ALTER TABLE projects ALTER COLUMN tipo_obra TYPE VARCHAR(100) USING tipo_obra::text"
+    ))
     # Tabela de tokens de ativação (Hotmart)
     _conn.execute(text("""
         CREATE TABLE IF NOT EXISTS activation_tokens (

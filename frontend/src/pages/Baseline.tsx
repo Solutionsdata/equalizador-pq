@@ -1,13 +1,13 @@
 import React, { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { analyticsAPI, downloadBlob } from '../services/api'
+import { analyticsAPI, proposalsAPI, downloadBlob } from '../services/api'
 import type { BaselineEntry } from '../types'
-import { TIPO_OBRA_LABELS, formatBRL, formatNumber } from '../types'
+import { getTipoObraLabel, formatBRL, formatNumber } from '../types'
 import toast from 'react-hot-toast'
 import {
   Trophy, FileDown, TrendingUp, Building2, Users, MapPin,
-  BarChart2, Layers, ArrowUpRight,
+  BarChart2, Layers, ArrowUpRight, XCircle, X, Check,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -47,14 +47,27 @@ const CustomTooltipBRL = ({ active, payload, label }: any) => {
 }
 
 export default function Baseline() {
+  const qc = useQueryClient()
   const [filterTR, setFilterTR] = useState('')
   const [filterEmpresa, setFilterEmpresa] = useState('')
   const [filterYM, setFilterYM] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [cancelConfirm, setCancelConfirm] = useState<number | null>(null)
 
   const { data: entries = [], isLoading } = useQuery<BaselineEntry[]>({
     queryKey: ['baseline'],
     queryFn: () => analyticsAPI.getBaseline().then((r) => r.data),
+  })
+
+  const unsetWinnerMutation = useMutation({
+    mutationFn: (proposalId: number) => proposalsAPI.unsetWinner(proposalId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['baseline'] })
+      qc.invalidateQueries({ queryKey: ['proposals'] })
+      toast.success('Premiação cancelada.')
+      setCancelConfirm(null)
+    },
+    onError: () => toast.error('Erro ao cancelar premiação'),
   })
 
   // ── Filtro ──────────────────────────────────────────────────────────────────
@@ -443,7 +456,7 @@ export default function Baseline() {
                   <th className="px-4 py-3 text-right font-semibold">Extensão</th>
                   <th className="px-4 py-3 text-right font-semibold">R$/km</th>
                   <th className="px-4 py-3 text-center font-semibold">Premiação</th>
-                  <th className="px-4 py-3"></th>
+                  <th className="px-4 py-3 text-center font-semibold"></th>
                 </tr>
               </thead>
               <tbody>
@@ -466,7 +479,7 @@ export default function Baseline() {
                         <td className="px-4 py-3">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-medium"
                             style={{ background: (TIPO_COLORS[e.tipo_obra] ?? '#6b7280') + '18', color: TIPO_COLORS[e.tipo_obra] ?? '#6b7280' }}>
-                            {TIPO_OBRA_LABELS[e.tipo_obra]}
+                            {getTipoObraLabel(e.tipo_obra)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-700 max-w-40">
@@ -484,15 +497,44 @@ export default function Baseline() {
                           {rk ? formatBRL(rk) : '—'}
                         </td>
                         <td className="px-4 py-3 text-center text-gray-400">{date}</td>
-                        <td className="px-4 py-3 text-right">
-                          <Link
-                            to={`/projetos/${e.project_id}/equalizacao`}
-                            onClick={(ev) => ev.stopPropagation()}
-                            className="text-blue-500 hover:text-blue-700"
-                            title="Abrir equalização"
-                          >
-                            <ArrowUpRight size={14} />
-                          </Link>
+                        <td className="px-4 py-3 text-right" onClick={(ev) => ev.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-2">
+                            {cancelConfirm === e.proposal_id ? (
+                              <>
+                                <span className="text-xs text-red-600 font-medium">Cancelar premiação?</span>
+                                <button
+                                  onClick={() => unsetWinnerMutation.mutate(e.proposal_id)}
+                                  disabled={unsetWinnerMutation.isPending}
+                                  className="text-red-600 hover:text-red-800"
+                                  title="Confirmar cancelamento"
+                                >
+                                  <Check size={14} />
+                                </button>
+                                <button
+                                  onClick={() => setCancelConfirm(null)}
+                                  className="text-gray-400 hover:text-gray-600"
+                                  title="Manter premiação"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => setCancelConfirm(e.proposal_id)}
+                                className="text-gray-300 hover:text-red-500 transition-colors"
+                                title="Cancelar premiação"
+                              >
+                                <XCircle size={14} />
+                              </button>
+                            )}
+                            <Link
+                              to={`/projetos/${e.project_id}/equalizacao`}
+                              className="text-blue-500 hover:text-blue-700"
+                              title="Abrir equalização"
+                            >
+                              <ArrowUpRight size={14} />
+                            </Link>
+                          </div>
                         </td>
                       </tr>
 

@@ -1,6 +1,8 @@
 // ── Enums ────────────────────────────────────────────────────────────────────
-export type WorkType = 'INFRAESTRUTURA' | 'EDIFICACAO' | 'OBRA_DE_ARTE'
+export type WorkType = string
 export type ProjectStatus = 'RASCUNHO' | 'EM_ANDAMENTO' | 'CONCLUIDO' | 'ARQUIVADO'
+
+export const TIPO_OBRA_OPTIONS = ['Duplicação', 'Edificação', 'OAE', 'Outra']
 export type ProposalStatus = 'RECEBIDA' | 'EM_ANALISE' | 'VENCEDORA' | 'PERDEDORA' | 'DESCLASSIFICADA'
 export type ABCClass = 'A' | 'B' | 'C'
 
@@ -258,10 +260,17 @@ export const UNIDADES = [
   'l', 'mês', 'h', 'dia',
 ]
 
-export const TIPO_OBRA_LABELS: Record<WorkType, string> = {
+export const TIPO_OBRA_LABELS: Record<string, string> = {
   INFRAESTRUTURA: 'Infraestrutura',
   EDIFICACAO: 'Edificação',
   OBRA_DE_ARTE: 'Obra de Arte Especial',
+  'Duplicação': 'Duplicação',
+  'Edificação': 'Edificação',
+  'OAE': 'OAE',
+}
+
+export function getTipoObraLabel(tipo: string): string {
+  return TIPO_OBRA_LABELS[tipo] ?? tipo
 }
 
 export const STATUS_LABELS: Record<ProjectStatus, string> = {

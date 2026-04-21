@@ -5,12 +5,6 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
-class WorkType(str, enum.Enum):
-    INFRAESTRUTURA = "INFRAESTRUTURA"
-    EDIFICACAO = "EDIFICACAO"
-    OBRA_DE_ARTE = "OBRA_DE_ARTE"
-
-
 class ProjectStatus(str, enum.Enum):
     RASCUNHO = "RASCUNHO"
     EM_ANDAMENTO = "EM_ANDAMENTO"
@@ -26,7 +20,7 @@ class Project(Base):
     nome = Column(String(300), nullable=False)
     descricao = Column(Text)
     numero_licitacao = Column(String(100))
-    tipo_obra = Column(Enum(WorkType), default=WorkType.INFRAESTRUTURA, nullable=False)
+    tipo_obra = Column(String(100), default="INFRAESTRUTURA", nullable=False)
     extensao_km = Column(Numeric(10, 3), nullable=True)   # extensão em km (obrigatório p/ duplicações)
     status = Column(Enum(ProjectStatus), default=ProjectStatus.RASCUNHO, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

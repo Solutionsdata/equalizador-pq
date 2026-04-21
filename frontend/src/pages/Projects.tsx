@@ -2,15 +2,14 @@ import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { projectsAPI } from '../services/api'
-import type { Project, WorkType, ProjectStatus } from '../types'
-import { TIPO_OBRA_LABELS, STATUS_LABELS } from '../types'
+import type { Project, ProjectStatus } from '../types'
+import { TIPO_OBRA_OPTIONS, getTipoObraLabel, STATUS_LABELS } from '../types'
 import toast from 'react-hot-toast'
 import {
   Plus, FolderOpen, Table2, FileText, LineChart,
   Pencil, Trash2, X, Check,
 } from 'lucide-react'
 
-const TIPO_OPTIONS: WorkType[] = ['INFRAESTRUTURA', 'EDIFICACAO', 'OBRA_DE_ARTE']
 const STATUS_OPTIONS: ProjectStatus[] = ['RASCUNHO', 'EM_ANDAMENTO', 'CONCLUIDO', 'ARQUIVADO']
 
 const STATUS_COLORS: Record<ProjectStatus, string> = {
@@ -24,13 +23,14 @@ interface ProjectForm {
   nome: string
   descricao: string
   numero_licitacao: string
-  tipo_obra: WorkType
+  tipo_obra: string
+  outraTipoObra: string
   extensao_km: string
   status?: ProjectStatus
 }
 
 const EMPTY_FORM: ProjectForm = {
-  nome: '', descricao: '', numero_licitacao: '', tipo_obra: 'INFRAESTRUTURA', extensao_km: '',
+  nome: '', descricao: '', numero_licitacao: '', tipo_obra: 'Duplicação', outraTipoObra: '', extensao_km: '',
 }
 
 export default function Projects() {
@@ -89,11 +89,13 @@ export default function Projects() {
 
   function openEdit(project: Project) {
     setSelected(project)
+    const isKnown = TIPO_OBRA_OPTIONS.includes(project.tipo_obra)
     setForm({
       nome: project.nome,
       descricao: project.descricao ?? '',
       numero_licitacao: project.numero_licitacao ?? '',
-      tipo_obra: project.tipo_obra,
+      tipo_obra: isKnown ? project.tipo_obra : 'Outra',
+      outraTipoObra: isKnown ? '' : project.tipo_obra,
       extensao_km: project.extensao_km != null ? String(project.extensao_km) : '',
       status: project.status,
     })
@@ -104,9 +106,14 @@ export default function Projects() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const tipoObra = form.tipo_obra === 'Outra' ? (form.outraTipoObra.trim() || 'Outra') : form.tipo_obra
     const payload = {
-      ...form,
+      nome: form.nome,
+      descricao: form.descricao,
+      numero_licitacao: form.numero_licitacao,
+      tipo_obra: tipoObra,
       extensao_km: form.extensao_km ? Number(form.extensao_km) : null,
+      status: form.status,
     }
     if (modal === 'create') createMutation.mutate(payload as any)
     else if (modal === 'edit' && selected) updateMutation.mutate({ id: selected.id, data: payload })
@@ -156,7 +163,7 @@ export default function Projects() {
               {/* Tipo e descrição */}
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-medium">
-                  {TIPO_OBRA_LABELS[project.tipo_obra]}
+                  {getTipoObraLabel(project.tipo_obra)}
                 </span>
                 {project.extensao_km != null && (
                   <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded font-medium">
@@ -264,12 +271,21 @@ export default function Projects() {
                   <select
                     className="input"
                     value={form.tipo_obra}
-                    onChange={(e) => setForm((f) => ({ ...f, tipo_obra: e.target.value as WorkType }))}
+                    onChange={(e) => setForm((f) => ({ ...f, tipo_obra: e.target.value, outraTipoObra: '' }))}
                   >
-                    {TIPO_OPTIONS.map((t) => (
-                      <option key={t} value={t}>{TIPO_OBRA_LABELS[t]}</option>
+                    {TIPO_OBRA_OPTIONS.map((t) => (
+                      <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
+                  {form.tipo_obra === 'Outra' && (
+                    <input
+                      className="input mt-1"
+                      placeholder="Especifique o tipo de obra…"
+                      value={form.outraTipoObra}
+                      onChange={(e) => setForm((f) => ({ ...f, outraTipoObra: e.target.value }))}
+                      required
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nº Termo de Referência</label>
@@ -285,8 +301,8 @@ export default function Projects() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Extensão (km)
-                  {form.tipo_obra === 'INFRAESTRUTURA' && (
-                    <span className="ml-2 text-xs text-orange-600 font-normal">● obrigatório para duplicação/restauração</span>
+                  {form.tipo_obra === 'Duplicação' && (
+                    <span className="ml-2 text-xs text-orange-600 font-normal">● obrigatório para duplicação</span>
                   )}
                 </label>
                 <input
@@ -297,7 +313,7 @@ export default function Projects() {
                   placeholder="Ex: 45.320"
                   value={form.extensao_km}
                   onChange={(e) => setForm((f) => ({ ...f, extensao_km: e.target.value }))}
-                  required={form.tipo_obra === 'INFRAESTRUTURA'}
+                  required={form.tipo_obra === 'Duplicação'}
                 />
                 <p className="text-xs text-gray-400 mt-1">
                   Usado para calcular o custo por km no Baseline.

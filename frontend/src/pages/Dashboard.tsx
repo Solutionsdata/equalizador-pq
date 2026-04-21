@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { projectsAPI, analyticsAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import type { Project, BaselineEntry } from '../types'
-import { TIPO_OBRA_LABELS, STATUS_LABELS, formatBRL } from '../types'
+import { getTipoObraLabel, STATUS_LABELS, formatBRL } from '../types'
 import {
   FolderOpen, Plus, ArrowRight, ChevronRight,
   Zap, Trophy, TrendingUp, BarChart3, Calendar,
@@ -430,7 +430,7 @@ export default function Dashboard() {
                         </span>
                       </div>
                       <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                        <span className="text-xs text-gray-400">{TIPO_OBRA_LABELS[p.tipo_obra]}</span>
+                        <span className="text-xs text-gray-400">{getTipoObraLabel(p.tipo_obra)}</span>
                         {p.numero_licitacao && (
                           <span className="text-xs text-gray-400">TR: {p.numero_licitacao}</span>
                         )}

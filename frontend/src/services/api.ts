@@ -107,6 +107,7 @@ export const proposalsAPI = {
   updateItems: (id: number, items: object[]) =>
     api.put(`/proposals/${id}/items`, { items }),
   delete: (id: number) => api.delete(`/proposals/${id}`),
+  unsetWinner: (id: number) => api.patch(`/proposals/${id}/unset-winner`),
   downloadTemplate: (proposalId: number) =>
     api.get(`/proposals/${proposalId}/template`, { responseType: 'blob' }),
   exportExcel: (proposalId: number) =>
