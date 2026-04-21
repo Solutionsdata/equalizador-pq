@@ -4,6 +4,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.models.project import Project
+from app.models.project_revision import ProjectRevision
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 
 router = APIRouter()
@@ -40,6 +41,9 @@ def create_project(
 ):
     project = Project(**data.model_dump(), user_id=current_user.id)
     db.add(project)
+    db.flush()
+    revision0 = ProjectRevision(project_id=project.id, numero=0, descricao="Revisão inicial")
+    db.add(revision0)
     db.commit()
     db.refresh(project)
     return _to_response(project)
