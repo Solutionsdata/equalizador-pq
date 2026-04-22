@@ -189,46 +189,66 @@ def get_baseline(
     for item in all_pq_items:
         pq_groups[(item.project_id, item.revision_id)][item.id] = item
 
-    # Batch-load all proposals for same (project_id, empresa) combos to find first proposal
     winner_proj_ids = list({p.project_id for p in winners})
     winner_empresas = list({p.empresa for p in winners})
-    empresa_props = (
-        db.query(Proposal)
-        .options(joinedload(Proposal.items))
-        .filter(
-            Proposal.project_id.in_(winner_proj_ids),
-            Proposal.empresa.in_(winner_empresas),
-        )
-        .order_by(Proposal.created_at.asc())
+
+    # --- Saving Negociação: Rev0 vs winning proposal (same company) ---
+    # Find revision numero=0 for each project
+    all_revisions = (
+        db.query(ProjectRevision)
+        .filter(ProjectRevision.project_id.in_(winner_proj_ids))
         .all()
     )
-    # First proposal per (project_id, empresa)
-    first_prop_map: dict[tuple, Proposal] = {}
-    for ep in empresa_props:
-        key = (ep.project_id, ep.empresa)
-        if key not in first_prop_map:
-            first_prop_map[key] = ep
+    rev0_id_map: dict[int, int] = {}  # project_id → revision.id where numero=0
+    for rev in all_revisions:
+        if rev.numero == 0:
+            rev0_id_map[rev.project_id] = rev.id
+
+    # Load rev0 proposals for each winner empresa
+    rev0_value_map: dict[tuple, float] = {}  # (project_id, empresa) → total bid in rev0
+    rev0_revision_ids = list(rev0_id_map.values())
+    if rev0_revision_ids:
+        rev0_proposals = (
+            db.query(Proposal)
+            .options(joinedload(Proposal.items))
+            .filter(
+                Proposal.project_id.in_(winner_proj_ids),
+                Proposal.empresa.in_(winner_empresas),
+                Proposal.revision_id.in_(rev0_revision_ids),
+            )
+            .all()
+        )
+        for prop in rev0_proposals:
+            # Guard: ensure this is actually the rev0 for that project
+            if rev0_id_map.get(prop.project_id) != prop.revision_id:
+                continue
+            rev0_total = sum(
+                float(pi.preco_total) for pi in prop.items if pi.preco_total
+            )
+            if rev0_total > 0:
+                key = (prop.project_id, prop.empresa)
+                if key not in rev0_value_map:
+                    rev0_value_map[key] = rev0_total
 
     entries = []
     for proposal in winners:
         project = project_map[proposal.project_id]
         pq_map = pq_groups[(proposal.project_id, proposal.revision_id)]
 
+        # Saving Orçamento: PQ reference price of the same revision vs winning proposal total
         valor_referencia_pq = sum(
             float(item.quantidade) * float(item.preco_referencia)
             for item in pq_map.values()
             if item.quantidade and item.preco_referencia
         )
 
-        first_proposta = first_prop_map.get((proposal.project_id, proposal.empresa))
+        # Saving Negociação: company's Rev0 total vs winning proposal total
+        # (only meaningful when the winner is NOT from rev0 itself)
+        rev0_total = rev0_value_map.get((proposal.project_id, proposal.empresa))
         valor_primeira_proposta = None
-        if first_proposta and first_proposta.id != proposal.id:
-            vp = Decimal("0")
-            for pi in first_proposta.items:
-                if pi.pq_item_id in pq_map and pi.preco_total:
-                    vp += pi.preco_total
-            if vp > 0:
-                valor_primeira_proposta = float(vp)
+        winner_in_rev0 = (proposal.revision_id == rev0_id_map.get(proposal.project_id))
+        if rev0_total and not winner_in_rev0:
+            valor_primeira_proposta = rev0_total
 
         data_prem = proposal.updated_at or proposal.created_at
         sla_dias = (data_prem - project.created_at).days if project.created_at and data_prem else None
