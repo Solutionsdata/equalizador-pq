@@ -30,8 +30,9 @@ export default function ProposalInput() {
   })
 
   const { data: _rawPqItems } = useQuery<PQItem[]>({
-    queryKey: ['pq', pid],
-    queryFn: () => pqAPI.list(pid).then((r) => r.data),
+    queryKey: ['pq', pid, proposal?.revision_id ?? null],
+    queryFn: () => pqAPI.list(pid, proposal?.revision_id ?? undefined).then((r) => r.data),
+    enabled: !!proposal,
   })
   const pqItems: PQItem[] = Array.isArray(_rawPqItems) ? _rawPqItems : []
 
@@ -158,7 +159,7 @@ export default function ProposalInput() {
   if (!proposal) return <div className="p-8 text-red-500">Proposta não encontrada.</div>
 
   return (
-    <div className="p-6 max-w-full">
+    <div className="page">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">

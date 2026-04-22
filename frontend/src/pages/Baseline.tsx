@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsAPI, proposalsAPI, downloadBlob } from '../services/api'
 import type { BaselineEntry } from '../types'
-import { getTipoObraLabel, formatBRL, formatNumber } from '../types'
+import { getTipoObraLabel, TIPO_OBRA_LABELS, formatBRL, formatNumber } from '../types'
 import toast from 'react-hot-toast'
 import {
   Trophy, FileDown, TrendingUp, Building2, Users, MapPin,
@@ -184,7 +184,7 @@ export default function Baseline() {
   if (isLoading) return <div className="flex items-center justify-center h-64 text-gray-400">Carregando baseline…</div>
 
   return (
-    <div className="p-6 max-w-full space-y-6">
+    <div className="page">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between flex-wrap gap-4">

@@ -545,7 +545,7 @@ export default function Equalization() {
   const latestRevisionId = sortedRevisions.length > 0 ? sortedRevisions[sortedRevisions.length - 1].id : null
 
   return (
-    <div className="p-6 max-w-full">
+    <div className="page">
       {/* Header */}
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div className="flex items-center gap-3">

@@ -35,11 +35,30 @@ function Cell({
 }: {
   value: string | number | undefined
   onChange: (v: string) => void
-  type?: 'text' | 'number' | 'select'
+  type?: 'text' | 'number' | 'select' | 'datalist'
   options?: string[]
   placeholder?: string
   className?: string
 }) {
+  const uid = React.useId()
+  const listId = `dl${uid}`
+
+  if (type === 'datalist') {
+    return (
+      <>
+        <input
+          list={listId}
+          value={value ?? ''}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-full text-xs border-0 bg-transparent focus:outline-none focus:bg-blue-50 focus:ring-1 focus:ring-blue-400 rounded px-1 py-1 ${className}`}
+        />
+        <datalist id={listId}>
+          {options?.map((o) => <option key={o} value={o} />)}
+        </datalist>
+      </>
+    )
+  }
   if (type === 'select') {
     return (
       <select
@@ -214,17 +233,17 @@ export default function PQEditor() {
     { key: 'numero_item', label: 'Item', width: 'w-16', type: 'text' as const, placeholder: '1.1' },
     { key: 'codigo', label: 'Código', width: 'w-24', type: 'text' as const, placeholder: 'SINAPI' },
     { key: 'descricao', label: 'Descrição', width: 'w-64', type: 'text' as const, placeholder: 'Descrição do serviço' },
-    { key: 'unidade', label: 'Un', width: 'w-20', type: 'select' as const, options: UNIDADES },
+    { key: 'unidade', label: 'Un', width: 'w-20', type: 'datalist' as const, options: UNIDADES },
     { key: 'quantidade', label: 'Qtd', width: 'w-24', type: 'number' as const },
-    { key: 'categoria', label: 'Categoria', width: 'w-36', type: 'select' as const, options: CATEGORIAS },
-    { key: 'disciplina', label: 'Disciplina', width: 'w-28', type: 'select' as const, options: DISCIPLINAS },
+    { key: 'categoria', label: 'Categoria', width: 'w-36', type: 'datalist' as const, options: CATEGORIAS },
+    { key: 'disciplina', label: 'Disciplina', width: 'w-28', type: 'datalist' as const, options: DISCIPLINAS },
     { key: 'referencia_codigo', label: 'Ref.', width: 'w-24', type: 'text' as const },
     { key: 'preco_referencia', label: 'Preço Ref. (R$)', width: 'w-32', type: 'number' as const },
     { key: 'observacao', label: 'Obs.', width: 'w-32', type: 'text' as const },
   ]
 
   return (
-    <div className="p-6 max-w-full">
+    <div className="page">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">

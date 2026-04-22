@@ -18,5 +18,5 @@ class User(Base):
     assinatura_ate = Column(DateTime, nullable=True)  # None = sem vencimento
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    projects = relationship("Project", back_populates="user")
-    proposals = relationship("Proposal", back_populates="user")
+    projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
+    proposals = relationship("Proposal", back_populates="user", cascade="all, delete-orphan")

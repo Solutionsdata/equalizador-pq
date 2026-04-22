@@ -5,8 +5,8 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import {
-  Database, Users, FolderOpen, Activity, RefreshCw,
-  TrendingUp, Server, Table2, Eye, Clock, Building2,
+  Database, Users, FolderOpen, RefreshCw,
+  TrendingUp, Table2, LogIn, Clock,
   AlertTriangle, CheckCircle2, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { TIPO_OBRA_LABELS, STATUS_LABELS } from '../types'
@@ -30,18 +30,6 @@ function fmtDt(iso: string) {
 function fmtDate(iso: string) {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}`
-}
-
-const PAGE_ICONS: Record<string, string> = {
-  'Dashboard':            '📊',
-  'Projetos':             '📁',
-  'SICRO':                '📖',
-  'Planilha PQ':          '📋',
-  'Equalização':          '⚖️',
-  'Análises':             '📈',
-  'Entrada de Proposta':  '📝',
-  'Admin — Usuários':     '👥',
-  'Admin — Monitoramento':'🖥️',
 }
 
 // ── sub-componentes ───────────────────────────────────────────────────────────
@@ -120,8 +108,7 @@ export default function AdminMonitoring() {
   const dbColor = dbUsoPct > 80 ? '#ef4444' : dbUsoPct > 60 ? '#f59e0b' : '#22c55e'
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+    <div className="page">
 
         {/* ── Header ────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between">
@@ -145,7 +132,7 @@ export default function AdminMonitoring() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard icon={Users}     label="Usuários"        value={overview?.total_users ?? '—'}    sub={`${overview?.users_ativos ?? 0} ativos`}        color="blue" />
           <StatCard icon={FolderOpen} label="Projetos"       value={overview?.total_projects ?? '—'} sub={`${overview?.total_proposals ?? 0} propostas`}  color="violet" />
-          <StatCard icon={Eye}       label="Acessos hoje"    value={overview?.acessos_hoje ?? '—'}   sub={`${overview?.usuarios_hoje ?? 0} usuário(s)`}   color="green" />
+          <StatCard icon={LogIn}     label="Logins hoje"     value={overview?.acessos_hoje ?? '—'}   sub={`${overview?.usuarios_hoje ?? 0} usuário(s)`}   color="green" />
           <StatCard icon={Table2}    label="Itens de PQ"     value={overview?.total_items ?? '—'}    color="amber" />
         </div>
 
@@ -219,12 +206,12 @@ export default function AdminMonitoring() {
           </div>
         </div>
 
-        {/* ── Atividade diária ──────────────────────────────────────── */}
+        {/* ── Logins diários ────────────────────────────────────────── */}
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <div className="flex items-center gap-2">
               <TrendingUp size={16} className="text-green-600" />
-              <h2 className="text-sm font-semibold text-gray-800">Acessos diários</h2>
+              <h2 className="text-sm font-semibold text-gray-800">Logins diários</h2>
             </div>
             <div className="flex gap-1">
               {[7, 14, 30].map((d) => (
@@ -264,7 +251,7 @@ export default function AdminMonitoring() {
             )}
             <div className="flex gap-4 mt-3 text-xs text-gray-400">
               <span className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded bg-blue-500 inline-block" /> Acessos totais
+                <span className="w-3 h-3 rounded bg-blue-500 inline-block" /> Logins totais
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded bg-indigo-300 inline-block" /> Usuários únicos
@@ -273,70 +260,32 @@ export default function AdminMonitoring() {
           </div>
         </div>
 
-        {/* ── Grid: páginas + usuários ativos ──────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-          {/* Páginas mais acessadas */}
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
-              <Activity size={15} className="text-violet-600" />
-              <h2 className="text-sm font-semibold text-gray-800">Páginas mais acessadas</h2>
-              <span className="ml-auto text-xs text-gray-400">últimos {days} dias</span>
-            </div>
-            <div className="px-5 py-3">
-              {activity?.top_pages?.length > 0 ? (
-                <div className="space-y-2.5">
-                  {activity.top_pages.map((p: any, i: number) => {
-                    const max = activity.top_pages[0].total
-                    const pct = Math.round((p.total / max) * 100)
-                    return (
-                      <div key={i}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-gray-700">
-                            {PAGE_ICONS[p.pagina] ?? '📄'} {p.pagina}
-                          </span>
-                          <span className="text-xs font-semibold text-gray-600 ml-2">{p.total}</span>
-                        </div>
-                        <div className="w-full bg-gray-100 rounded-full h-1.5">
-                          <div className="h-1.5 rounded-full bg-violet-400" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 py-6 text-center">Sem dados ainda</p>
-              )}
-            </div>
+        {/* ── Usuários que mais fizeram login ───────────────────────── */}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+            <Users size={15} className="text-amber-600" />
+            <h2 className="text-sm font-semibold text-gray-800">Usuários mais ativos</h2>
+            <span className="ml-auto text-xs text-gray-400">últimos {days} dias</span>
           </div>
-
-          {/* Usuários mais ativos */}
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
-              <Users size={15} className="text-amber-600" />
-              <h2 className="text-sm font-semibold text-gray-800">Usuários mais ativos</h2>
-              <span className="ml-auto text-xs text-gray-400">últimos {days} dias</span>
-            </div>
-            <div className="divide-y divide-gray-50">
-              {activity?.top_users?.length > 0 ? (
-                activity.top_users.map((u: any, i: number) => (
-                  <div key={i} className="flex items-center gap-3 px-5 py-3">
-                    <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-xs font-bold flex-shrink-0">
-                      {u.nome.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-800 truncate">{u.nome}</p>
-                      <p className="text-[10px] text-gray-400 truncate">{u.empresa ?? u.email}</p>
-                    </div>
-                    <span className="text-xs font-semibold text-gray-600 flex-shrink-0">
-                      {u.total} acesso{u.total !== 1 ? 's' : ''}
-                    </span>
+          <div className="divide-y divide-gray-50">
+            {activity?.top_users?.length > 0 ? (
+              activity.top_users.map((u: any, i: number) => (
+                <div key={i} className="flex items-center gap-3 px-5 py-3">
+                  <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-xs font-bold flex-shrink-0">
+                    {u.nome.charAt(0).toUpperCase()}
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-gray-400 py-6 text-center px-5">Sem dados ainda</p>
-              )}
-            </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-800 truncate">{u.nome}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{u.empresa ?? u.email}</p>
+                  </div>
+                  <span className="text-xs font-semibold text-gray-600 flex-shrink-0">
+                    {u.total} login{u.total !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-400 py-6 text-center px-5">Sem dados ainda</p>
+            )}
           </div>
         </div>
 
@@ -425,42 +374,36 @@ export default function AdminMonitoring() {
           )}
         </div>
 
-        {/* ── Feed de acessos recentes ──────────────────────────────── */}
+        {/* ── Feed de logins recentes ───────────────────────────────── */}
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
             <Clock size={15} className="text-gray-500" />
-            <h2 className="text-sm font-semibold text-gray-800">Acessos recentes</h2>
-            <span className="ml-auto text-xs text-gray-400">últimos {days} dias · máx 200</span>
+            <h2 className="text-sm font-semibold text-gray-800">Logins recentes</h2>
+            <span className="ml-auto text-xs text-gray-400">últimos {days} dias · máx 100</span>
           </div>
           <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
             {activity?.logs?.length > 0 ? (
               activity.logs.map((log: any) => (
                 <div key={log.id} className="flex items-center gap-3 px-5 py-2.5">
-                  <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 text-xs font-bold text-gray-500">
+                  <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 text-xs font-bold text-blue-500">
                     {log.usuario?.nome?.charAt(0)?.toUpperCase() ?? '?'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <span className="text-xs font-medium text-gray-700">{log.usuario?.nome ?? 'Usuário removido'}</span>
-                    <span className="text-xs text-gray-400 mx-1.5">→</span>
-                    <span className="text-xs text-gray-600">
-                      {PAGE_ICONS[log.pagina] ?? '📄'} {log.pagina}
-                    </span>
+                    <span className="text-xs text-gray-400 mx-1.5">entrou</span>
+                    {log.ip && <span className="text-[10px] text-gray-300 font-mono">{log.ip}</span>}
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-[10px] text-gray-400">{fmtDt(log.timestamp)}</p>
-                    {log.ip && <p className="text-[10px] text-gray-300 font-mono">{log.ip}</p>}
-                  </div>
+                  <p className="text-[10px] text-gray-400 flex-shrink-0">{fmtDt(log.timestamp)}</p>
                 </div>
               ))
             ) : (
               <div className="py-10 text-center text-gray-400 text-sm">
-                Nenhum acesso registrado ainda
+                Nenhum login registrado ainda
               </div>
             )}
           </div>
         </div>
 
-      </div>
     </div>
   )
 }

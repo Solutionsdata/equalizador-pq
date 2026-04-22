@@ -173,6 +173,8 @@ export default function AdminUsers() {
 
   if (me && !me.is_admin) return <Navigate to="/" replace />
 
+  const isSuperAdmin = me?.email?.includes('solutionsdata') ?? false
+
   const { data: rawUsers, isLoading } = useQuery<User[]>({
     queryKey: ['admin-users'],
     queryFn: () => adminAPI.listUsers().then(r => r.data),
@@ -324,6 +326,8 @@ export default function AdminUsers() {
             <tbody className="divide-y divide-gray-100">
               {active.map(u => {
                 const isMe = u.id === me?.id
+                const isTargetSuperAdmin = u.email?.includes('solutionsdata') ?? false
+                const canDelete = !isMe && !isTargetSuperAdmin && (!u.is_admin || isSuperAdmin)
                 return (
                   <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3">
@@ -386,9 +390,13 @@ export default function AdminUsers() {
                           {u.is_admin ? <Shield size={16} /> : <ShieldOff size={16} />}
                         </button>
                         <button
-                          title="Excluir usuário"
+                          title={
+                            isTargetSuperAdmin ? 'Super administrador não pode ser excluído' :
+                            u.is_admin && !isSuperAdmin ? 'Somente o super admin pode excluir admins' :
+                            'Excluir usuário'
+                          }
                           onClick={() => setConfirmDelete(u)}
-                          disabled={isMe || deleteMutation.isPending}
+                          disabled={!canDelete || deleteMutation.isPending}
                           className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <Trash2 size={16} />

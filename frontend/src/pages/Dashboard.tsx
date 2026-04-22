@@ -4,16 +4,18 @@ import { Link } from 'react-router-dom'
 import { projectsAPI, analyticsAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import type { Project, BaselineEntry } from '../types'
-import { getTipoObraLabel, STATUS_LABELS, formatBRL } from '../types'
+import { getTipoObraLabel, STATUS_LABELS, formatBRL, formatPercent } from '../types'
 import {
   FolderOpen, Plus, ArrowRight, ChevronRight,
-  Zap, Trophy, TrendingUp, BarChart3, Calendar,
-  Building2, Clock, CheckCircle2, Activity,
+  TrendingDown, Trophy, TrendingUp, BarChart3,
+  Clock, CheckCircle2, Activity, Target, Handshake,
+  Timer, AlertCircle,
 } from 'lucide-react'
 import GuidedTour, { RestartTourButton } from '../components/GuidedTour'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, BarChart, Bar, Cell,
+  Legend, ReferenceLine,
 } from 'recharts'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -32,171 +34,467 @@ function greeting() {
   return 'Boa noite'
 }
 
-function formatShort(value: number): string {
-  if (value >= 1_000_000) return `R$\u00a0${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `R$\u00a0${(value / 1_000).toFixed(0)}k`
+function fmtShort(value: number): string {
+  if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000)     return `R$ ${(value / 1_000).toFixed(0)}k`
   return formatBRL(value)
 }
 
-type Period = 'semana' | 'mes' | 'ano'
+function fmtPct(value: number | null | undefined, decimals = 1): string {
+  if (value == null) return '—'
+  return `${value.toFixed(decimals)}%`
+}
+
+function avg(arr: number[]): number | null {
+  if (!arr.length) return null
+  return arr.reduce((a, b) => a + b, 0) / arr.length
+}
+
+type Period = 'mes' | 'ano'
 
 function getPeriodKey(iso: string, period: Period): string {
   const d = new Date(iso)
   if (period === 'ano') return String(d.getFullYear())
-  if (period === 'mes') {
-    return d.toLocaleString('pt-BR', { month: 'short', year: '2-digit' }).replace('. ', '/')
-  }
-  // ISO week
-  const tmp = new Date(d.getTime())
-  tmp.setHours(0, 0, 0, 0)
-  tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7))
-  const yearStart = new Date(tmp.getFullYear(), 0, 1)
-  const week = Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
-  return `Sem\u00a0${String(week).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`
+  return d.toLocaleString('pt-BR', { month: 'short', year: '2-digit' }).replace('. ', '/')
 }
 
-// ── Timeline chart ────────────────────────────────────────────────────────────
+// ── Saving ao longo do tempo ──────────────────────────────────────────────────
 
-function TimelineChart({ baseline, period }: { baseline: BaselineEntry[]; period: Period }) {
+function SavingTimelineChart({
+  entries, period,
+}: { entries: BaselineEntry[]; period: Period }) {
   const data = useMemo(() => {
-    const map = new Map<string, { valor: number; count: number }>()
-    const sorted = [...baseline].sort(
+    const map = new Map<string, {
+      savOrcPcts: number[]; savNegPcts: number[]; slas: number[]; count: number
+    }>()
+
+    const sorted = [...entries].sort(
       (a, b) => new Date(a.data_premiacao).getTime() - new Date(b.data_premiacao).getTime()
     )
+
     for (const e of sorted) {
       const key = getPeriodKey(e.data_premiacao, period)
-      const cur = map.get(key) ?? { valor: 0, count: 0 }
-      map.set(key, { valor: cur.valor + e.valor_total, count: cur.count + 1 })
+      const cur = map.get(key) ?? { savOrcPcts: [], savNegPcts: [], slas: [], count: 0 }
+
+      if (e.valor_referencia_pq && e.valor_referencia_pq > 0) {
+        const pct = ((e.valor_referencia_pq - e.valor_total) / e.valor_referencia_pq) * 100
+        cur.savOrcPcts.push(pct)
+      }
+      if (e.valor_primeira_proposta && e.valor_primeira_proposta > 0 && e.valor_primeira_proposta > e.valor_total) {
+        const pct = ((e.valor_primeira_proposta - e.valor_total) / e.valor_primeira_proposta) * 100
+        cur.savNegPcts.push(pct)
+      }
+      if (e.sla_dias != null && e.sla_dias >= 0) cur.slas.push(e.sla_dias)
+      cur.count++
+
+      map.set(key, cur)
     }
-    let acumulado = 0
-    return [...map.entries()].map(([key, { valor, count }]) => {
-      acumulado += valor
-      return { periodo: key, valor, acumulado, count }
-    })
-  }, [baseline, period])
+
+    return [...map.entries()].map(([periodo, d]) => ({
+      periodo,
+      saving_orcamento: avg(d.savOrcPcts) != null ? +((avg(d.savOrcPcts) as number).toFixed(1)) : null,
+      saving_negociacao: avg(d.savNegPcts) != null ? +((avg(d.savNegPcts) as number).toFixed(1)) : null,
+      sla_medio: avg(d.slas) != null ? Math.round(avg(d.slas) as number) : null,
+      count: d.count,
+    }))
+  }, [entries, period])
 
   if (data.length === 0) return (
-    <div className="h-48 flex items-center justify-center text-gray-300 text-sm">
-      Nenhum contrato equalizado ainda
-    </div>
+    <EmptyChart label="Sem dados de projetos concluídos no período" />
   )
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const Tip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
     return (
-      <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3 text-xs min-w-[180px]">
-        <p className="font-semibold text-gray-700 mb-2 border-b border-gray-100 pb-1">{label}</p>
-        <div className="space-y-1">
-          <div className="flex justify-between gap-4">
-            <span className="text-gray-500">No período:</span>
-            <span className="font-bold text-blue-600">{formatBRL(payload[0]?.value ?? 0)}</span>
+      <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3 text-xs min-w-[200px]">
+        <p className="font-bold text-gray-700 mb-2 pb-1 border-b border-gray-100">{label}</p>
+        {payload.map((p: any) => (
+          <div key={p.dataKey} className="flex justify-between gap-4 mt-1">
+            <span className="text-gray-500 flex items-center gap-1">
+              <span style={{ color: p.color }}>●</span> {p.name}
+            </span>
+            <span className="font-bold" style={{ color: p.color }}>
+              {p.dataKey === 'sla_medio' ? `${p.value}d` : `${p.value}%`}
+            </span>
           </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-gray-500">Acumulado:</span>
-            <span className="font-bold text-indigo-600">{formatBRL(payload[1]?.value ?? 0)}</span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-gray-500">Contratos:</span>
-            <span className="font-medium text-gray-600">{payload[0]?.payload?.count}</span>
-          </div>
+        ))}
+        <div className="flex justify-between mt-1.5 pt-1.5 border-t border-gray-100">
+          <span className="text-gray-400">Projetos:</span>
+          <span className="font-medium text-gray-600">{payload[0]?.payload?.count}</span>
         </div>
       </div>
     )
   }
 
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id="gValor" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
-            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
-          </linearGradient>
-          <linearGradient id="gAcum" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
+    <ResponsiveContainer width="100%" height={230}>
+      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-        <XAxis
-          dataKey="periodo"
+        <XAxis dataKey="periodo" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+        <YAxis
+          yAxisId="pct"
           tick={{ fontSize: 10, fill: '#94a3b8' }}
-          axisLine={false}
-          tickLine={false}
+          axisLine={false} tickLine={false}
+          tickFormatter={(v) => `${v}%`}
+          width={40}
         />
         <YAxis
+          yAxisId="dias"
+          orientation="right"
           tick={{ fontSize: 10, fill: '#94a3b8' }}
-          axisLine={false}
-          tickLine={false}
-          tickFormatter={formatShort}
-          width={72}
+          axisLine={false} tickLine={false}
+          tickFormatter={(v) => `${v}d`}
+          width={36}
         />
-        <Tooltip content={<CustomTooltip />} />
-        <Area
+        <Tooltip content={<Tip />} />
+        <Legend
+          iconSize={8}
+          wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+          formatter={(value) => <span style={{ color: '#6b7280' }}>{value}</span>}
+        />
+        <ReferenceLine yAxisId="pct" y={0} stroke="#e5e7eb" />
+        <Line
+          yAxisId="pct"
           type="monotone"
-          dataKey="valor"
-          stroke="#3b82f6"
+          dataKey="saving_orcamento"
+          name="Saving Orçamento (%)"
+          stroke="#16a34a"
+          strokeWidth={2.5}
+          dot={{ fill: '#16a34a', r: 4 }}
+          activeDot={{ r: 6 }}
+          connectNulls
+        />
+        <Line
+          yAxisId="pct"
+          type="monotone"
+          dataKey="saving_negociacao"
+          name="Saving Negociação (%)"
+          stroke="#2563eb"
+          strokeWidth={2.5}
+          strokeDasharray="6 3"
+          dot={{ fill: '#2563eb', r: 4 }}
+          activeDot={{ r: 6 }}
+          connectNulls
+        />
+        <Line
+          yAxisId="dias"
+          type="monotone"
+          dataKey="sla_medio"
+          name="SLA médio (dias)"
+          stroke="#f59e0b"
           strokeWidth={2}
-          fill="url(#gValor)"
-          name="Período"
-          dot={{ fill: '#3b82f6', r: 3 }}
+          dot={{ fill: '#f59e0b', r: 3 }}
           activeDot={{ r: 5 }}
+          connectNulls
         />
-        <Area
-          type="monotone"
-          dataKey="acumulado"
-          stroke="#6366f1"
-          strokeWidth={2}
-          fill="url(#gAcum)"
-          strokeDasharray="5 3"
-          name="Acumulado"
-          dot={false}
-        />
-      </AreaChart>
+      </LineChart>
     </ResponsiveContainer>
   )
 }
 
-// ── Project winners bar ───────────────────────────────────────────────────────
+// ── Saving por projeto (bar chart) ────────────────────────────────────────────
 
-function ProjectWinnersBar({ entries }: { entries: BaselineEntry[] }) {
-  if (entries.length === 0) return null
-  // Group by project, sum winner values per revision
-  const byProject: Record<number, { nome: string; revisions: { empresa: string; valor: number; date: string }[] }> = {}
-  for (const e of entries) {
-    if (!byProject[e.project_id]) byProject[e.project_id] = { nome: e.project_nome, revisions: [] }
-    byProject[e.project_id].revisions.push({ empresa: e.empresa, valor: e.valor_total, date: e.data_premiacao })
-  }
+function SavingByProjectChart({ entries }: { entries: BaselineEntry[] }) {
+  const data = useMemo(() => {
+    return entries
+      .filter((e) => e.valor_referencia_pq && e.valor_referencia_pq > 0)
+      .map((e) => {
+        const savOrc = e.valor_referencia_pq
+          ? +((((e.valor_referencia_pq - e.valor_total) / e.valor_referencia_pq) * 100).toFixed(1))
+          : null
+        const savNeg = (e.valor_primeira_proposta && e.valor_primeira_proposta > e.valor_total)
+          ? +((((e.valor_primeira_proposta - e.valor_total) / e.valor_primeira_proposta) * 100).toFixed(1))
+          : null
+        return {
+          nome: e.project_nome.length > 20 ? e.project_nome.slice(0, 20) + '…' : e.project_nome,
+          saving_orcamento: savOrc,
+          saving_negociacao: savNeg,
+          sla: e.sla_dias,
+          valor: e.valor_total,
+        }
+      })
+      .sort((a, b) => (b.saving_orcamento ?? 0) - (a.saving_orcamento ?? 0))
+      .slice(0, 8)
+  }, [entries])
 
-  const data = Object.values(byProject)
-    .map((p) => ({ nome: p.nome.slice(0, 22), total: p.revisions.reduce((s, r) => s + r.valor, 0) }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 6)
+  if (data.length === 0) return <EmptyChart label="Nenhum projeto com dados de saving" />
 
-  const COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
-
-  const CustomTooltip = ({ active, payload }: any) => {
+  const Tip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
     return (
-      <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-xs">
-        <p className="font-semibold text-gray-700 mb-1">{payload[0]?.payload?.nome}</p>
-        <p className="text-blue-600 font-bold">{formatBRL(payload[0]?.value ?? 0)}</p>
+      <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3 text-xs min-w-[200px]">
+        <p className="font-bold text-gray-700 mb-2 pb-1 border-b border-gray-100 truncate">{label}</p>
+        {payload.map((p: any) => p.value != null && (
+          <div key={p.dataKey} className="flex justify-between gap-4 mt-1">
+            <span className="text-gray-500 flex items-center gap-1">
+              <span style={{ color: p.color }}>●</span> {p.name}
+            </span>
+            <span className="font-bold" style={{ color: p.color }}>{p.value}%</span>
+          </div>
+        ))}
+        <div className="flex justify-between mt-1.5 pt-1.5 border-t border-gray-100">
+          <span className="text-gray-400">Valor premiado:</span>
+          <span className="font-medium text-gray-600">{fmtShort(payload[0]?.payload?.valor)}</span>
+        </div>
       </div>
     )
   }
 
   return (
-    <ResponsiveContainer width="100%" height={180}>
-      <BarChart data={data} margin={{ top: 4, right: 8, bottom: 40, left: 0 }} layout="vertical">
+    <ResponsiveContainer width="100%" height={Math.max(200, data.length * 44)}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 40, bottom: 0, left: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-        <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={formatShort} />
-        <YAxis type="category" dataKey="nome" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} width={120} />
-        <Tooltip content={<CustomTooltip />} />
-        <Bar dataKey="total" radius={[0, 4, 4, 0]}>
-          {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+        <XAxis
+          type="number"
+          tick={{ fontSize: 10, fill: '#94a3b8' }}
+          axisLine={false} tickLine={false}
+          tickFormatter={(v) => `${v}%`}
+        />
+        <YAxis
+          type="category" dataKey="nome"
+          tick={{ fontSize: 10, fill: '#374151' }}
+          axisLine={false} tickLine={false} width={130}
+        />
+        <Tooltip content={<Tip />} />
+        <Legend
+          iconSize={8}
+          wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+          formatter={(value) => <span style={{ color: '#6b7280' }}>{value}</span>}
+        />
+        <Bar dataKey="saving_orcamento" name="Saving Orçamento (%)" fill="#16a34a" radius={[0, 4, 4, 0]} barSize={10} />
+        <Bar dataKey="saving_negociacao" name="Saving Negociação (%)" fill="#2563eb" radius={[0, 4, 4, 0]} barSize={10} />
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ── SLA por projeto ───────────────────────────────────────────────────────────
+
+function SLABarChart({ entries }: { entries: BaselineEntry[] }) {
+  const data = useMemo(() => {
+    return entries
+      .filter((e) => e.sla_dias != null && e.sla_dias >= 0)
+      .map((e) => ({
+        nome: e.project_nome.length > 22 ? e.project_nome.slice(0, 22) + '…' : e.project_nome,
+        sla: e.sla_dias as number,
+        valor: e.valor_total,
+      }))
+      .sort((a, b) => a.sla - b.sla)
+      .slice(0, 8)
+  }, [entries])
+
+  if (data.length === 0) return <EmptyChart label="Nenhum dado de SLA disponível" />
+
+  const avgSla = avg(data.map((d) => d.sla))
+
+  const Tip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3 text-xs">
+        <p className="font-bold text-gray-700 mb-2 pb-1 border-b border-gray-100 truncate">{label}</p>
+        <div className="flex justify-between gap-4">
+          <span className="text-gray-500">SLA (dias):</span>
+          <span className="font-bold text-amber-600">{payload[0]?.value}d</span>
+        </div>
+        <div className="flex justify-between gap-4 mt-1">
+          <span className="text-gray-500">Valor:</span>
+          <span className="font-medium text-gray-600">{fmtShort(payload[0]?.payload?.valor)}</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(180, data.length * 40)}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 36, bottom: 0, left: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+        <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}d`} />
+        <YAxis type="category" dataKey="nome" tick={{ fontSize: 10, fill: '#374151' }} axisLine={false} tickLine={false} width={130} />
+        <Tooltip content={<Tip />} />
+        {avgSla != null && (
+          <ReferenceLine x={avgSla} stroke="#ef4444" strokeDasharray="4 2" label={{ value: `Média: ${Math.round(avgSla)}d`, fontSize: 9, fill: '#ef4444', position: 'insideTopRight' }} />
+        )}
+        <Bar dataKey="sla" name="SLA (dias)" radius={[0, 4, 4, 0]} barSize={14}>
+          {data.map((d, i) => (
+            <Cell key={i} fill={avgSla != null && d.sla > avgSla ? '#f59e0b' : '#10b981'} />
+          ))}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+  )
+}
+
+// ── Mini Revision Evolution Chart ─────────────────────────────────────────────
+
+function MiniRevisionChart({ data }: { data: Array<{ numero: number; valor: number }> }) {
+  const chartData = data.map((d) => ({ rev: `R${d.numero}`, valor: d.valor }))
+  return (
+    <ResponsiveContainer width="100%" height={64}>
+      <LineChart data={chartData} margin={{ top: 4, right: 6, bottom: 0, left: 6 }}>
+        <XAxis dataKey="rev" tick={{ fontSize: 8, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+        <YAxis hide domain={['auto', 'auto']} />
+        <Tooltip
+          formatter={(v: any) => [fmtShort(Number(v)), 'Valor']}
+          labelStyle={{ fontSize: 9, color: '#6b7280' }}
+          contentStyle={{ fontSize: 9, borderRadius: 8, border: '1px solid #e5e7eb', padding: '4px 8px' }}
+        />
+        <Line
+          type="monotone"
+          dataKey="valor"
+          stroke="#3b82f6"
+          strokeWidth={2}
+          dot={{ r: 3, fill: '#3b82f6', strokeWidth: 0 }}
+          activeDot={{ r: 4 }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+function EmptyChart({ label }: { label: string }) {
+  return (
+    <div className="h-40 flex flex-col items-center justify-center text-gray-300 text-xs gap-2">
+      <AlertCircle size={24} />
+      <span>{label}</span>
+    </div>
+  )
+}
+
+// ── KPI Card ──────────────────────────────────────────────────────────────────
+
+function KpiCard({
+  label, value, sub, icon: Icon, iconBg, iconColor, border, valueColor = 'text-gray-900',
+  badge,
+}: {
+  label: string; value: string | number; sub: string
+  icon: React.ElementType; iconBg: string; iconColor: string; border: string
+  valueColor?: string; badge?: { text: string; color: string }
+}) {
+  return (
+    <div className={`bg-white border ${border} rounded-xl p-4 hover:shadow-sm transition-shadow`}>
+      <div className="flex items-start justify-between mb-3">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider leading-tight pr-2">{label}</p>
+        <div className={`w-9 h-9 rounded-xl ${iconBg} flex items-center justify-center flex-shrink-0`}>
+          <Icon size={16} className={iconColor} />
+        </div>
+      </div>
+      <div className="flex items-end gap-2">
+        <p className={`text-3xl font-bold leading-none ${valueColor}`}>{value}</p>
+        {badge && (
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full mb-0.5 ${badge.color}`}>
+            {badge.text}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-gray-400 mt-2">{sub}</p>
+    </div>
+  )
+}
+
+// ── Per-project KPI table ─────────────────────────────────────────────────────
+
+function ProjectKpiTable({ entries, completedIds }: { entries: BaselineEntry[]; completedIds: Set<number> }) {
+  const rows = useMemo(() => {
+    return entries
+      .filter((e) => completedIds.has(e.project_id))
+      .map((e) => {
+        const savOrc = (e.valor_referencia_pq && e.valor_referencia_pq > 0)
+          ? ((e.valor_referencia_pq - e.valor_total) / e.valor_referencia_pq) * 100
+          : null
+        const econOrc = (e.valor_referencia_pq && e.valor_referencia_pq > 0)
+          ? e.valor_referencia_pq - e.valor_total
+          : null
+        const savNeg = (e.valor_primeira_proposta && e.valor_primeira_proposta > e.valor_total)
+          ? ((e.valor_primeira_proposta - e.valor_total) / e.valor_primeira_proposta) * 100
+          : null
+        const econNeg = (e.valor_primeira_proposta && e.valor_primeira_proposta > e.valor_total)
+          ? e.valor_primeira_proposta - e.valor_total
+          : null
+        return { e, savOrc, econOrc, savNeg, econNeg }
+      })
+      .sort((a, b) => new Date(b.e.data_premiacao).getTime() - new Date(a.e.data_premiacao).getTime())
+  }, [entries, completedIds])
+
+  if (rows.length === 0) return (
+    <div className="py-10 text-center text-sm text-gray-400">
+      Nenhum projeto concluído com dados de saving disponíveis.
+    </div>
+  )
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+            <th className="px-4 py-3 text-left font-semibold">Projeto</th>
+            <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">Ref. PQ</th>
+            <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">Premiado</th>
+            <th className="px-4 py-3 text-right font-semibold whitespace-nowrap text-green-700">Sav. Orçamento</th>
+            <th className="px-4 py-3 text-right font-semibold whitespace-nowrap text-blue-700">Sav. Negociação</th>
+            <th className="px-4 py-3 text-center font-semibold whitespace-nowrap text-amber-700">SLA (dias)</th>
+            <th className="px-4 py-3 text-left font-semibold">Vencedor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ e, savOrc, econOrc, savNeg, econNeg }, idx) => (
+            <tr
+              key={e.proposal_id}
+              className={`border-t border-gray-100 hover:bg-blue-50/30 transition-colors ${idx % 2 === 0 ? '' : 'bg-gray-50/40'}`}
+            >
+              <td className="px-4 py-3">
+                <p className="font-semibold text-gray-800 text-sm truncate max-w-[180px]">{e.project_nome}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  {new Date(e.data_premiacao).toLocaleDateString('pt-BR')}
+                </p>
+              </td>
+              <td className="px-4 py-3 text-right text-sm text-gray-600">
+                {e.valor_referencia_pq ? fmtShort(e.valor_referencia_pq) : <span className="text-gray-300">—</span>}
+              </td>
+              <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                {fmtShort(e.valor_total)}
+              </td>
+              <td className="px-4 py-3 text-right">
+                {savOrc != null ? (
+                  <div>
+                    <span className={`text-sm font-bold ${savOrc >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {savOrc >= 0 ? '↓' : '↑'} {Math.abs(savOrc).toFixed(1)}%
+                    </span>
+                    {econOrc != null && (
+                      <p className="text-[10px] text-green-500 mt-0.5">{fmtShort(Math.abs(econOrc))}</p>
+                    )}
+                  </div>
+                ) : <span className="text-gray-300 text-xs">Sem ref.</span>}
+              </td>
+              <td className="px-4 py-3 text-right">
+                {savNeg != null ? (
+                  <div>
+                    <span className="text-sm font-bold text-blue-600">↓ {savNeg.toFixed(1)}%</span>
+                    {econNeg != null && (
+                      <p className="text-[10px] text-blue-400 mt-0.5">{fmtShort(econNeg)}</p>
+                    )}
+                  </div>
+                ) : <span className="text-gray-300 text-xs">sem Rev.0</span>}
+              </td>
+              <td className="px-4 py-3 text-center">
+                {e.sla_dias != null ? (
+                  <span className={`text-sm font-bold ${e.sla_dias <= 30 ? 'text-green-600' : e.sla_dias <= 60 ? 'text-amber-600' : 'text-red-500'}`}>
+                    {e.sla_dias}d
+                  </span>
+                ) : <span className="text-gray-300 text-xs">—</span>}
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-1.5">
+                  <Trophy size={11} className="text-amber-500 flex-shrink-0" />
+                  <span className="text-xs text-gray-600 truncate max-w-[120px]">{e.empresa}</span>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -218,45 +516,76 @@ export default function Dashboard() {
   })
   const baseline: BaselineEntry[] = Array.isArray(_rawBaseline) ? _rawBaseline : []
 
-  // KPI derivations
-  const total       = projects.length
-  const emAndamento = projects.filter((p) => p.status === 'EM_ANDAMENTO').length
-  const concluidos  = projects.filter((p) => p.status === 'CONCLUIDO').length
+  // IDs de projetos CONCLUÍDOS
+  const completedIds = useMemo(
+    () => new Set(projects.filter((p) => p.status === 'CONCLUIDO').map((p) => p.id)),
+    [projects]
+  )
+
+  // Apenas entradas de projetos concluídos para os KPIs de performance
+  const completedEntries = useMemo(
+    () => baseline.filter((e) => completedIds.has(e.project_id)),
+    [baseline, completedIds]
+  )
+
+  // ── Derivações de KPI ──────────────────────────────────────────────────────
+
+  const total          = projects.length
+  const emAndamento    = projects.filter((p) => p.status === 'EM_ANDAMENTO').length
+  const concluidos     = projects.filter((p) => p.status === 'CONCLUIDO').length
+
+  // Saving Orçamento
+  const savOrcItems = completedEntries.filter((e) => e.valor_referencia_pq && e.valor_referencia_pq > 0)
+  const savOrcPcts  = savOrcItems.map((e) => ((e.valor_referencia_pq! - e.valor_total) / e.valor_referencia_pq!) * 100)
+  const savOrcMedio = avg(savOrcPcts)
+  const econOrcTotal = savOrcItems.reduce((s, e) => s + (e.valor_referencia_pq! - e.valor_total), 0)
+  const refPQTotal   = savOrcItems.reduce((s, e) => s + e.valor_referencia_pq!, 0)
+
+  // Saving Negociação
+  const savNegItems = completedEntries.filter(
+    (e) => e.valor_primeira_proposta && e.valor_primeira_proposta > e.valor_total
+  )
+  const savNegPcts  = savNegItems.map((e) => ((e.valor_primeira_proposta! - e.valor_total) / e.valor_primeira_proposta!) * 100)
+  const savNegMedio = avg(savNegPcts)
+  const econNegTotal = savNegItems.reduce((s, e) => s + (e.valor_primeira_proposta! - e.valor_total), 0)
+
+  // SLA
+  const slaItems = completedEntries.filter((e) => e.sla_dias != null && e.sla_dias >= 0)
+  const slaMedio = avg(slaItems.map((e) => e.sla_dias as number))
+
+  // Valor total equalizado (todos os projetos)
   const totalValorEq = baseline.reduce((s, e) => s + e.valor_total, 0)
 
-  // Baseline indexed by project_id → list of entries (multiple revisions possible)
+  const recentProjects = projects.slice(0, 6)
+
+  // Positive saving = saved money = green; negative = overspent = red
+  const savOrcIsPos = savOrcMedio == null || savOrcMedio >= 0
+
   const baselineByProject = useMemo(() => {
     const map: Record<number, BaselineEntry[]> = {}
-    for (const e of baseline) {
-      ;(map[e.project_id] ??= []).push(e)
-    }
+    for (const e of baseline) { (map[e.project_id] ??= []).push(e) }
     return map
   }, [baseline])
 
-  const recentProjects = projects.slice(0, 8)
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-blue-50/30">
+    <div className="page">
       <GuidedTour />
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
-        {/* ── Header ──────────────────────────────────────────────────────── */}
+        {/* Header */}
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs text-gray-400 mb-1">
-              {new Date().toLocaleDateString('pt-BR', {
-                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-              })}
+              {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
               {greeting()}, {user?.nome?.split(' ')[0]}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
               Central de equalização · {total} projeto{total !== 1 ? 's' : ''} cadastrado{total !== 1 ? 's' : ''}
             </p>
-            <div className="mt-1.5">
-              <RestartTourButton />
-            </div>
+            <div className="mt-1.5"><RestartTourButton /></div>
           </div>
           <Link
             to="/projetos"
@@ -266,127 +595,257 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {/* ── KPI Cards ─────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            {
-              label: 'Total de Projetos',
-              value: total,
-              sub: `${emAndamento} em andamento`,
-              icon: FolderOpen,
-              iconBg: 'bg-blue-50',
-              iconColor: 'text-blue-600',
-              border: 'border-blue-100',
-            },
-            {
-              label: 'Em Andamento',
-              value: emAndamento,
-              sub: 'processos ativos',
-              icon: Activity,
-              iconBg: 'bg-amber-50',
-              iconColor: 'text-amber-600',
-              border: 'border-amber-100',
-            },
-            {
-              label: 'Concluídos',
-              value: concluidos,
-              sub: 'projetos finalizados',
-              icon: CheckCircle2,
-              iconBg: 'bg-green-50',
-              iconColor: 'text-green-600',
-              border: 'border-green-100',
-            },
-            {
-              label: 'Valor Total Equalizado',
-              value: totalValorEq > 0 ? formatShort(totalValorEq) : '—',
-              sub: `${baseline.length} contrato${baseline.length !== 1 ? 's' : ''} premiado${baseline.length !== 1 ? 's' : ''}`,
-              icon: TrendingUp,
-              iconBg: 'bg-indigo-50',
-              iconColor: 'text-indigo-600',
-              border: 'border-indigo-100',
-            },
-          ].map(({ label, value, sub, icon: Icon, iconBg, iconColor, border }) => (
-            <div key={label} className={`bg-white border ${border} rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow`}>
-              <div className="flex items-start justify-between mb-3">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
-                <div className={`w-9 h-9 rounded-xl ${iconBg} flex items-center justify-center flex-shrink-0`}>
-                  <Icon size={16} className={iconColor} />
-                </div>
-              </div>
-              <p className="text-3xl font-bold text-gray-900 leading-none">{value}</p>
-              <p className="text-xs text-gray-400 mt-2">{sub}</p>
-            </div>
-          ))}
+        {/* ── KPIs de status ─────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <KpiCard
+            label="Total de Projetos"
+            value={total}
+            sub={`${emAndamento} em andamento`}
+            icon={FolderOpen}
+            iconBg="bg-blue-50" iconColor="text-blue-600" border="border-blue-100"
+          />
+          <KpiCard
+            label="Em Andamento"
+            value={emAndamento}
+            sub="processos ativos"
+            icon={Activity}
+            iconBg="bg-amber-50" iconColor="text-amber-600" border="border-amber-100"
+          />
+          <KpiCard
+            label="Concluídos"
+            value={concluidos}
+            sub="projetos finalizados"
+            icon={CheckCircle2}
+            iconBg="bg-green-50" iconColor="text-green-600" border="border-green-100"
+          />
+          <KpiCard
+            label="Volume Equalizado"
+            value={totalValorEq > 0 ? fmtShort(totalValorEq) : '—'}
+            sub={`${baseline.length} contrato${baseline.length !== 1 ? 's' : ''} premiado${baseline.length !== 1 ? 's' : ''}`}
+            icon={TrendingUp}
+            iconBg="bg-indigo-50" iconColor="text-indigo-600" border="border-indigo-100"
+          />
         </div>
 
-        {/* ── Timeline + Projects grid ─────────────────────────────────── */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* ── Seção de Indicadores de Performance ──────────────────────── */}
+        {concluidos > 0 && (
+          <>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-1 h-5 bg-green-500 rounded-full" />
+                <h2 className="text-sm font-bold text-gray-900">Indicadores de Desempenho</h2>
+                <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-medium">
+                  {concluidos} projeto{concluidos !== 1 ? 's' : ''} concluído{concluidos !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 ml-3">
+                Métricas calculadas sobre projetos com status Concluído que possuem dados de referência e premiação.
+              </p>
+            </div>
 
-          {/* Timeline (spans 2 cols) */}
-          <div className="xl:col-span-2 bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <div>
+            {/* KPIs de performance (3 grandes) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+              {/* Saving Orçamento */}
+              <div className={`bg-white border ${savOrcIsPos ? 'border-green-100' : 'border-red-100'} rounded-xl p-5`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`w-10 h-10 rounded-xl ${savOrcIsPos ? 'bg-green-50' : 'bg-red-50'} flex items-center justify-center`}>
+                    <Target size={18} className={savOrcIsPos ? 'text-green-600' : 'text-red-500'} />
+                  </div>
+                  <span className={`text-[10px] font-bold ${savOrcIsPos ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'} px-2 py-1 rounded-full uppercase tracking-wide`}>
+                    Saving Orçamento
+                  </span>
+                </div>
+                <p className={`text-4xl font-black ${savOrcIsPos ? 'text-green-600' : 'text-red-500'} leading-none mb-1`}>
+                  {savOrcMedio != null ? `${savOrcMedio.toFixed(1)}%` : '—'}
+                </p>
+                <p className="text-xs text-gray-500 mb-3">
+                  proposta premiada vs. referência PQ da mesma revisão
+                </p>
+                <div className="border-t border-gray-100 pt-3 space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Economia total</span>
+                    <span className={`font-bold ${savOrcIsPos ? 'text-green-600' : 'text-red-500'}`}>{Math.abs(econOrcTotal) > 0 ? fmtShort(econOrcTotal) : '—'}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Ref. PQ total</span>
+                    <span className="font-medium text-gray-600">{refPQTotal > 0 ? fmtShort(refPQTotal) : '—'}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Projetos com ref.</span>
+                    <span className="font-medium text-gray-600">{savOrcItems.length}</span>
+                  </div>
+                </div>
+                {savOrcItems.length === 0 && (
+                  <p className="text-[11px] text-amber-600 mt-2 flex items-center gap-1">
+                    <AlertCircle size={11} /> Preencha preço de referência na PQ
+                  </p>
+                )}
+              </div>
+
+              {/* Saving Negociação */}
+              <div className="bg-white border border-blue-100 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                    <Handshake size={18} className="text-blue-600" />
+                  </div>
+                  <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-full uppercase tracking-wide">
+                    Saving Negociação
+                  </span>
+                </div>
+                <p className="text-4xl font-black text-blue-600 leading-none mb-1">
+                  {savNegMedio != null ? `${savNegMedio.toFixed(1)}%` : '—'}
+                </p>
+                <p className="text-xs text-gray-500 mb-3">
+                  proposta do vencedor na Rev. 0 vs. revisão final premiada
+                </p>
+                <div className="border-t border-gray-100 pt-3 space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Economia de negociação</span>
+                    <span className="font-bold text-blue-600">{econNegTotal > 0 ? fmtShort(econNegTotal) : '—'}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Projetos com revisões</span>
+                    <span className="font-medium text-gray-600">{savNegItems.length}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Rev. 0 → última revisão</span>
+                  </div>
+                </div>
+                {savNegItems.length === 0 && (
+                  <p className="text-[11px] text-amber-600 mt-2 flex items-center gap-1">
+                    <AlertCircle size={11} /> Disponível quando houver revisões
+                  </p>
+                )}
+              </div>
+
+              {/* SLA */}
+              <div className="bg-white border border-amber-100 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                    <Timer size={18} className="text-amber-600" />
+                  </div>
+                  <span className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-full uppercase tracking-wide">
+                    SLA do Processo
+                  </span>
+                </div>
+                <p className="text-4xl font-black text-amber-600 leading-none mb-1">
+                  {slaMedio != null ? `${Math.round(slaMedio)}d` : '—'}
+                </p>
+                <p className="text-xs text-gray-500 mb-3">
+                  duração média da criação até a premiação
+                </p>
+                <div className="border-t border-gray-100 pt-3 space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Mais rápido</span>
+                    <span className="font-bold text-green-600">
+                      {slaItems.length > 0 ? `${Math.min(...slaItems.map((e) => e.sla_dias as number))}d` : '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Mais longo</span>
+                    <span className="font-medium text-red-500">
+                      {slaItems.length > 0 ? `${Math.max(...slaItems.map((e) => e.sla_dias as number))}d` : '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Do cadastro PQ → premiação</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Gráficos de evolução ─────────────────────────────────── */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+
+              {/* Evolução temporal (2 cols) */}
+              <div className="chart-card xl:col-span-2">
+                <div className="chart-header">
+                  <div>
+                    <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                      <TrendingDown size={15} className="text-green-600" />
+                      Evolução dos Indicadores ao Longo do Tempo
+                    </h2>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Saving orçamento (verde) · Saving negociação (azul) · SLA médio (eixo direito)
+                    </p>
+                  </div>
+                  <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg">
+                    {(['mes', 'ano'] as Period[]).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setPeriod(p)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                          period === p ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        {p === 'mes' ? 'Mês' : 'Ano'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="px-4 pt-4 pb-3">
+                  <SavingTimelineChart entries={completedEntries} period={period} />
+                </div>
+              </div>
+
+              {/* SLA por projeto */}
+              <div className="chart-card">
+                <div className="chart-header">
+                  <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                    <Clock size={14} className="text-amber-500" />
+                    SLA por Projeto (dias)
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Verde = abaixo da média · Amarelo = acima
+                  </p>
+                </div>
+                <div className="px-2 py-4">
+                  <SLABarChart entries={completedEntries} />
+                </div>
+              </div>
+            </div>
+
+            {/* Saving por projeto (horizontal bar) */}
+            <div className="chart-card">
+              <div className="chart-header">
                 <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
                   <BarChart3 size={15} className="text-blue-600" />
-                  Valores Equalizados ao Longo do Tempo
+                  Saving por Projeto — Orçamento vs. Negociação
                 </h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Área azul = por período · linha tracejada = acumulado
+                  Comparação do percentual de redução atingido em cada processo
                 </p>
               </div>
-              <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg">
-                {(['semana', 'mes', 'ano'] as Period[]).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPeriod(p)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                      period === p
-                        ? 'bg-white text-blue-700 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    {p === 'semana' ? 'Semana' : p === 'mes' ? 'Mês' : 'Ano'}
-                  </button>
-                ))}
+              <div className="px-4 py-4">
+                <SavingByProjectChart entries={completedEntries} />
               </div>
             </div>
-            <div className="px-4 pt-4 pb-3">
-              <TimelineChart baseline={baseline} period={period} />
-            </div>
-          </div>
 
-          {/* Por Projeto */}
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                <Trophy size={14} className="text-amber-500" />
-                Valor por Projeto
-              </h2>
-              <p className="text-xs text-gray-400 mt-0.5">Contratos equalizados</p>
+            {/* Tabela detalhada por projeto */}
+            <div className="chart-card">
+              <div className="chart-header">
+                <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                  <Trophy size={14} className="text-amber-500" />
+                  Detalhamento por Projeto Concluído
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Todos os indicadores de cada processo · Saving Orçamento = premiado vs. ref. PQ da revisão · Saving Negociação = Rev. 0 → revisão final do vencedor
+                </p>
+              </div>
+              <ProjectKpiTable entries={baseline} completedIds={completedIds} />
             </div>
-            <div className="px-2 py-3">
-              <ProjectWinnersBar entries={baseline} />
-              {baseline.length === 0 && (
-                <div className="h-40 flex flex-col items-center justify-center text-gray-300">
-                  <Trophy size={28} className="mb-2" />
-                  <p className="text-xs">Nenhum contrato equalizado</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+          </>
+        )}
 
-        {/* ── Recent Projects ──────────────────────────────────────────── */}
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        {/* ── Projetos Recentes ──────────────────────────────────────────── */}
+        <div className="chart-card">
+          <div className="chart-header">
             <div className="flex items-center gap-2">
               <Clock size={15} className="text-gray-400" />
               <h2 className="text-sm font-bold text-gray-800">Projetos Recentes</h2>
             </div>
-            <Link
-              to="/projetos"
-              className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
-            >
+            <Link to="/projetos" className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1">
               Ver todos <ChevronRight size={11} />
             </Link>
           </div>
@@ -401,78 +860,112 @@ export default function Dashboard() {
               </Link>
             </div>
           ) : (
-            <div className="divide-y divide-gray-50">
+            <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {recentProjects.map((p) => {
-                const winners = baselineByProject[p.id] ?? []
-                // Sort winners by data_premiacao descending
-                const sorted = [...winners].sort(
+                const winners = (baselineByProject[p.id] ?? []).sort(
                   (a, b) => new Date(b.data_premiacao).getTime() - new Date(a.data_premiacao).getTime()
                 )
+                const latestWinner = winners[0]
+                const savOrc = latestWinner?.valor_referencia_pq
+                  ? ((latestWinner.valor_referencia_pq - latestWinner.valor_total) / latestWinner.valor_referencia_pq) * 100
+                  : null
+                const savOrcPos = savOrc == null || savOrc >= 0
 
                 return (
-                  <div
-                    key={p.id}
-                    className="flex items-start gap-4 px-6 py-4 hover:bg-gray-50/70 transition-colors group"
-                  >
-                    {/* Status dot */}
-                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5 ${
-                      p.status === 'CONCLUIDO'    ? 'bg-green-500' :
-                      p.status === 'EM_ANDAMENTO' ? 'bg-blue-500 ring-4 ring-blue-100' :
-                      p.status === 'ARQUIVADO'    ? 'bg-gray-300' : 'bg-gray-200'
-                    }`} />
+                  <div key={p.id} className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-blue-200 transition-all flex flex-col gap-3">
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-gray-800 truncate">{p.nome}</p>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${STATUS_COLORS[p.status]}`}>
-                          {STATUS_LABELS[p.status]}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                        <span className="text-xs text-gray-400">{getTipoObraLabel(p.tipo_obra)}</span>
-                        {p.numero_licitacao && (
-                          <span className="text-xs text-gray-400">TR: {p.numero_licitacao}</span>
-                        )}
-                        <span className="text-xs text-gray-400">
-                          {p.total_pq_items} itens · {p.total_proposals} proposta{p.total_proposals !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-
-                      {/* Winner values per revision */}
-                      {sorted.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {sorted.map((e, i) => (
-                            <div
-                              key={e.proposal_id}
-                              className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-lg px-2.5 py-1"
-                            >
-                              <Trophy size={10} className="text-green-600 flex-shrink-0" />
-                              <div>
-                                <p className="text-[10px] text-green-600 font-semibold leading-none">
-                                  {formatBRL(e.valor_total)}
-                                </p>
-                                <p className="text-[9px] text-green-500 mt-0.5 truncate max-w-[120px]">
-                                  {e.empresa}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2 min-w-0">
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${
+                          p.status === 'CONCLUIDO'    ? 'bg-green-500' :
+                          p.status === 'EM_ANDAMENTO' ? 'bg-blue-500 ring-3 ring-blue-100' :
+                          p.status === 'ARQUIVADO'    ? 'bg-gray-300' : 'bg-gray-200'
+                        }`} />
+                        <div className="min-w-0">
+                          <p className="font-bold text-gray-900 text-sm leading-snug truncate">{p.nome}</p>
+                          {p.numero_licitacao && (
+                            <p className="text-[10px] text-gray-400 mt-0.5">TR: {p.numero_licitacao}</p>
+                          )}
                         </div>
-                      )}
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${STATUS_COLORS[p.status]}`}>
+                        {STATUS_LABELS[p.status]}
+                      </span>
                     </div>
 
+                    {/* Meta info */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
+                      <span>{getTipoObraLabel(p.tipo_obra)}</span>
+                      {p.extensao_km != null && (
+                        <span className="font-medium text-gray-500">{Number(p.extensao_km).toFixed(1)} km</span>
+                      )}
+                      <span>{p.total_pq_items} itens</span>
+                      <span>{p.total_proposals} proposta{p.total_proposals !== 1 ? 's' : ''}</span>
+                    </div>
+
+                    {/* Winner block */}
+                    {latestWinner ? (
+                      <>
+                        <div className="bg-gray-50 rounded-lg border border-gray-100 p-3 space-y-2">
+                          <div className="flex items-center gap-1.5">
+                            <Trophy size={11} className="text-amber-500 flex-shrink-0" />
+                            <span className="text-xs font-semibold text-gray-700 truncate">{latestWinner.empresa}</span>
+                          </div>
+                          <div className="flex items-end justify-between gap-2">
+                            <span className="text-lg font-black text-gray-900 leading-none">{fmtShort(latestWinner.valor_total)}</span>
+                            {latestWinner.media_propostas != null && (
+                              <div className="text-right">
+                                <p className="text-[9px] text-gray-400 leading-none">Média propostas</p>
+                                <p className="text-xs font-semibold text-gray-500 mt-0.5">{fmtShort(latestWinner.media_propostas)}</p>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {savOrc != null && (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                                savOrcPos
+                                  ? 'bg-green-50 text-green-700 border border-green-200'
+                                  : 'bg-red-50 text-red-600 border border-red-200'
+                              }`}>
+                                {savOrcPos ? <TrendingDown size={9} /> : <TrendingUp size={9} />}
+                                {Math.abs(savOrc).toFixed(1)}% saving
+                              </span>
+                            )}
+                            {latestWinner.sla_dias != null && (
+                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                <Clock size={9} />
+                                {latestWinner.sla_dias}d SLA
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Mini revision evolution chart */}
+                        {latestWinner.revision_history && latestWinner.revision_history.length >= 2 && (
+                          <div>
+                            <p className="text-[10px] text-gray-400 mb-1 flex items-center gap-1">
+                              <Activity size={9} /> Evolução por revisão
+                            </p>
+                            <MiniRevisionChart data={latestWinner.revision_history} />
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-300 italic">Sem proposta premiada</p>
+                    )}
+
                     {/* Actions */}
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 self-center">
+                    <div className="flex gap-2 mt-auto pt-1">
                       <Link
                         to={`/projetos/${p.id}/equalizacao`}
-                        className="text-xs text-blue-600 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 flex items-center gap-1 transition-colors"
+                        className="flex-1 text-center text-xs text-blue-600 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 border border-blue-100 flex items-center justify-center gap-1 transition-colors"
                       >
                         Equalizar <ArrowRight size={10} />
                       </Link>
                       <Link
                         to={`/projetos/${p.id}/analises`}
-                        className="text-xs text-gray-500 font-medium px-3 py-1.5 rounded-lg hover:bg-gray-100 flex items-center gap-1 transition-colors"
+                        className="flex-1 text-center text-xs text-gray-500 font-medium px-3 py-1.5 rounded-lg hover:bg-gray-100 border border-gray-100 flex items-center justify-center gap-1 transition-colors"
                       >
                         Análises <ArrowRight size={10} />
                       </Link>
@@ -484,104 +977,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* ── Contextual tips ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {total === 0 && (
-            <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl p-6 shadow-sm shadow-blue-200">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                  <Building2 size={18} className="text-white" />
-                </div>
-                <div>
-                  <p className="font-bold text-white">Comece criando um projeto</p>
-                  <p className="text-sm text-blue-100 mt-1 leading-relaxed">
-                    Cadastre um projeto, importe a Planilha de Quantitativos (PQ) e adicione propostas para equalizar.
-                  </p>
-                  <Link
-                    to="/projetos"
-                    className="inline-flex items-center gap-1 mt-3 bg-white text-blue-700 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-                  >
-                    Criar projeto <ArrowRight size={11} />
-                  </Link>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {total > 0 && projects.every((p) => p.total_proposals === 0) && (
-            <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-2xl p-6 shadow-sm">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                  <Zap size={18} className="text-white" />
-                </div>
-                <div>
-                  <p className="font-bold">Adicione propostas</p>
-                  <p className="text-sm text-amber-100 mt-1 leading-relaxed">
-                    Você tem projetos cadastrados. Adicione propostas para começar a equalização e análise comparativa.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {baseline.length > 0 && (
-            <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white rounded-2xl p-6 shadow-sm shadow-indigo-200">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                  <TrendingUp size={18} className="text-white" />
-                </div>
-                <div>
-                  <p className="font-bold">Baseline atualizado</p>
-                  <p className="text-sm text-indigo-100 mt-1 leading-relaxed">
-                    {baseline.length} contrato{baseline.length !== 1 ? 's' : ''} premiado{baseline.length !== 1 ? 's' : ''} · valor total equalizado: <strong>{formatBRL(totalValorEq)}</strong>
-                  </p>
-                  <Link
-                    to="/baseline"
-                    className="inline-flex items-center gap-1 mt-3 bg-white text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
-                  >
-                    Ver Baseline completo <ArrowRight size={11} />
-                  </Link>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {total > 0 && (
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
-                  <Calendar size={18} className="text-gray-500" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-bold text-gray-800">Distribuição por Status</p>
-                  <div className="mt-3 space-y-2">
-                    {[
-                      { label: 'Em Andamento', count: emAndamento, color: 'bg-blue-500' },
-                      { label: 'Concluídos',   count: concluidos,  color: 'bg-green-500' },
-                      { label: 'Rascunho',     count: projects.filter((p) => p.status === 'RASCUNHO').length, color: 'bg-gray-300' },
-                      { label: 'Arquivados',   count: projects.filter((p) => p.status === 'ARQUIVADO').length, color: 'bg-gray-200' },
-                    ].filter((s) => s.count > 0).map((s) => (
-                      <div key={s.label} className="flex items-center gap-3">
-                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${s.color}`}
-                            style={{ width: `${(s.count / total) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-gray-500 w-28 flex-shrink-0 flex justify-between">
-                          <span>{s.label}</span>
-                          <span className="font-semibold text-gray-700">{s.count}</span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-      </div>
     </div>
   )
 }

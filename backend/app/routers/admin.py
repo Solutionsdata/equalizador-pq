@@ -60,6 +60,9 @@ def update_user(
     return user
 
 
+_SUPER_ADMIN_EMAIL = "solutionsdata"
+
+
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
@@ -75,5 +78,21 @@ def delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    is_super = _SUPER_ADMIN_EMAIL in (admin.email or "")
+
+    # Super admin nunca pode ser excluído por ninguém
+    if _SUPER_ADMIN_EMAIL in (user.email or ""):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="O super administrador não pode ser excluído",
+        )
+
+    if user.is_admin and not is_super:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Somente o super administrador pode excluir outros administradores",
+        )
+
     db.delete(user)
     db.commit()

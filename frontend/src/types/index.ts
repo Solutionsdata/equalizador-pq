@@ -50,6 +50,8 @@ export interface BaselineItem {
 export interface BaselineEntry {
   project_id: number
   project_nome: string
+  project_status?: string
+  project_created_at?: string
   numero_licitacao?: string
   tipo_obra: WorkType
   extensao_km?: number | null
@@ -58,7 +60,12 @@ export interface BaselineEntry {
   cnpj?: string
   bdi_global: number
   valor_total: number
+  valor_referencia_pq?: number | null
+  valor_primeira_proposta?: number | null
+  sla_dias?: number | null
   data_premiacao: string
+  revision_history?: Array<{ numero: number; valor: number }>
+  media_propostas?: number | null
   items: BaselineItem[]
 }
 

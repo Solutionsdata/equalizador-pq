@@ -2,6 +2,7 @@ from collections import defaultdict
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.deps import get_current_user
@@ -192,63 +193,108 @@ def get_baseline(
     winner_proj_ids = list({p.project_id for p in winners})
     winner_empresas = list({p.empresa for p in winners})
 
-    # --- Saving Negociação: Rev0 vs winning proposal (same company) ---
-    # Find revision numero=0 for each project
+    # All revisions for winner projects (used for rev0 saving + revision_history)
     all_revisions = (
         db.query(ProjectRevision)
         .filter(ProjectRevision.project_id.in_(winner_proj_ids))
         .all()
     )
-    rev0_id_map: dict[int, int] = {}  # project_id → revision.id where numero=0
+    rev0_id_map: dict[int, int] = {}  # project_id → revision.id (numero=0)
+    project_revisions_map: dict[int, list] = defaultdict(list)
     for rev in all_revisions:
+        project_revisions_map[rev.project_id].append(rev)
         if rev.numero == 0:
             rev0_id_map[rev.project_id] = rev.id
 
-    # Load rev0 proposals for each winner empresa
-    rev0_value_map: dict[tuple, float] = {}  # (project_id, empresa) → total bid in rev0
-    rev0_revision_ids = list(rev0_id_map.values())
-    if rev0_revision_ids:
-        rev0_proposals = (
-            db.query(Proposal)
-            .options(joinedload(Proposal.items))
+    # ONE batch query: all proposals from winner empresas across ALL revisions
+    # Serves: revision_history + Saving Negociação (rev0 value)
+    all_empresa_proposals = (
+        db.query(Proposal)
+        .options(joinedload(Proposal.items))
+        .filter(
+            Proposal.project_id.in_(winner_proj_ids),
+            Proposal.empresa.in_(winner_empresas),
+        )
+        .all()
+    )
+    # (project_id, empresa, revision_id) → total bid
+    empresa_rev_total_map: dict[tuple, float] = {}
+    for prop in all_empresa_proposals:
+        total_ep = sum(float(pi.preco_total) for pi in prop.items if pi.preco_total)
+        if total_ep > 0:
+            key = (prop.project_id, prop.empresa, prop.revision_id)
+            if key not in empresa_rev_total_map:
+                empresa_rev_total_map[key] = total_ep
+
+    # Rev0 saving map derived from above
+    rev0_value_map: dict[tuple, float] = {}
+    for (pid, emp, rev_id), t in empresa_rev_total_map.items():
+        if rev0_id_map.get(pid) == rev_id:
+            key = (pid, emp)
+            if key not in rev0_value_map:
+                rev0_value_map[key] = t
+
+    # Average of ALL proposals in each winning revision (DB-level aggregation)
+    winning_revision_ids = list({p.revision_id for p in winners if p.revision_id})
+    media_map: dict[tuple, float] = {}
+    if winning_revision_ids:
+        pi_totals_sq = (
+            db.query(
+                ProposalItem.proposal_id,
+                func.sum(ProposalItem.preco_total).label("total"),
+            )
+            .filter(ProposalItem.preco_total.isnot(None))
+            .group_by(ProposalItem.proposal_id)
+            .subquery()
+        )
+        for row in (
+            db.query(
+                Proposal.project_id,
+                Proposal.revision_id,
+                func.avg(pi_totals_sq.c.total).label("media"),
+            )
+            .join(pi_totals_sq, pi_totals_sq.c.proposal_id == Proposal.id)
             .filter(
                 Proposal.project_id.in_(winner_proj_ids),
-                Proposal.empresa.in_(winner_empresas),
-                Proposal.revision_id.in_(rev0_revision_ids),
+                Proposal.revision_id.in_(winning_revision_ids),
             )
+            .group_by(Proposal.project_id, Proposal.revision_id)
             .all()
-        )
-        for prop in rev0_proposals:
-            # Guard: ensure this is actually the rev0 for that project
-            if rev0_id_map.get(prop.project_id) != prop.revision_id:
-                continue
-            rev0_total = sum(
-                float(pi.preco_total) for pi in prop.items if pi.preco_total
-            )
-            if rev0_total > 0:
-                key = (prop.project_id, prop.empresa)
-                if key not in rev0_value_map:
-                    rev0_value_map[key] = rev0_total
+        ):
+            if row.media:
+                media_map[(row.project_id, row.revision_id)] = float(row.media)
 
     entries = []
     for proposal in winners:
         project = project_map[proposal.project_id]
         pq_map = pq_groups[(proposal.project_id, proposal.revision_id)]
 
-        # Saving Orçamento: PQ reference price of the same revision vs winning proposal total
+        # Saving Orçamento: same-revision PQ reference vs winning proposal total
         valor_referencia_pq = sum(
             float(item.quantidade) * float(item.preco_referencia)
             for item in pq_map.values()
             if item.quantidade and item.preco_referencia
         )
 
-        # Saving Negociação: company's Rev0 total vs winning proposal total
-        # (only meaningful when the winner is NOT from rev0 itself)
+        # Saving Negociação: winner empresa's Rev0 total vs winning proposal total
         rev0_total = rev0_value_map.get((proposal.project_id, proposal.empresa))
         valor_primeira_proposta = None
         winner_in_rev0 = (proposal.revision_id == rev0_id_map.get(proposal.project_id))
         if rev0_total and not winner_in_rev0:
             valor_primeira_proposta = rev0_total
+
+        # Revision history: winner empresa bid per revision (sorted by numero)
+        project_revs = sorted(
+            project_revisions_map[proposal.project_id], key=lambda r: r.numero
+        )
+        revision_history = [
+            {"numero": rev.numero, "valor": empresa_rev_total_map[(proposal.project_id, proposal.empresa, rev.id)]}
+            for rev in project_revs
+            if (proposal.project_id, proposal.empresa, rev.id) in empresa_rev_total_map
+        ]
+
+        # Average of all proposals in the winning revision
+        media_propostas = media_map.get((proposal.project_id, proposal.revision_id))
 
         data_prem = proposal.updated_at or proposal.created_at
         sla_dias = (data_prem - project.created_at).days if project.created_at and data_prem else None
@@ -290,6 +336,8 @@ def get_baseline(
             "valor_primeira_proposta": valor_primeira_proposta,
             "sla_dias": sla_dias,
             "data_premiacao": data_prem.isoformat(),
+            "revision_history": revision_history,
+            "media_propostas": media_propostas,
             "items": items,
         })
 

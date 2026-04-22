@@ -842,8 +842,7 @@ export default function Analytics() {
   const showFilterPanel = ['comparativo', 'cherry', 'fornecedores'].includes(tab)
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-[1400px] mx-auto px-6 py-6">
+    <div className="page">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -1421,7 +1420,6 @@ export default function Analytics() {
             )}
           </div>
         </div>
-      </div>
     </div>
   )
 }
