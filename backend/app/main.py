@@ -155,6 +155,17 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "CREATE INDEX IF NOT EXISTS ix_proposal_items_pq_item_id ON proposal_items (pq_item_id)"
     ))
+    # Localidade na PQ
+    _conn.execute(text(
+        "ALTER TABLE pq_items ADD COLUMN IF NOT EXISTS localidade VARCHAR(200)"
+    ))
+    # Colunas COM REIDI nas propostas
+    _conn.execute(text(
+        "ALTER TABLE proposal_items ADD COLUMN IF NOT EXISTS custo_unit_com_reidi NUMERIC(18,4)"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE proposal_items ADD COLUMN IF NOT EXISTS bdi_com_reidi NUMERIC(5,2)"
+    ))
     _conn.commit()
 
 app = FastAPI(

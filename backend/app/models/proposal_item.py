@@ -12,9 +12,11 @@ class ProposalItem(Base):
     proposal_id   = Column(Integer, ForeignKey("proposals.id"), nullable=False)
     pq_item_id    = Column(Integer, ForeignKey("pq_items.id"), nullable=False)
 
-    preco_unitario = Column(Numeric(18, 4))   # Preço unitário ofertado
-    bdi            = Column(Numeric(5, 2))    # BDI % (sobrescreve o global da proposta)
-    preco_total    = Column(Numeric(18, 4))   # Calculado: qtd × PU × (1 + BDI/100)
+    preco_unitario       = Column(Numeric(18, 4))  # CUD sem REIDI
+    bdi                  = Column(Numeric(5, 2))   # BDI sem REIDI
+    custo_unit_com_reidi = Column(Numeric(18, 4))  # CUD com REIDI
+    bdi_com_reidi        = Column(Numeric(5, 2))   # BDI com REIDI
+    preco_total          = Column(Numeric(18, 4))  # Calculado: qtd × CUD_com × (1 + BDI_com/100)
 
     # Escopo capturado do proponente (pode diferir da PQ)
     descricao_proposta  = Column(String(500), nullable=True)

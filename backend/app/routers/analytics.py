@@ -315,7 +315,7 @@ def get_baseline(
                 "quantidade": float(pq.quantidade or 0),
                 "categoria": pq.categoria,
                 "disciplina": pq.disciplina,
-                "preco_unitario": float(pi.preco_unitario) if pi.preco_unitario else None,
+                "preco_unitario": float(pi.custo_unit_com_reidi or pi.preco_unitario or 0) or None,
                 "preco_total": float(preco_total),
             })
 
@@ -385,7 +385,7 @@ def export_baseline_excel(
                 "quantidade": float(pq.quantidade or 0),
                 "categoria": pq.categoria,
                 "disciplina": pq.disciplina,
-                "preco_unitario": float(pi.preco_unitario) if pi.preco_unitario else None,
+                "preco_unitario": float(pi.custo_unit_com_reidi or pi.preco_unitario or 0) or None,
                 "preco_total": float(preco_total),
             })
 

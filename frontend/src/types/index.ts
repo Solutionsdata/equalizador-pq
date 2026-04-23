@@ -69,22 +69,21 @@ export interface BaselineEntry {
   items: BaselineItem[]
 }
 
-/** Planilha de Quantitativos — 10 colunas de negócio */
+/** Planilha de Quantitativos — 12 colunas de negócio */
 export interface PQItem {
   id: number
   project_id: number
-  // as 10 colunas:
   numero_item: string
+  localidade?: string
+  disciplina?: string
+  categoria?: string
   codigo?: string
   descricao: string
   unidade: string
   quantidade: number
-  categoria?: string
-  disciplina?: string
   referencia_codigo?: string
   preco_referencia?: number
   observacao?: string
-  // internos:
   ordem: number
   created_at: string
 }
@@ -110,9 +109,11 @@ export interface Proposal {
 export interface ProposalItem {
   id: number
   pq_item_id: number
-  preco_unitario?: number
-  bdi?: number
-  preco_total?: number
+  preco_unitario?: number        // CUD sem REIDI
+  bdi?: number                   // BDI sem REIDI
+  custo_unit_com_reidi?: number  // CUD com REIDI
+  bdi_com_reidi?: number         // BDI com REIDI
+  preco_total?: number           // Total COM REIDI (analytics)
 }
 
 export interface ProposalWithItems extends Proposal {

@@ -2,8 +2,8 @@
 Serviço de geração e importação de arquivos Excel para PQ e Propostas.
 
 Layouts:
-  Planilha PQ  (modelo_pq)      — 10 colunas em azul  (somente leitura para proponentes)
-  Proposta      (modelo_proposta)— 10 colunas azuis + 3 colunas verdes para preenchimento
+  Planilha PQ  (modelo_pq)      — 12 colunas em azul  (somente leitura para proponentes)
+  Proposta      (modelo_proposta)— 12 colunas azuis + 4 laranja (Sem REIDI) + 4 verdes (Com REIDI)
 """
 
 import io
@@ -18,16 +18,19 @@ from app.models.pq_item import PQItem
 from app.models.proposal_item import ProposalItem
 
 # ── Paleta de cores ───────────────────────────────────────────────────────────
-AZUL_TITULO  = "1E3A5F"
-AZUL_HEADER  = "2563EB"
-AZUL_LINHA_A = "DBEAFE"
-AZUL_LINHA_B = "EFF6FF"
-VERDE_HEADER = "15803D"
-VERDE_LINHA_A= "DCFCE7"
-VERDE_LINHA_B= "F0FDF4"
-AMARELO_AVISO= "FEF9C3"
-CINZA_INFO   = "F3F4F6"
-BRANCO       = "FFFFFF"
+AZUL_TITULO   = "1E3A5F"
+AZUL_HEADER   = "2563EB"
+AZUL_LINHA_A  = "DBEAFE"
+AZUL_LINHA_B  = "EFF6FF"
+VERDE_HEADER  = "15803D"
+VERDE_LINHA_A = "DCFCE7"
+VERDE_LINHA_B = "F0FDF4"
+LARANJA_HEADER  = "C2410C"
+LARANJA_LINHA_A = "FFEDD5"
+LARANJA_LINHA_B = "FFF7ED"
+AMARELO_AVISO = "FEF9C3"
+CINZA_INFO    = "F3F4F6"
+BRANCO        = "FFFFFF"
 
 # ── Helpers de estilo ─────────────────────────────────────────────────────────
 
@@ -50,24 +53,32 @@ def _align(h="left", v="center", wrap=False) -> Alignment:
 
 # ── Definição das colunas ─────────────────────────────────────────────────────
 # (rótulo, campo_model, largura, formato)
+# campo "_total_rf" = coluna calculada (qtd × preco_referencia)
 PQ_COLS = [
-    ("Item",            "numero_item",       8,  "text"),
-    ("Código",          "codigo",           13,  "text"),
-    ("Descrição",       "descricao",        52,  "text"),
-    ("Un",              "unidade",           7,  "text"),
-    ("Quantidade",      "quantidade",       13,  "num4"),
-    ("Categoria",       "categoria",        20,  "text"),
-    ("Disciplina",      "disciplina",       16,  "text"),
-    ("Referência",      "referencia_codigo",13,  "text"),
-    ("Preço Ref. (R$)", "preco_referencia", 16,  "brl4"),
-    ("Observação",      "observacao",       30,  "text"),
+    ("Item",             "numero_item",        8,  "text"),
+    ("Localidade",       "localidade",        20,  "text"),
+    ("Disciplina",       "disciplina",        16,  "text"),
+    ("Categoria",        "categoria",         20,  "text"),
+    ("Código",           "codigo",            13,  "text"),
+    ("Descrição",        "descricao",         52,  "text"),
+    ("Unidade Medida",   "unidade",           14,  "text"),
+    ("Quantidade",       "quantidade",        13,  "num4"),
+    ("Referência",       "referencia_codigo", 13,  "text"),
+    ("Preço Unit. RF",   "preco_referencia",  16,  "brl4"),
+    ("Preço Total RF",   "_total_rf",         16,  "brl2"),
+    ("Observação",       "observacao",        30,  "text"),
 ]
 
-PROP_EXTRA_COLS = [
-    ("Preço Unit. (R$)", "preco_unitario", 16, "brl4"),
-    ("BDI (%)",          "bdi",           10, "pct"),
-    ("Preço Total (R$)", "preco_total",   18, "brl2"),
-]
+# Posições fixas das colunas-chave na PQ (1-based)
+PQ_QTD_COL    = 8   # Quantidade
+PQ_PUNIT_COL  = 10  # Preço Unit. RF
+PQ_TOTAL_COL  = 11  # Preço Total RF (fórmula)
+PQ_NCOLS      = len(PQ_COLS)  # 12
+
+# Proposta: SEM REIDI começa em col 13, COM REIDI em col 17
+SEM_START = PQ_NCOLS + 1   # 13
+COM_START = PQ_NCOLS + 5   # 17
+TOTAL_PROP_COLS = PQ_NCOLS + 8  # 20
 
 FMT = {
     "text":  "@",
@@ -82,7 +93,7 @@ FMT = {
 
 def gerar_modelo_pq(project_name: str, pq_items: Optional[List[PQItem]] = None) -> io.BytesIO:
     """
-    Gera o Excel da Planilha de Quantitativos.
+    Gera o Excel da Planilha de Quantitativos (12 colunas).
     Se `pq_items` for fornecido, exporta os dados; caso contrário exporta template vazio.
     """
     wb = Workbook()
@@ -90,8 +101,7 @@ def gerar_modelo_pq(project_name: str, pq_items: Optional[List[PQItem]] = None) 
     ws.title = "Planilha PQ"
     ws.sheet_view.showGridLines = False
 
-    ncols = len(PQ_COLS)
-    last_col = get_column_letter(ncols)
+    last_col = get_column_letter(PQ_NCOLS)
 
     # Linha 1 — Título
     ws.merge_cells(f"A1:{last_col}1")
@@ -125,29 +135,44 @@ def gerar_modelo_pq(project_name: str, pq_items: Optional[List[PQItem]] = None) 
     ws.row_dimensions[3].height = 20
     ws.freeze_panes = "A4"
 
+    qtd_letter  = get_column_letter(PQ_QTD_COL)
+    punit_letter = get_column_letter(PQ_PUNIT_COL)
+
     # Linhas de dados
     rows = pq_items if pq_items else []
     for ri, item in enumerate(rows, start=4):
         alt = ri % 2 == 0
         for ci, (_, field, _, fmt) in enumerate(PQ_COLS, start=1):
-            raw = getattr(item, field, None)
-            val = float(raw) if raw is not None and fmt in ("num4", "brl4") else raw
-            c = ws.cell(row=ri, column=ci, value=val)
+            if field == "_total_rf":
+                val = f"={qtd_letter}{ri}*{punit_letter}{ri}"
+                c = ws.cell(row=ri, column=ci, value=val)
+                c.number_format = FMT["brl2"]
+                c.alignment = _align("right")
+            else:
+                raw = getattr(item, field, None)
+                val = float(raw) if raw is not None and fmt in ("num4", "brl4") else raw
+                c = ws.cell(row=ri, column=ci, value=val)
+                c.number_format = FMT.get(fmt, "@")
+                c.alignment = _align("right" if fmt != "text" else "left")
             c.fill = _fill(AZUL_LINHA_A if alt else AZUL_LINHA_B)
             c.font = _font(size=9)
             c.border = _border()
-            c.number_format = FMT.get(fmt, "@")
-            c.alignment = _align("right" if fmt not in ("text",) else "left")
 
-    # Se template vazio, inclui 50 linhas em branco formatadas
+    # Template vazio: 50 linhas com fórmulas
     if not rows:
         for ri in range(4, 54):
             alt = ri % 2 == 0
-            for ci, (_, _, _, fmt) in enumerate(PQ_COLS, start=1):
-                c = ws.cell(row=ri, column=ci)
+            for ci, (_, field, _, fmt) in enumerate(PQ_COLS, start=1):
+                if field == "_total_rf":
+                    c = ws.cell(row=ri, column=ci,
+                                value=f"={qtd_letter}{ri}*{punit_letter}{ri}")
+                    c.number_format = FMT["brl2"]
+                    c.alignment = _align("right")
+                else:
+                    c = ws.cell(row=ri, column=ci)
+                    c.number_format = FMT.get(fmt, "@")
                 c.fill = _fill(AZUL_LINHA_A if alt else AZUL_LINHA_B)
                 c.border = _border()
-                c.number_format = FMT.get(fmt, "@")
 
     return _save(wb)
 
@@ -163,18 +188,28 @@ def gerar_modelo_proposta(
 ) -> io.BytesIO:
     """
     Gera o Excel de Proposta Comercial.
-    Colunas PQ em azul (somente leitura) + 3 colunas verdes para preenchimento.
+    12 colunas PQ (azul) + 4 colunas Sem REIDI (laranja) + 4 colunas Com REIDI (verde).
+    Analytics usa o Custo Total BDI COM REIDI.
     """
     wb = Workbook()
     ws = wb.active
     ws.title = "Proposta"
     ws.sheet_view.showGridLines = False
 
-    all_cols = PQ_COLS + PROP_EXTRA_COLS
-    ncols = len(all_cols)
-    last_col = get_column_letter(ncols)
-    pq_end = len(PQ_COLS)
-    pq_end_col = get_column_letter(pq_end)
+    last_col = get_column_letter(TOTAL_PROP_COLS)
+    pq_end_col = get_column_letter(PQ_NCOLS)
+
+    # Col letters para as colunas de preço
+    qtd_letter   = get_column_letter(PQ_QTD_COL)
+    punit_letter = get_column_letter(PQ_PUNIT_COL)
+    col_cud_sem       = SEM_START      # 13
+    col_bdi_sem       = SEM_START + 1  # 14
+    col_cud_bdi_sem   = SEM_START + 2  # 15
+    col_total_sem     = SEM_START + 3  # 16
+    col_cud_com       = COM_START      # 17
+    col_bdi_com       = COM_START + 1  # 18
+    col_cud_bdi_com   = COM_START + 2  # 19
+    col_total_com     = COM_START + 3  # 20
 
     # Linha 1 — Título
     ws.merge_cells(f"A1:{last_col}1")
@@ -186,15 +221,16 @@ def gerar_modelo_proposta(
     ws.row_dimensions[1].height = 28
 
     # Linha 2 — Identificação
-    ws.merge_cells(f"A2:{get_column_letter(pq_end//2)}2")
+    half = PQ_NCOLS // 2
+    ws.merge_cells(f"A2:{get_column_letter(half)}2")
     c = ws["A2"]
     c.value = f"Empresa / Proponente:  {empresa or '___________________________________'}"
     c.fill = _fill(CINZA_INFO)
     c.font = _font(bold=True, size=10)
     c.alignment = _align("left")
 
-    ws.merge_cells(f"{get_column_letter(pq_end//2+1)}2:{last_col}2")
-    c = ws.cell(row=2, column=pq_end//2+1)
+    ws.merge_cells(f"{get_column_letter(half+1)}2:{last_col}2")
+    c = ws.cell(row=2, column=half + 1)
     c.value = f"BDI Global aplicado (%):  {bdi_global:.2f}"
     c.fill = _fill(CINZA_INFO)
     c.font = _font(bold=True, size=10)
@@ -205,7 +241,7 @@ def gerar_modelo_proposta(
     ws.merge_cells(f"A3:{last_col}3")
     c = ws["A3"]
     c.value = (
-        "INSTRUÇÃO:  Preencha SOMENTE as colunas em VERDE (Preço Unitário e BDI %).  "
+        "INSTRUÇÃO:  Preencha SOMENTE as colunas em LARANJA (Sem REIDI) e VERDE (Com REIDI).  "
         "Não altere as colunas em AZUL.  Salve e devolva este arquivo."
     )
     c.fill = _fill(AMARELO_AVISO)
@@ -213,17 +249,71 @@ def gerar_modelo_proposta(
     c.alignment = _align("center")
     ws.row_dimensions[3].height = 16
 
-    # Linha 4 — Cabeçalhos
-    for ci, (label, _, width, _) in enumerate(all_cols, start=1):
-        is_price = ci > pq_end
-        c = ws.cell(row=4, column=ci, value=label)
-        c.fill = _fill(VERDE_HEADER if is_price else AZUL_HEADER)
+    # Linha 4 — Cabeçalhos de grupo
+    ws.merge_cells(f"A4:{pq_end_col}4")
+    c = ws["A4"]
+    c.value = "PLANILHA DE QUANTITATIVOS"
+    c.fill = _fill(AZUL_TITULO)
+    c.font = _font("FFFFFF", bold=True, size=10)
+    c.alignment = _align("center")
+    c.border = _border()
+
+    ws.merge_cells(f"{get_column_letter(col_cud_sem)}4:{get_column_letter(col_total_sem)}4")
+    c = ws.cell(row=4, column=col_cud_sem, value="SEM REIDI")
+    c.fill = _fill(LARANJA_HEADER)
+    c.font = _font("FFFFFF", bold=True, size=10)
+    c.alignment = _align("center")
+    c.border = _border()
+
+    ws.merge_cells(f"{get_column_letter(col_cud_com)}4:{get_column_letter(col_total_com)}4")
+    c = ws.cell(row=4, column=col_cud_com, value="COM REIDI")
+    c.fill = _fill(VERDE_HEADER)
+    c.font = _font("FFFFFF", bold=True, size=10)
+    c.alignment = _align("center")
+    c.border = _border()
+    ws.row_dimensions[4].height = 20
+
+    # Linha 5 — Cabeçalhos individuais
+    for ci, (label, _, width, _) in enumerate(PQ_COLS, start=1):
+        c = ws.cell(row=5, column=ci, value=label)
+        c.fill = _fill(AZUL_HEADER)
         c.font = _font("FFFFFF", bold=True, size=9)
         c.alignment = _align("center")
         c.border = _border()
         ws.column_dimensions[get_column_letter(ci)].width = width
-    ws.row_dimensions[4].height = 20
-    ws.freeze_panes = "A5"
+
+    sem_headers = [
+        ("Custo Unit. Direto", 18),
+        ("BDI (%)",            10),
+        ("Custo Unit. c/BDI",  18),
+        ("Custo Total c/BDI",  20),
+    ]
+    for i, (label, width) in enumerate(sem_headers):
+        ci = col_cud_sem + i
+        c = ws.cell(row=5, column=ci, value=label)
+        c.fill = _fill(LARANJA_HEADER)
+        c.font = _font("FFFFFF", bold=True, size=9)
+        c.alignment = _align("center")
+        c.border = _border()
+        ws.column_dimensions[get_column_letter(ci)].width = width
+
+    com_headers = [
+        ("Custo Unit. Direto", 18),
+        ("BDI (%)",            10),
+        ("Custo Unit. c/BDI",  18),
+        ("Custo Total c/BDI",  20),
+    ]
+    for i, (label, width) in enumerate(com_headers):
+        ci = col_cud_com + i
+        c = ws.cell(row=5, column=ci, value=label)
+        c.fill = _fill(VERDE_HEADER)
+        c.font = _font("FFFFFF", bold=True, size=9)
+        c.alignment = _align("center")
+        c.border = _border()
+        ws.column_dimensions[get_column_letter(ci)].width = width
+
+    ws.row_dimensions[5].height = 20
+    ws.freeze_panes = "A6"
 
     # Mapa de preços existentes
     price_map: dict[int, ProposalItem] = {}
@@ -231,82 +321,123 @@ def gerar_modelo_proposta(
         for pi in proposal_items:
             price_map[pi.pq_item_id] = pi
 
-    # Colunas de preço
-    col_pu  = pq_end + 1
-    col_bdi = pq_end + 2
-    col_tot = pq_end + 3
-    qtd_col = get_column_letter(5)  # Quantidade fica na coluna E
+    data_start = 6
 
     # Linhas de dados
-    for ri, item in enumerate(pq_items, start=5):
+    for ri, item in enumerate(pq_items, start=data_start):
         alt = ri % 2 == 0
         pi = price_map.get(item.id)
 
-        # Colunas PQ (informativas)
+        # ── Colunas PQ (azul) ────────────────────────────────────────────────
         for ci, (_, field, _, fmt) in enumerate(PQ_COLS, start=1):
-            raw = getattr(item, field, None)
-            val = float(raw) if raw is not None and fmt in ("num4", "brl4") else raw
-            c = ws.cell(row=ri, column=ci, value=val)
+            if field == "_total_rf":
+                val = f"={qtd_letter}{ri}*{punit_letter}{ri}"
+                c = ws.cell(row=ri, column=ci, value=val)
+                c.number_format = FMT["brl2"]
+                c.alignment = _align("right")
+            else:
+                raw = getattr(item, field, None)
+                val = float(raw) if raw is not None and fmt in ("num4", "brl4") else raw
+                c = ws.cell(row=ri, column=ci, value=val)
+                c.number_format = FMT.get(fmt, "@")
+                c.alignment = _align("right" if fmt != "text" else "left")
             c.fill = _fill(AZUL_LINHA_A if alt else AZUL_LINHA_B)
             c.font = _font(size=9)
             c.border = _border()
-            c.number_format = FMT.get(fmt, "@")
-            c.alignment = _align("right" if fmt not in ("text",) else "left")
 
-        # Preço Unitário (verde, editável)
-        pu_val = float(pi.preco_unitario) if pi and pi.preco_unitario else None
-        c = ws.cell(row=ri, column=col_pu, value=pu_val)
+        # ── SEM REIDI (laranja) ──────────────────────────────────────────────
+        cud_sem_val = float(pi.preco_unitario) if pi and pi.preco_unitario else None
+        bdi_sem_val = float(pi.bdi) if pi and pi.bdi else None
+
+        cud_sem_ref = f"{get_column_letter(col_cud_sem)}{ri}"
+        bdi_sem_ref = f"{get_column_letter(col_bdi_sem)}{ri}"
+
+        c = ws.cell(row=ri, column=col_cud_sem, value=cud_sem_val)
+        c.fill = _fill(LARANJA_LINHA_A if alt else LARANJA_LINHA_B)
+        c.font = _font(size=9); c.border = _border()
+        c.number_format = FMT["brl4"]; c.alignment = _align("right")
+
+        c = ws.cell(row=ri, column=col_bdi_sem, value=bdi_sem_val)
+        c.fill = _fill(LARANJA_LINHA_A if alt else LARANJA_LINHA_B)
+        c.font = _font(size=9); c.border = _border()
+        c.number_format = FMT["pct"]; c.alignment = _align("right")
+
+        c = ws.cell(row=ri, column=col_cud_bdi_sem,
+                    value=f"={cud_sem_ref}*(1+{bdi_sem_ref}/100)")
+        c.fill = _fill(LARANJA_LINHA_A if alt else LARANJA_LINHA_B)
+        c.font = _font(size=9); c.border = _border()
+        c.number_format = FMT["brl4"]; c.alignment = _align("right")
+
+        c = ws.cell(row=ri, column=col_total_sem,
+                    value=f"={qtd_letter}{ri}*{cud_sem_ref}*(1+{bdi_sem_ref}/100)")
+        c.fill = _fill(LARANJA_LINHA_A if alt else LARANJA_LINHA_B)
+        c.font = _font("C2410C", bold=True, size=9); c.border = _border()
+        c.number_format = FMT["brl2"]; c.alignment = _align("right")
+
+        # ── COM REIDI (verde) ────────────────────────────────────────────────
+        cud_com_val = float(pi.custo_unit_com_reidi) if pi and pi.custo_unit_com_reidi else None
+        bdi_com_val = float(pi.bdi_com_reidi) if pi and pi.bdi_com_reidi else None
+
+        cud_com_ref = f"{get_column_letter(col_cud_com)}{ri}"
+        bdi_com_ref = f"{get_column_letter(col_bdi_com)}{ri}"
+
+        c = ws.cell(row=ri, column=col_cud_com, value=cud_com_val)
         c.fill = _fill(VERDE_LINHA_A if alt else VERDE_LINHA_B)
-        c.font = _font(size=9)
-        c.border = _border()
-        c.number_format = FMT["brl4"]
-        c.alignment = _align("right")
+        c.font = _font(size=9); c.border = _border()
+        c.number_format = FMT["brl4"]; c.alignment = _align("right")
 
-        # BDI % (verde, editável)
-        bdi_val = float(pi.bdi) if pi and pi.bdi else None
-        c = ws.cell(row=ri, column=col_bdi, value=bdi_val)
+        c = ws.cell(row=ri, column=col_bdi_com, value=bdi_com_val)
         c.fill = _fill(VERDE_LINHA_A if alt else VERDE_LINHA_B)
-        c.font = _font(size=9)
-        c.border = _border()
-        c.number_format = FMT["pct"]
-        c.alignment = _align("right")
+        c.font = _font(size=9); c.border = _border()
+        c.number_format = FMT["pct"]; c.alignment = _align("right")
 
-        # Preço Total (fórmula automática)
-        pu_ref  = f"{get_column_letter(col_pu)}{ri}"
-        bdi_ref = f"{get_column_letter(col_bdi)}{ri}"
-        c = ws.cell(
-            row=ri, column=col_tot,
-            value=f"={qtd_col}{ri}*{pu_ref}*(1+{bdi_ref}/100)",
-        )
+        c = ws.cell(row=ri, column=col_cud_bdi_com,
+                    value=f"={cud_com_ref}*(1+{bdi_com_ref}/100)")
         c.fill = _fill(VERDE_LINHA_A if alt else VERDE_LINHA_B)
-        c.font = _font("15803D", bold=True, size=9)
-        c.border = _border()
-        c.number_format = FMT["brl2"]
-        c.alignment = _align("right")
+        c.font = _font(size=9); c.border = _border()
+        c.number_format = FMT["brl4"]; c.alignment = _align("right")
 
-    # Linha de total
-    total_row = len(pq_items) + 5
+        c = ws.cell(row=ri, column=col_total_com,
+                    value=f"={qtd_letter}{ri}*{cud_com_ref}*(1+{bdi_com_ref}/100)")
+        c.fill = _fill(VERDE_LINHA_A if alt else VERDE_LINHA_B)
+        c.font = _font("15803D", bold=True, size=9); c.border = _border()
+        c.number_format = FMT["brl2"]; c.alignment = _align("right")
+
+    # ── Linha de total ────────────────────────────────────────────────────────
+    total_row = len(pq_items) + data_start
     ws.merge_cells(f"A{total_row}:{pq_end_col}{total_row}")
-    c = ws["A" + str(total_row)]
+    c = ws[f"A{total_row}"]
     c.value = "TOTAL GERAL DA PROPOSTA"
     c.fill = _fill(AZUL_TITULO)
     c.font = _font("FFFFFF", bold=True, size=10)
     c.alignment = _align("right")
     c.border = _border()
 
-    for ci in (col_pu, col_bdi):
+    # Total SEM REIDI
+    for ci in (col_cud_sem, col_bdi_sem, col_cud_bdi_sem):
         c = ws.cell(row=total_row, column=ci)
-        c.fill = _fill(AZUL_TITULO)
-        c.border = _border()
+        c.fill = _fill(LARANJA_HEADER); c.border = _border()
 
-    tot_ref = get_column_letter(col_tot)
-    c = ws.cell(row=total_row, column=col_tot,
-                value=f"=SUM({tot_ref}5:{tot_ref}{total_row-1})")
+    tot_sem_ltr = get_column_letter(col_total_sem)
+    c = ws.cell(row=total_row, column=col_total_sem,
+                value=f"=SUM({tot_sem_ltr}{data_start}:{tot_sem_ltr}{total_row-1})")
+    c.fill = _fill(LARANJA_HEADER)
+    c.font = _font("FFFFFF", bold=True, size=11)
+    c.number_format = FMT["brl2"]
+    c.alignment = _align("right"); c.border = _border()
+
+    # Total COM REIDI
+    for ci in (col_cud_com, col_bdi_com, col_cud_bdi_com):
+        c = ws.cell(row=total_row, column=ci)
+        c.fill = _fill(AZUL_TITULO); c.border = _border()
+
+    tot_com_ltr = get_column_letter(col_total_com)
+    c = ws.cell(row=total_row, column=col_total_com,
+                value=f"=SUM({tot_com_ltr}{data_start}:{tot_com_ltr}{total_row-1})")
     c.fill = _fill(AZUL_TITULO)
     c.font = _font("FFFFFF", bold=True, size=11)
     c.number_format = FMT["brl2"]
-    c.alignment = _align("right")
-    c.border = _border()
+    c.alignment = _align("right"); c.border = _border()
 
     ws.row_dimensions[total_row].height = 22
 
@@ -325,17 +456,20 @@ def importar_pq_excel(file_bytes: bytes) -> List[dict]:
 
     MAPA_HEADERS = {
         "item": "numero_item", "nº item": "numero_item", "número item": "numero_item",
+        "localidade": "localidade",
+        "disciplina": "disciplina",
+        "categoria": "categoria",
         "código": "codigo", "codigo": "codigo",
         "descrição": "descricao", "descricao": "descricao",
-        "unidade": "unidade", "un": "unidade",
+        "unidade": "unidade", "un": "unidade", "unidade medida": "unidade",
         "quantidade": "quantidade", "qtd": "quantidade",
-        "categoria": "categoria",
-        "disciplina": "disciplina",
         "referência": "referencia_codigo", "referencia": "referencia_codigo",
         "ref.": "referencia_codigo",
+        "preço unit. rf": "preco_referencia", "preço unitário rf": "preco_referencia",
         "preço ref. (r$)": "preco_referencia", "preço ref.": "preco_referencia",
         "preco referencia": "preco_referencia", "preço referência": "preco_referencia",
         "observação": "observacao", "observacao": "observacao", "obs.": "observacao",
+        # Ignora a coluna de fórmula "Preço Total RF"
     }
 
     header_row, col_map = _find_header(ws, MAPA_HEADERS, required={"numero_item", "descricao"})
@@ -349,17 +483,18 @@ def importar_pq_excel(file_bytes: bytes) -> List[dict]:
             continue
 
         items.append({
-            "numero_item":      num,
-            "codigo":           _str(rd.get("codigo")),
-            "descricao":        desc,
-            "unidade":          _str(rd.get("unidade")) or "un",
-            "quantidade":       _float(rd.get("quantidade")) or 0,
-            "categoria":        _str(rd.get("categoria")),
-            "disciplina":       _str(rd.get("disciplina")),
-            "referencia_codigo":_str(rd.get("referencia_codigo")),
-            "preco_referencia": _float(rd.get("preco_referencia")),
-            "observacao":       _str(rd.get("observacao")),
-            "ordem":            len(items),
+            "numero_item":       num,
+            "localidade":        _str(rd.get("localidade")),
+            "disciplina":        _str(rd.get("disciplina")),
+            "categoria":         _str(rd.get("categoria")),
+            "codigo":            _str(rd.get("codigo")),
+            "descricao":         desc,
+            "unidade":           _str(rd.get("unidade")) or "un",
+            "quantidade":        _float(rd.get("quantidade")) or 0,
+            "referencia_codigo": _str(rd.get("referencia_codigo")),
+            "preco_referencia":  _float(rd.get("preco_referencia")),
+            "observacao":        _str(rd.get("observacao")),
+            "ordem":             len(items),
         })
 
     if not items:
@@ -371,46 +506,83 @@ def importar_pq_excel(file_bytes: bytes) -> List[dict]:
 
 def importar_proposta_excel(file_bytes: bytes, pq_items: List[PQItem]) -> List[dict]:
     """
-    Lê um Excel de proposta preenchido pelo proponente e retorna
-    lista de {pq_item_id, preco_unitario, bdi}.
+    Lê um Excel de proposta preenchido pelo proponente.
+    Layout fixo: 12 cols PQ + 4 cols Sem REIDI (13-16) + 4 cols Com REIDI (17-20).
+    Editable: col 13 (CUD sem), 14 (BDI sem), 17 (CUD com), 18 (BDI com).
+    Retorna lista de {pq_item_id, preco_unitario, bdi, custo_unit_com_reidi, bdi_com_reidi, ...}.
     """
     wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb.active
 
     pq_map = {str(item.numero_item).strip(): item.id for item in pq_items}
 
-    MAPA_HEADERS = {
-        "item": "numero_item", "nº item": "numero_item",
-        "descrição": "descricao_proposta", "descricao": "descricao_proposta",
-        "un": "unidade_proposta", "unidade": "unidade_proposta",
-        "quantidade": "quantidade_proposta", "qtd": "quantidade_proposta",
-        "preço unit. (r$)": "preco_unitario", "preço unit.": "preco_unitario",
-        "preco unitario": "preco_unitario", "preço unitário": "preco_unitario",
-        "bdi (%)": "bdi", "bdi": "bdi",
-    }
+    # Encontra a linha de cabeçalho individual (onde col A tem "Item")
+    header_row = None
+    for row in ws.iter_rows(min_row=1, max_row=10):
+        first = str(row[0].value or "").strip().lower()
+        if first in ("item", "nº item", "número item"):
+            header_row = row[0].row
+            break
 
-    header_row, col_map = _find_header(ws, MAPA_HEADERS, required={"numero_item", "preco_unitario"})
+    if header_row is None:
+        # Fallback: tenta qualquer linha com "item" em col 1
+        for row in ws.iter_rows(min_row=1, max_row=15):
+            for cell in row:
+                if cell.column == 1 and str(cell.value or "").strip().lower() == "item":
+                    header_row = cell.row
+                    break
+            if header_row:
+                break
+
+    if header_row is None:
+        raise ValueError(
+            "Cabeçalho 'Item' não encontrado. Verifique se o arquivo usa o modelo de proposta."
+        )
+
+    # Posições fixas (1-based) — correspondem ao template gerado
+    COL_NUM  = 1   # numero_item
+    COL_DESC = 6   # Descrição (scope capture)
+    COL_UN   = 7   # Unidade Medida
+    COL_QTD  = 8   # Quantidade
+    COL_CUD_SEM = 13
+    COL_BDI_SEM = 14
+    COL_CUD_COM = 17
+    COL_BDI_COM = 18
 
     result = []
     for row in ws.iter_rows(min_row=header_row + 1):
-        rd = {col_map[c.column]: c.value for c in row if c.column in col_map}
-        num = str(rd.get("numero_item") or "").strip()
+        # row é zero-indexed na tupla, mas cell.column é 1-based
+        def _val(col_1based):
+            idx = col_1based - 1
+            return row[idx].value if idx < len(row) else None
+
+        num = str(_val(COL_NUM) or "").strip()
         if num not in pq_map:
             continue
-        pu = _float(rd.get("preco_unitario"))
-        if pu is None:
+
+        cud_com = _float(_val(COL_CUD_COM))
+        cud_sem = _float(_val(COL_CUD_SEM))
+
+        # Exige pelo menos o preço COM REIDI
+        if cud_com is None and cud_sem is None:
             continue
+
         result.append({
-            "pq_item_id":         pq_map[num],
-            "preco_unitario":     pu,
-            "bdi":                _float(rd.get("bdi")),
-            "descricao_proposta": _str(rd.get("descricao_proposta")),
-            "unidade_proposta":   _str(rd.get("unidade_proposta")),
-            "quantidade_proposta":_float(rd.get("quantidade_proposta")),
+            "pq_item_id":            pq_map[num],
+            "preco_unitario":        cud_sem,
+            "bdi":                   _float(_val(COL_BDI_SEM)),
+            "custo_unit_com_reidi":  cud_com,
+            "bdi_com_reidi":         _float(_val(COL_BDI_COM)),
+            "descricao_proposta":    _str(_val(COL_DESC)),
+            "unidade_proposta":      _str(_val(COL_UN)),
+            "quantidade_proposta":   _float(_val(COL_QTD)),
         })
 
     if not result:
-        raise ValueError("Nenhum preço encontrado. Verifique se o arquivo usa o modelo de proposta.")
+        raise ValueError(
+            "Nenhum preço encontrado. Verifique se o arquivo usa o modelo de proposta "
+            "e se as colunas COM REIDI estão preenchidas (cols 17-18)."
+        )
     return result
 
 
@@ -418,22 +590,17 @@ def importar_proposta_excel(file_bytes: bytes, pq_items: List[PQItem]) -> List[d
 
 def gerar_relatorio_equalizacao(
     project_name: str,
-    eq_data: dict,       # resultado de AnalyticsService.get_equalization()
-    pareto_data: dict,   # resultado de AnalyticsService.get_pareto()
+    eq_data: dict,
+    pareto_data: dict,
 ) -> io.BytesIO:
     """
-    Gera um relatório Excel completo com 5 abas:
-    1. Resumo — ranking de propostas
-    2. Comparativo — todos os preços lado a lado
-    3. Cherry Picking — melhor preço por item
-    4. Por Fornecedor — análise por empresa
-    5. Curva ABC — classificação ABC dos itens
+    Gera relatório Excel completo com 5 abas.
+    Todos os preços usam COM REIDI (já retornado pelo AnalyticsService).
     """
     wb = Workbook()
     proposals = eq_data.get("proposals", [])
     items     = eq_data.get("items", [])
 
-    # ── helpers locais ────────────────────────────────────────────────────────
     def _th(ws, row, col, value, bg=AZUL_HEADER, fc="FFFFFF", bold=True, h="center"):
         c = ws.cell(row=row, column=col, value=value)
         c.fill = _fill(bg)
@@ -474,7 +641,7 @@ def gerar_relatorio_equalizacao(
     best_total = sorted_props[0]["valor_total"] if sorted_props else 0
 
     _title_row(ws1, 7, f"RESUMO DA EQUALIZAÇÃO  ·  {project_name.upper()}")
-    headers = ["Posição", "Empresa", "BDI Global (%)", "Total da Proposta (R$)",
+    headers = ["Posição", "Empresa", "BDI Global (%)", "Total COM REIDI (R$)",
                "Δ vs. Menor (R$)", "Δ vs. Menor (%)", "Status"]
     for ci, h in enumerate(headers, 1):
         _th(ws1, 2, ci, h)
@@ -497,7 +664,6 @@ def gerar_relatorio_equalizacao(
 
     ws1.freeze_panes = "A3"
 
-    # Cherry Pick total (calculated)
     cp_total = 0.0
     for item in items:
         precos = {k: v for k, v in item.get("precos", {}).items() if v is not None}
@@ -532,11 +698,11 @@ def gerar_relatorio_equalizacao(
     fixed_cols = ["Item", "Código", "Descrição", "Un", "Qtd", "Ref. Unit. (R$)", "Ref. Total (R$)"]
     price_cols  = []
     for p in proposals:
-        price_cols += [f"{p['empresa'][:20]} — P.Unit. (R$)", f"{p['empresa'][:20]} — Total (R$)"]
+        price_cols += [f"{p['empresa'][:20]} — P.Unit. COM REIDI", f"{p['empresa'][:20]} — Total COM REIDI"]
     extra_cols = ["Menor P.Unit.", "Maior P.Unit.", "Preço Médio", "Desvio Padrão", "Categoria", "Disciplina"]
     all_cols = fixed_cols + price_cols + extra_cols
 
-    _title_row(ws2, len(all_cols), f"COMPARATIVO DE PREÇOS  ·  {project_name.upper()}")
+    _title_row(ws2, len(all_cols), f"COMPARATIVO DE PREÇOS (COM REIDI)  ·  {project_name.upper()}")
     for ci, h in enumerate(all_cols, 1):
         is_fixed = ci <= len(fixed_cols)
         _th(ws2, 2, ci, h, bg=AZUL_HEADER if is_fixed else "2D6A4F")
@@ -570,7 +736,7 @@ def gerar_relatorio_equalizacao(
             pu = precos.get(pid)
             tot = totais.get(pid)
             c_pu = _td(ws2, ri, col, pu, bg, BRL if pu else "@", "right")
-            c_tot = _td(ws2, ri, col+1, tot, bg, BRL if tot else "@", "right")
+            _td(ws2, ri, col+1, tot, bg, BRL if tot else "@", "right")
             if price_vals and pu is not None:
                 if pu == min(price_vals):
                     c_pu.font = _font("15803D", bold=True, size=9)
@@ -589,13 +755,13 @@ def gerar_relatorio_equalizacao(
     ws3 = wb.create_sheet("Cherry Picking")
     ws3.sheet_view.showGridLines = False
 
-    cp_headers = ["Item", "Descrição", "Un", "Qtd", "Melhor P.Unit. (R$)",
+    cp_headers = ["Item", "Descrição", "Un", "Qtd", "Melhor P.Unit. COM REIDI (R$)",
                   "Fornecedor (menor preço)", "Total Cherry Pick (R$)",
                   "Ref. Total (R$)", "Economia vs Ref. (R$)", "Desvio vs Ref. (%)"]
     _title_row(ws3, len(cp_headers), f"CHERRY PICKING  ·  {project_name.upper()}")
     for ci, h in enumerate(cp_headers, 1):
         _th(ws3, 2, ci, h, bg="7C3AED")
-        ws3.column_dimensions[get_column_letter(ci)].width = [8,48,6,10,18,30,20,16,18,16][ci-1]
+        ws3.column_dimensions[get_column_letter(ci)].width = [8,48,6,10,22,30,20,16,18,16][ci-1]
     ws3.row_dimensions[2].height = 18
     ws3.freeze_panes = "A3"
 
@@ -636,7 +802,6 @@ def gerar_relatorio_equalizacao(
             c_eco.font = _font("15803D", bold=True, size=9)
             c_pct.font = _font("15803D", bold=True, size=9)
 
-    # Total row
     tr = len(items) + 3
     ws3.merge_cells(f"A{tr}:F{tr}")
     c = ws3[f"A{tr}"]
@@ -651,7 +816,7 @@ def gerar_relatorio_equalizacao(
     ws4 = wb.create_sheet("Por Fornecedor")
     ws4.sheet_view.showGridLines = False
 
-    forn_headers = ["Posição", "Empresa", "Total Cotado (R$)", "Itens Cotados",
+    forn_headers = ["Posição", "Empresa", "Total COM REIDI (R$)", "Itens Cotados",
                     "Itens Sem Cotação", "Abaixo da Ref.", "Acima da Ref.",
                     "Desvio Médio vs Ref. (%)", "BDI Global (%)"]
     _title_row(ws4, len(forn_headers), f"ANÁLISE POR FORNECEDOR  ·  {project_name.upper()}")
@@ -697,12 +862,12 @@ def gerar_relatorio_equalizacao(
     ws5.sheet_view.showGridLines = False
 
     abc_items = pareto_data.get("items", [])
-    abc_headers = ["Pos.", "Item", "Descrição", "Un", "Qtd", "Preço Médio (R$)",
+    abc_headers = ["Pos.", "Item", "Descrição", "Un", "Qtd", "Preço Médio COM REIDI (R$)",
                    "Valor Total (R$)", "% Item", "% Acumulado", "Classe", "Categoria", "Disciplina"]
     _title_row(ws5, len(abc_headers), f"CURVA ABC  ·  {project_name.upper()}")
     for ci, h in enumerate(abc_headers, 1):
         _th(ws5, 2, ci, h)
-        ws5.column_dimensions[get_column_letter(ci)].width = [6,8,46,6,10,18,18,10,12,8,20,16][ci-1]
+        ws5.column_dimensions[get_column_letter(ci)].width = [6,8,46,6,10,22,18,10,12,8,20,16][ci-1]
     ws5.row_dimensions[2].height = 18
     ws5.freeze_panes = "A3"
 
@@ -735,21 +900,18 @@ def gerar_relatorio_equalizacao(
 def gerar_baseline_excel(entries: list) -> io.BytesIO:
     """
     Gera o Excel do Baseline de Contratos (multi-aba).
-    `entries` — lista de dicts com keys: project_nome, numero_licitacao, tipo_obra,
-    extensao_km, empresa, cnpj, bdi_global, valor_total, data_premiacao, items[]
+    Preços exibidos são COM REIDI (já normalizados no router analytics.py).
     """
     from collections import defaultdict
     import datetime as dt
 
     wb = Workbook()
-    wb.remove(wb.active)  # remove sheet padrão
+    wb.remove(wb.active)
 
     GOLD   = "B45309"
     GOLD_L = "FEF3C7"
     GOLD_H = "FDE68A"
     DARK   = "1E293B"
-    GRAY_H = "F1F5F9"
-    GRAY_A = "F8FAFC"
     TIPO_LABELS = {
         "INFRAESTRUTURA": "Infraestrutura",
         "EDIFICACAO": "Edificação",
@@ -775,12 +937,11 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
             c.number_format = FMT.get(fmt, fmt)
             c.alignment = _align("right" if fmt not in ("@", "text") else "left")
 
-    # ── Sheet 1: Contratos ─────────────────────────────────────────────────────
     ws1 = wb.create_sheet("Contratos")
     ws1.sheet_view.showGridLines = False
 
     title_cols = ["Projeto", "Nº TR", "Tipo de Obra", "Proponente", "CNPJ",
-                  "BDI (%)", "Valor Total (R$)", "Extensão (km)", "R$/km", "Data Premiação"]
+                  "BDI (%)", "Valor Total COM REIDI (R$)", "Extensão (km)", "R$/km", "Data Premiação"]
     ncols = len(title_cols)
     ws1.merge_cells(f"A1:{get_column_letter(ncols)}1")
     c = ws1["A1"]
@@ -789,7 +950,7 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
     c.alignment = _align("center"); ws1.row_dimensions[1].height = 28
 
     _hdr(ws1, 2, title_cols, GOLD)
-    widths = [40, 18, 20, 35, 20, 10, 20, 14, 14, 18]
+    widths = [40, 18, 20, 35, 20, 10, 22, 14, 14, 18]
     for ci, w in enumerate(widths, 1):
         ws1.column_dimensions[get_column_letter(ci)].width = w
     ws1.freeze_panes = "A3"
@@ -814,7 +975,6 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
              bg,
              {6: "pct", 7: "brl2", 9: "brl2"})
 
-    # Linha de total
     tr = len(entries) + 3
     ws1.merge_cells(f"A{tr}:F{tr}")
     c = ws1[f"A{tr}"]
@@ -825,12 +985,11 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
     ct.fill = _fill(DARK); ct.font = _font("FFFFFF", bold=True, size=10)
     ct.number_format = FMT["brl2"]
 
-    # ── Sheet 2: Itens Detalhados ──────────────────────────────────────────────
     ws2 = wb.create_sheet("Itens Detalhados")
     ws2.sheet_view.showGridLines = False
 
     item_cols = ["Projeto", "Proponente", "Item", "Descrição", "Un",
-                 "Qtd", "Categoria", "Disciplina", "P.Unit.(R$)", "Total(R$)"]
+                 "Qtd", "Categoria", "Disciplina", "P.Unit. COM REIDI (R$)", "Total COM REIDI (R$)"]
     ws2.merge_cells(f"A1:{get_column_letter(len(item_cols))}1")
     c = ws2["A1"]
     c.value = "BASELINE — ITENS DETALHADOS"
@@ -838,7 +997,7 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
     c.alignment = _align("center"); ws2.row_dimensions[1].height = 28
 
     _hdr(ws2, 2, item_cols, AZUL_HEADER)
-    iwidths = [35, 28, 8, 52, 7, 12, 20, 16, 16, 16]
+    iwidths = [35, 28, 8, 52, 7, 12, 20, 16, 20, 20]
     for ci, w in enumerate(iwidths, 1):
         ws2.column_dimensions[get_column_letter(ci)].width = w
     ws2.freeze_panes = "A3"
@@ -855,7 +1014,6 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
                  bg, {6: "num4", 9: "brl4", 10: "brl2"})
             ri2 += 1
 
-    # ── Sheet 3: Por Disciplina ────────────────────────────────────────────────
     ws3 = wb.create_sheet("Por Disciplina")
     ws3.sheet_view.showGridLines = False
 
@@ -866,14 +1024,14 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
             disc_agg[disc] += item.get("preco_total", 0)
 
     total_disc = sum(disc_agg.values()) or 1
-    d_cols = ["Disciplina", "Valor Total (R$)", "Participação (%)"]
+    d_cols = ["Disciplina", "Valor Total COM REIDI (R$)", "Participação (%)"]
     ws3.merge_cells("A1:C1")
     c = ws3["A1"]
     c.value = "BASELINE — DISTRIBUIÇÃO POR DISCIPLINA"
     c.fill = _fill(DARK); c.font = _font("FFFFFF", bold=True, size=13)
     c.alignment = _align("center"); ws3.row_dimensions[1].height = 28
     _hdr(ws3, 2, d_cols, AZUL_HEADER)
-    for ci, w in enumerate([30, 20, 16], 1):
+    for ci, w in enumerate([30, 24, 16], 1):
         ws3.column_dimensions[get_column_letter(ci)].width = w
 
     for ri3, (disc, val) in enumerate(sorted(disc_agg.items(), key=lambda x: -x[1]), start=3):
@@ -881,7 +1039,6 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
         pct = val / total_disc * 100
         _row(ws3, ri3, [disc, val, pct], bg, {2: "brl2", 3: "pct"})
 
-    # ── Sheet 4: Por Categoria ─────────────────────────────────────────────────
     ws4 = wb.create_sheet("Por Categoria")
     ws4.sheet_view.showGridLines = False
 
@@ -892,14 +1049,14 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
             cat_agg[cat] += item.get("preco_total", 0)
 
     total_cat = sum(cat_agg.values()) or 1
-    c_cols = ["Categoria", "Valor Total (R$)", "Participação (%)"]
+    c_cols = ["Categoria", "Valor Total COM REIDI (R$)", "Participação (%)"]
     ws4.merge_cells("A1:C1")
     c = ws4["A1"]
     c.value = "BASELINE — DISTRIBUIÇÃO POR CATEGORIA"
     c.fill = _fill(DARK); c.font = _font("FFFFFF", bold=True, size=13)
     c.alignment = _align("center"); ws4.row_dimensions[1].height = 28
     _hdr(ws4, 2, c_cols, VERDE_HEADER)
-    for ci, w in enumerate([30, 20, 16], 1):
+    for ci, w in enumerate([30, 24, 16], 1):
         ws4.column_dimensions[get_column_letter(ci)].width = w
 
     for ri4, (cat, val) in enumerate(sorted(cat_agg.items(), key=lambda x: -x[1]), start=3):
@@ -907,13 +1064,12 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
         pct = val / total_cat * 100
         _row(ws4, ri4, [cat, val, pct], bg, {2: "brl2", 3: "pct"})
 
-    # ── Sheet 5: Custo por km (apenas se houver extensao_km) ──────────────────
     km_entries = [e for e in entries if e.get("extensao_km")]
     if km_entries:
         ws5 = wb.create_sheet("Custo por km")
         ws5.sheet_view.showGridLines = False
 
-        km_cols = ["Projeto", "Tipo", "Extensão (km)", "Valor Total (R$)", "R$/km",
+        km_cols = ["Projeto", "Tipo", "Extensão (km)", "Valor COM REIDI (R$)", "R$/km",
                    "Disciplina", "Valor Disciplina (R$)", "R$/km Disciplina"]
         ws5.merge_cells(f"A1:{get_column_letter(len(km_cols))}1")
         c = ws5["A1"]
@@ -921,7 +1077,7 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
         c.fill = _fill(DARK); c.font = _font("FFFFFF", bold=True, size=13)
         c.alignment = _align("center"); ws5.row_dimensions[1].height = 28
         _hdr(ws5, 2, km_cols, GOLD)
-        for ci, w in enumerate([35, 20, 14, 20, 16, 20, 20, 16], 1):
+        for ci, w in enumerate([35, 20, 14, 22, 16, 20, 20, 16], 1):
             ws5.column_dimensions[get_column_letter(ci)].width = w
         ws5.freeze_panes = "A3"
 
@@ -939,7 +1095,8 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
             for disc, dval in sorted(disc_vals.items(), key=lambda x: -x[1]):
                 bg = GOLD_L if ri5 % 2 == 0 else GOLD_H
                 _row(ws5, ri5,
-                     [e["project_nome"] if first else "", TIPO_LABELS.get(e["tipo_obra"], e["tipo_obra"]) if first else "",
+                     [e["project_nome"] if first else "",
+                      TIPO_LABELS.get(e["tipo_obra"], e["tipo_obra"]) if first else "",
                       ext if first else "", vt if first else "", rk if first else "",
                       disc, dval, dval / ext],
                      bg,

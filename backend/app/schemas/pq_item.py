@@ -6,12 +6,13 @@ from pydantic import BaseModel
 
 class PQItemCreate(BaseModel):
     numero_item: str
+    localidade: Optional[str] = None
+    disciplina: Optional[str] = None
+    categoria: Optional[str] = None
     codigo: Optional[str] = None
     descricao: str
     unidade: str
     quantidade: Decimal
-    categoria: Optional[str] = None
-    disciplina: Optional[str] = None
     referencia_codigo: Optional[str] = None
     preco_referencia: Optional[Decimal] = None
     observacao: Optional[str] = None
@@ -20,12 +21,13 @@ class PQItemCreate(BaseModel):
 
 class PQItemUpdate(BaseModel):
     numero_item: Optional[str] = None
+    localidade: Optional[str] = None
+    disciplina: Optional[str] = None
+    categoria: Optional[str] = None
     codigo: Optional[str] = None
     descricao: Optional[str] = None
     unidade: Optional[str] = None
     quantidade: Optional[Decimal] = None
-    categoria: Optional[str] = None
-    disciplina: Optional[str] = None
     referencia_codigo: Optional[str] = None
     preco_referencia: Optional[Decimal] = None
     observacao: Optional[str] = None
@@ -36,12 +38,13 @@ class PQItemResponse(BaseModel):
     id: int
     project_id: int
     numero_item: str
+    localidade: Optional[str] = None
+    disciplina: Optional[str] = None
+    categoria: Optional[str] = None
     codigo: Optional[str] = None
     descricao: str
     unidade: str
     quantidade: Decimal
-    categoria: Optional[str] = None
-    disciplina: Optional[str] = None
     referencia_codigo: Optional[str] = None
     preco_referencia: Optional[Decimal] = None
     observacao: Optional[str] = None

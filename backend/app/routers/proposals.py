@@ -207,13 +207,17 @@ def bulk_update_items(
 
         pi.preco_unitario = item_data.preco_unitario
         pi.bdi = item_data.bdi
+        pi.custo_unit_com_reidi = item_data.custo_unit_com_reidi
+        pi.bdi_com_reidi = item_data.bdi_com_reidi
 
-        # Calcula total
-        if item_data.preco_unitario and item_data.pq_item_id in pq_map:
+        # Calcula total COM REIDI para analytics; fallback p/ sem REIDI se com não informado
+        com_price = item_data.custo_unit_com_reidi or item_data.preco_unitario
+        com_bdi   = item_data.bdi_com_reidi if item_data.custo_unit_com_reidi else item_data.bdi
+        if com_price and item_data.pq_item_id in pq_map:
             pq_item = pq_map[item_data.pq_item_id]
-            bdi_rate = float(item_data.bdi if item_data.bdi is not None else proposal.bdi_global or 0)
+            bdi_rate = float(com_bdi if com_bdi is not None else proposal.bdi_global or 0)
             pi.preco_total = Decimal(str(
-                float(pq_item.quantidade) * float(item_data.preco_unitario) * (1 + bdi_rate / 100)
+                float(pq_item.quantidade) * float(com_price) * (1 + bdi_rate / 100)
             ))
         else:
             pi.preco_total = None
@@ -347,6 +351,8 @@ async def import_proposal(
 
         pi.preco_unitario = row["preco_unitario"]
         pi.bdi = row["bdi"]
+        pi.custo_unit_com_reidi = row.get("custo_unit_com_reidi")
+        pi.bdi_com_reidi = row.get("bdi_com_reidi")
         # Scope capture: only set if values differ from PQ
         if row.get("descricao_proposta"):
             pi.descricao_proposta = row["descricao_proposta"]
@@ -355,11 +361,14 @@ async def import_proposal(
         if row.get("quantidade_proposta") is not None:
             pi.quantidade_proposta = row["quantidade_proposta"]
 
-        if pi.preco_unitario and row["pq_item_id"] in pq_map:
+        # Calcula total COM REIDI; fallback p/ sem REIDI para dados legados
+        com_price = pi.custo_unit_com_reidi or pi.preco_unitario
+        com_bdi   = pi.bdi_com_reidi if pi.custo_unit_com_reidi else pi.bdi
+        if com_price and row["pq_item_id"] in pq_map:
             pq_item = pq_map[row["pq_item_id"]]
-            bdi_rate = float(pi.bdi if pi.bdi is not None else proposal.bdi_global or 0)
+            bdi_rate = float(com_bdi if com_bdi is not None else proposal.bdi_global or 0)
             pi.preco_total = Decimal(str(
-                float(pq_item.quantidade) * float(pi.preco_unitario) * (1 + bdi_rate / 100)
+                float(pq_item.quantidade) * float(com_price) * (1 + bdi_rate / 100)
             ))
         else:
             pi.preco_total = None

@@ -17,12 +17,13 @@ function makeRow(ordem: number): Row {
   return {
     _key: crypto.randomUUID(),
     numero_item: '',
+    localidade: '',
+    disciplina: '',
+    categoria: '',
     codigo: '',
     descricao: '',
     unidade: 'm',
     quantidade: 0,
-    categoria: '',
-    disciplina: '',
     referencia_codigo: '',
     preco_referencia: undefined,
     observacao: '',
@@ -230,16 +231,17 @@ export default function PQEditor() {
   }, 0)
 
   const columns = [
-    { key: 'numero_item', label: 'Item', width: 'w-16', type: 'text' as const, placeholder: '1.1' },
-    { key: 'codigo', label: 'Código', width: 'w-24', type: 'text' as const, placeholder: 'SINAPI' },
-    { key: 'descricao', label: 'Descrição', width: 'w-64', type: 'text' as const, placeholder: 'Descrição do serviço' },
-    { key: 'unidade', label: 'Un', width: 'w-20', type: 'datalist' as const, options: UNIDADES },
-    { key: 'quantidade', label: 'Qtd', width: 'w-24', type: 'number' as const },
-    { key: 'categoria', label: 'Categoria', width: 'w-36', type: 'datalist' as const, options: CATEGORIAS },
-    { key: 'disciplina', label: 'Disciplina', width: 'w-28', type: 'datalist' as const, options: DISCIPLINAS },
-    { key: 'referencia_codigo', label: 'Ref.', width: 'w-24', type: 'text' as const },
-    { key: 'preco_referencia', label: 'Preço Ref. (R$)', width: 'w-32', type: 'number' as const },
-    { key: 'observacao', label: 'Obs.', width: 'w-32', type: 'text' as const },
+    { key: 'numero_item',      label: 'Item',         width: 'w-16',  type: 'text' as const,     placeholder: '1.1' },
+    { key: 'localidade',       label: 'Localidade',   width: 'w-28',  type: 'text' as const,     placeholder: '' },
+    { key: 'disciplina',       label: 'Disciplina',   width: 'w-28',  type: 'datalist' as const, options: DISCIPLINAS },
+    { key: 'categoria',        label: 'Categoria',    width: 'w-36',  type: 'datalist' as const, options: CATEGORIAS },
+    { key: 'codigo',           label: 'Código',       width: 'w-24',  type: 'text' as const,     placeholder: 'SINAPI' },
+    { key: 'descricao',        label: 'Descrição',    width: 'w-64',  type: 'text' as const,     placeholder: 'Descrição do serviço' },
+    { key: 'unidade',          label: 'Un. Medida',   width: 'w-20',  type: 'datalist' as const, options: UNIDADES },
+    { key: 'quantidade',       label: 'Qtd',          width: 'w-24',  type: 'number' as const },
+    { key: 'referencia_codigo',label: 'Referência',   width: 'w-24',  type: 'text' as const },
+    { key: 'preco_referencia', label: 'P. Unit. RF',  width: 'w-32',  type: 'number' as const },
+    { key: 'observacao',       label: 'Obs.',         width: 'w-32',  type: 'text' as const },
   ]
 
   return (
@@ -387,7 +389,7 @@ export default function PQEditor() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
-                <td colSpan={9} className="px-3 py-2 text-right text-gray-600">
+                <td colSpan={columns.length} className="px-3 py-2 text-right text-gray-600">
                   Total Referência:
                 </td>
                 <td className="px-2 py-2 text-gray-800">{formatBRL(totalRef)}</td>
@@ -408,7 +410,7 @@ export default function PQEditor() {
       )}
 
       <p className="text-xs text-gray-400 mt-3">
-        Planilha PQ · 10 colunas · {rows.length} itens · Clique em qualquer célula para editar · Salve para confirmar
+        Planilha PQ · 12 colunas · {rows.length} itens · Clique em qualquer célula para editar · Salve para confirmar
       </p>
     </div>
   )

@@ -30,8 +30,10 @@ class ProposalUpdate(BaseModel):
 
 class ProposalItemData(BaseModel):
     pq_item_id: int
-    preco_unitario: Optional[Decimal] = None
-    bdi: Optional[Decimal] = None
+    preco_unitario: Optional[Decimal] = None        # CUD sem REIDI
+    bdi: Optional[Decimal] = None                   # BDI sem REIDI
+    custo_unit_com_reidi: Optional[Decimal] = None  # CUD com REIDI
+    bdi_com_reidi: Optional[Decimal] = None         # BDI com REIDI
 
 
 class ProposalItemResponse(BaseModel):
@@ -39,6 +41,8 @@ class ProposalItemResponse(BaseModel):
     pq_item_id: int
     preco_unitario: Optional[Decimal] = None
     bdi: Optional[Decimal] = None
+    custo_unit_com_reidi: Optional[Decimal] = None
+    bdi_com_reidi: Optional[Decimal] = None
     preco_total: Optional[Decimal] = None
 
     model_config = {"from_attributes": True}

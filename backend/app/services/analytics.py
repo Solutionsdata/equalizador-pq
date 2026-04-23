@@ -31,8 +31,9 @@ class AnalyticsService:
             pq_ids = [item.id for item in pq_items]
             if pq_ids:
                 for pi in db.query(ProposalItem).filter(ProposalItem.pq_item_id.in_(pq_ids)).all():
-                    if pi.preco_unitario:
-                        pi_by_pq_id.setdefault(pi.pq_item_id, []).append(float(pi.preco_unitario))
+                    price = pi.custo_unit_com_reidi or pi.preco_unitario
+                    if price:
+                        pi_by_pq_id.setdefault(pi.pq_item_id, []).append(float(price))
 
         raw: list[dict] = []
         for item in pq_items:
@@ -130,9 +131,14 @@ class AnalyticsService:
 
             for p in proposals:
                 pi = pi_map.get((p.id, item.id))
-                if pi and pi.preco_unitario:
-                    pu = float(pi.preco_unitario)
-                    bdi = float(pi.bdi if pi.bdi is not None else p.bdi_global or 0)
+                # Use COM REIDI price for analytics; fall back to sem REIDI for old data
+                com_price = pi.custo_unit_com_reidi if pi else None
+                sem_price = pi.preco_unitario if pi else None
+                pu_raw = com_price or sem_price
+                if pi and pu_raw:
+                    pu = float(pu_raw)
+                    bdi_val = pi.bdi_com_reidi if com_price else pi.bdi
+                    bdi = float(bdi_val if bdi_val is not None else p.bdi_global or 0)
                     total = float(item.quantidade) * pu * (1 + bdi / 100)
                     precos[str(p.id)] = pu
                     totais[str(p.id)] = round(total, 2)
