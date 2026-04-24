@@ -294,42 +294,42 @@ export default function ProposalInput() {
         <div className="card overflow-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
-              {/* Linha de grupo */}
+              {/* Linha de grupo — idêntico ao cabeçalho do Excel */}
               <tr className="text-xs font-bold text-center">
-                <th colSpan={12} className="px-2 py-2 text-blue-800 bg-blue-100 border-r border-blue-200">
-                  DADOS PQ
+                <th colSpan={12} className="px-2 py-2 text-blue-900 bg-blue-700 text-white border-r border-blue-800">
+                  PLANILHA DE QUANTITATIVOS
                 </th>
-                <th colSpan={4} className="px-2 py-2 text-orange-800 bg-orange-100 border-r border-orange-200">
+                <th colSpan={4} className="px-2 py-2 text-white bg-orange-700 border-r border-orange-800">
                   SEM REIDI
                 </th>
-                <th colSpan={4} className="px-2 py-2 text-green-800 bg-green-100">
+                <th colSpan={4} className="px-2 py-2 text-white bg-green-700">
                   COM REIDI
                 </th>
               </tr>
-              {/* Linha de colunas */}
+              {/* Linha de colunas individuais — mesmos rótulos do Excel */}
               <tr className="bg-gray-100 text-gray-600 text-xs">
                 <th className="px-2 py-2 text-left font-semibold w-16 whitespace-nowrap">Item</th>
-                <th className="px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Localidade</th>
+                <th className="px-2 py-2 text-left font-semibold w-28 whitespace-nowrap">Localidade</th>
                 <th className="px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Disciplina</th>
-                <th className="px-2 py-2 text-left font-semibold w-28 whitespace-nowrap">Categoria</th>
+                <th className="px-2 py-2 text-left font-semibold w-32 whitespace-nowrap">Categoria</th>
                 <th className="px-2 py-2 text-left font-semibold w-20 whitespace-nowrap">Código</th>
                 <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Descrição</th>
-                <th className="px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">Un.</th>
-                <th className="px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Qtd</th>
+                <th className="px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Unidade Medida</th>
+                <th className="px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Quantidade</th>
                 <th className="px-2 py-2 text-left font-semibold w-20 whitespace-nowrap">Referência</th>
-                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap">P. Unit. RF</th>
-                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap bg-blue-50">P. Total RF</th>
-                <th className="px-2 py-2 text-left font-semibold w-28 whitespace-nowrap border-r border-blue-200">Obs.</th>
-                {/* SEM REIDI */}
-                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-orange-700 bg-orange-50">CUD (R$)</th>
-                <th className="px-2 py-2 text-right font-semibold w-20 whitespace-nowrap text-orange-700 bg-orange-50">BDI %</th>
-                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-orange-700 bg-orange-50">CUD c/BDI</th>
-                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-orange-700 bg-orange-50 border-r border-orange-200">Total s/REIDI</th>
-                {/* COM REIDI */}
-                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-green-700 bg-green-50">CUD (R$)</th>
-                <th className="px-2 py-2 text-right font-semibold w-20 whitespace-nowrap text-green-700 bg-green-50">BDI %</th>
-                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-green-700 bg-green-50">CUD c/BDI</th>
-                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-green-700 bg-green-50">Total c/REIDI</th>
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap">Preço Unit. RF</th>
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap bg-blue-50">Preço Total RF</th>
+                <th className="px-2 py-2 text-left font-semibold w-28 whitespace-nowrap border-r border-blue-300">Observação</th>
+                {/* SEM REIDI — mesmos rótulos do Excel */}
+                <th className="px-2 py-2 text-right font-semibold w-32 whitespace-nowrap text-orange-800 bg-orange-50">Custo Unit. Direto</th>
+                <th className="px-2 py-2 text-right font-semibold w-20 whitespace-nowrap text-orange-800 bg-orange-50">BDI (%)</th>
+                <th className="px-2 py-2 text-right font-semibold w-32 whitespace-nowrap text-orange-800 bg-orange-50">Custo Unit. c/BDI</th>
+                <th className="px-2 py-2 text-right font-semibold w-32 whitespace-nowrap text-orange-800 bg-orange-100 border-r border-orange-300">Custo Total c/BDI</th>
+                {/* COM REIDI — mesmos rótulos do Excel */}
+                <th className="px-2 py-2 text-right font-semibold w-32 whitespace-nowrap text-green-800 bg-green-50">Custo Unit. Direto</th>
+                <th className="px-2 py-2 text-right font-semibold w-20 whitespace-nowrap text-green-800 bg-green-50">BDI (%)</th>
+                <th className="px-2 py-2 text-right font-semibold w-32 whitespace-nowrap text-green-800 bg-green-50">Custo Unit. c/BDI</th>
+                <th className="px-2 py-2 text-right font-semibold w-32 whitespace-nowrap text-green-800 bg-green-100">Custo Total c/BDI</th>
               </tr>
             </thead>
             <tbody>

@@ -230,19 +230,20 @@ export default function PQEditor() {
     return acc + qt * pr
   }, 0)
 
+  // Colunas na mesma ordem e com os mesmos rótulos do template Excel (PQ_COLS em excel.py)
   const columns = [
-    { key: 'numero_item',      label: 'Item',         width: 'w-16',  type: 'text' as const,     placeholder: '1.1' },
-    { key: 'localidade',       label: 'Localidade',   width: 'w-28',  type: 'text' as const,     placeholder: '' },
-    { key: 'disciplina',       label: 'Disciplina',   width: 'w-28',  type: 'datalist' as const, options: DISCIPLINAS },
-    { key: 'categoria',        label: 'Categoria',    width: 'w-36',  type: 'datalist' as const, options: CATEGORIAS },
-    { key: 'codigo',           label: 'Código',       width: 'w-24',  type: 'text' as const,     placeholder: 'SINAPI' },
-    { key: 'descricao',        label: 'Descrição',    width: 'w-64',  type: 'text' as const,     placeholder: 'Descrição do serviço' },
-    { key: 'unidade',          label: 'Un. Medida',   width: 'w-20',  type: 'datalist' as const, options: UNIDADES },
-    { key: 'quantidade',       label: 'Qtd',          width: 'w-24',  type: 'number' as const },
-    { key: 'referencia_codigo',label: 'Referência',   width: 'w-24',  type: 'text' as const },
-    { key: 'preco_referencia', label: 'P. Unit. RF',  width: 'w-32',  type: 'number'   as const },
-    { key: '_total_rf',        label: 'P. Total RF',  width: 'w-36',  type: 'computed' as const },
-    { key: 'observacao',       label: 'Obs.',         width: 'w-32',  type: 'text'     as const },
+    { key: 'numero_item',      label: 'Item',            width: 'w-16',  type: 'text' as const,     placeholder: '1.1' },
+    { key: 'localidade',       label: 'Localidade',      width: 'w-28',  type: 'text' as const,     placeholder: '' },
+    { key: 'disciplina',       label: 'Disciplina',      width: 'w-28',  type: 'datalist' as const, options: DISCIPLINAS },
+    { key: 'categoria',        label: 'Categoria',       width: 'w-36',  type: 'datalist' as const, options: CATEGORIAS },
+    { key: 'codigo',           label: 'Código',          width: 'w-24',  type: 'text' as const,     placeholder: 'SINAPI' },
+    { key: 'descricao',        label: 'Descrição',       width: 'w-64',  type: 'text' as const,     placeholder: 'Descrição do serviço' },
+    { key: 'unidade',          label: 'Unidade Medida',  width: 'w-28',  type: 'datalist' as const, options: UNIDADES },
+    { key: 'quantidade',       label: 'Quantidade',      width: 'w-24',  type: 'number' as const },
+    { key: 'referencia_codigo',label: 'Referência',      width: 'w-24',  type: 'text' as const },
+    { key: 'preco_referencia', label: 'Preço Unit. RF',  width: 'w-32',  type: 'number'   as const },
+    { key: '_total_rf',        label: 'Preço Total RF',  width: 'w-36',  type: 'computed' as const },
+    { key: 'observacao',       label: 'Observação',      width: 'w-32',  type: 'text'     as const },
   ]
 
   return (
@@ -343,7 +344,7 @@ export default function PQEditor() {
         </div>
       )}
 
-      {/* Tabela — 10 colunas de negócio */}
+      {/* Tabela — 12 colunas, idênticas ao template Excel */}
       {isLoading || importing ? (
         <div className="text-center py-20 text-gray-400">
           {importing ? 'Importando planilha…' : 'Carregando planilha…'}
