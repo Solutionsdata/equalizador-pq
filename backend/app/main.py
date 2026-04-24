@@ -166,6 +166,9 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE proposal_items ADD COLUMN IF NOT EXISTS bdi_com_reidi NUMERIC(5,2)"
     ))
+    _conn.execute(text(
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS spe_unidade VARCHAR(100)"
+    ))
     _conn.commit()
 
 app = FastAPI(
