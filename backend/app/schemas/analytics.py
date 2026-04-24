@@ -11,6 +11,7 @@ class ABCItem(BaseModel):
     quantidade: Decimal
     categoria: Optional[str] = None
     disciplina: Optional[str] = None
+    localidade: Optional[str] = None
     preco_medio: Decimal
     valor_total: Decimal
     percentual: float
@@ -38,6 +39,7 @@ class ProposalComparisonItem(BaseModel):
     quantidade: Decimal
     categoria: Optional[str] = None
     disciplina: Optional[str] = None
+    localidade: Optional[str] = None
     preco_referencia: Optional[Decimal] = None
     valor_referencia: Optional[Decimal] = None
     # chave = str(proposal_id)
@@ -73,6 +75,13 @@ class DisciplineSummary(BaseModel):
 
 class CategoriaSummary(BaseModel):
     categoria: str
+    valor_total: Decimal
+    percentual: float
+    count_items: int
+
+
+class LocalidadeSummary(BaseModel):
+    localidade: str
     valor_total: Decimal
     percentual: float
     count_items: int

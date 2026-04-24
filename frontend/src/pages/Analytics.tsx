@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { analyticsAPI, revisionsAPI, projectsAPI, downloadBlob } from '../services/api'
 import type {
-  ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary,
+  ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary, LocalidadeSummary,
   EqualizationProposal, ScopeValidationResponse, RevisionCompareResponse, ProjectRevision,
 } from '../types'
 import { formatBRL, formatPercent, formatNumber } from '../types'
@@ -15,7 +15,7 @@ import {
   ArrowLeft, BarChart3, TrendingUp, GitCompare,
   Sparkles, Users, Download, Filter, X,
   ChevronUp, ChevronDown, Trophy, AlertTriangle, CheckCircle,
-  PieChart, ShieldCheck, GitBranch,
+  PieChart, ShieldCheck, GitBranch, MapPin,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -25,6 +25,7 @@ type Tab = 'pareto' | 'comparativo' | 'cherry' | 'fornecedores' | 'distribuicao'
 interface Filters {
   categoria: string
   disciplina: string
+  localidade: string
   fornecedores: string[] // proposal IDs selected; empty = all
 }
 
@@ -77,30 +78,56 @@ function Loading() {
 // ── Filtros laterais ──────────────────────────────────────────────────────────
 
 function FilterBar({
-  filters, setFilters, proposals, categorias, disciplinas,
+  filters, setFilters, proposals, categorias, disciplinas, localidades,
 }: {
   filters: Filters
   setFilters: React.Dispatch<React.SetStateAction<Filters>>
   proposals: EqualizationProposal[]
   categorias: string[]
   disciplinas: string[]
+  localidades: string[]
 }) {
-  const hasActive = filters.categoria || filters.disciplina || filters.fornecedores.length > 0
+  const hasActive = filters.categoria || filters.disciplina || filters.localidade || filters.fornecedores.length > 0
+  const activeCount = [filters.categoria, filters.disciplina, filters.localidade].filter(Boolean).length
+    + (filters.fornecedores.length > 0 ? 1 : 0)
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
+    <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4 sticky top-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
           <Filter size={14} /> Filtros
+          {activeCount > 0 && (
+            <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">
+              {activeCount}
+            </span>
+          )}
         </div>
         {hasActive && (
           <button
-            onClick={() => setFilters({ categoria: '', disciplina: '', fornecedores: [] })}
+            onClick={() => setFilters({ categoria: '', disciplina: '', localidade: '', fornecedores: [] })}
             className="text-xs text-blue-600 hover:underline flex items-center gap-1"
           >
             <X size={11} /> Limpar
           </button>
         )}
       </div>
+
+      {/* Localidade */}
+      {localidades.length > 0 && (
+        <div>
+          <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+            <MapPin size={10} /> Localidade
+          </label>
+          <select
+            value={filters.localidade}
+            onChange={(e) => setFilters((f) => ({ ...f, localidade: e.target.value }))}
+            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="">Todas</option>
+            {localidades.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+      )}
 
       {/* Categoria */}
       <div>
@@ -143,7 +170,6 @@ function FilterBar({
                     onChange={() => {
                       setFilters((f) => {
                         if (f.fornecedores.length === 0) {
-                          // switch from "all" to specific: unselect this one
                           return { ...f, fornecedores: proposals.filter((x) => x.id !== p.id).map((x) => String(x.id)) }
                         }
                         if (checked) {
@@ -158,6 +184,7 @@ function FilterBar({
                     className="rounded text-blue-600"
                   />
                   <span className="text-xs text-gray-600 truncate group-hover:text-gray-900">{p.empresa}</span>
+                  {p.is_winner && <span className="text-[9px] text-amber-600 font-bold ml-auto flex-shrink-0">★</span>}
                 </label>
               )
             })}
@@ -186,6 +213,7 @@ function PanelComparativo({
   const filteredItems = equalization.items.filter((item) => {
     if (filters.categoria && item.categoria !== filters.categoria) return false
     if (filters.disciplina && item.disciplina !== filters.disciplina) return false
+    if (filters.localidade && item.localidade !== filters.localidade) return false
     return true
   })
 
@@ -309,8 +337,10 @@ function PanelComparativo({
                   <td className="px-3 py-2 font-mono text-gray-500 sticky left-0 bg-inherit">{item.numero_item}</td>
                   <td className="px-3 py-2 text-gray-700 max-w-[200px]">
                     <div className="truncate" title={item.descricao}>{item.descricao}</div>
-                    {(item.categoria || item.disciplina) && (
-                      <div className="text-[10px] text-gray-400 truncate">{[item.categoria, item.disciplina].filter(Boolean).join(' · ')}</div>
+                    {(item.localidade || item.categoria || item.disciplina) && (
+                      <div className="text-[10px] text-gray-400 truncate">
+                        {[item.localidade, item.categoria, item.disciplina].filter(Boolean).join(' · ')}
+                      </div>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right text-gray-500">{item.unidade}</td>
@@ -368,6 +398,7 @@ function PanelCherryPicking({
   const filteredItems = equalization.items.filter((item) => {
     if (filters.categoria && item.categoria !== filters.categoria) return false
     if (filters.disciplina && item.disciplina !== filters.disciplina) return false
+    if (filters.localidade && item.localidade !== filters.localidade) return false
     return true
   })
 
@@ -544,15 +575,29 @@ function PanelFornecedores({
   const filteredItems = equalization.items.filter((item) => {
     if (filters.categoria && item.categoria !== filters.categoria) return false
     if (filters.disciplina && item.disciplina !== filters.disciplina) return false
+    if (filters.localidade && item.localidade !== filters.localidade) return false
     return true
   })
 
   const totalItems = filteredItems.length
 
+  // cherry pick wins per supplier
+  const cherryWins: Record<string, number> = {}
+  for (const item of filteredItems) {
+    let minPrice: number | null = null
+    let minId: string | null = null
+    for (const p of proposals) {
+      const price = item.precos[String(p.id)]
+      if (price != null && (minPrice === null || price < minPrice)) { minPrice = price; minId = String(p.id) }
+    }
+    if (minId) cherryWins[minId] = (cherryWins[minId] ?? 0) + 1
+  }
+
   const stats = proposals.map((p) => {
     let itemsPreenchidos = 0
     let itemsFaltando = 0
     let itemsAcimaDe20 = 0
+    let itemsAbaixoRef = 0
     let somaDesvios = 0
     let countDesvios = 0
 
@@ -565,13 +610,15 @@ function PanelFornecedores({
         somaDesvios += pct
         countDesvios++
         if (pct > 20) itemsAcimaDe20++
+        if (pct < 0) itemsAbaixoRef++
       }
     }
 
     const avgDesvio = countDesvios > 0 ? somaDesvios / countDesvios : null
     const coveragePercent = totalItems > 0 ? (itemsPreenchidos / totalItems) * 100 : 0
+    const itemsMinPreco = cherryWins[String(p.id)] ?? 0
 
-    return { proposal: p, itemsPreenchidos, itemsFaltando, itemsAcimaDe20, avgDesvio, coveragePercent }
+    return { proposal: p, itemsPreenchidos, itemsFaltando, itemsAcimaDe20, itemsAbaixoRef, avgDesvio, coveragePercent, itemsMinPreco }
   })
 
   const ranked = [...stats].sort((a, b) => (a.avgDesvio ?? Infinity) - (b.avgDesvio ?? Infinity))
@@ -595,53 +642,66 @@ function PanelFornecedores({
               </div>
               {i === 0 && <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">Melhor desvio</span>}
             </div>
-            <div className="px-4 py-3 space-y-2.5">
+            <div className="px-4 py-3 space-y-3">
               {/* Cobertura */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-gray-500">Cobertura de itens</span>
-                  <span className="text-xs font-semibold text-gray-700">{s.itemsPreenchidos}/{totalItems}</span>
+                  <span className="text-xs font-semibold text-gray-700">{s.itemsPreenchidos}/{totalItems} ({s.coveragePercent.toFixed(0)}%)</span>
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${s.coveragePercent}%` }} />
+                  <div className={`h-full rounded-full transition-all ${s.coveragePercent === 100 ? 'bg-green-500' : s.coveragePercent > 80 ? 'bg-blue-500' : 'bg-amber-400'}`}
+                    style={{ width: `${s.coveragePercent}%` }} />
                 </div>
               </div>
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="bg-gray-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-gray-800">{formatBRL(s.proposal.valor_total)}</p>
+              {/* Valor + BDI */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-base font-bold text-gray-900">{formatBRL(s.proposal.valor_total)}</p>
                   <p className="text-[10px] text-gray-400">Valor total</p>
                 </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-gray-600">{s.proposal.bdi_global.toFixed(1)}%</p>
+                  <p className="text-[10px] text-gray-400">BDI global</p>
+                </div>
+              </div>
+              {/* Stats grid */}
+              <div className="grid grid-cols-4 gap-1.5 text-center">
                 <div className={`rounded-lg p-2 ${
                   s.avgDesvio === null ? 'bg-gray-50' :
                   s.avgDesvio > 20 ? 'bg-red-50' : s.avgDesvio > 5 ? 'bg-amber-50' : 'bg-green-50'
                 }`}>
-                  <p className={`text-lg font-bold ${
+                  <p className={`text-sm font-bold ${
                     s.avgDesvio === null ? 'text-gray-400' :
                     s.avgDesvio > 20 ? 'text-red-600' : s.avgDesvio > 5 ? 'text-amber-600' : 'text-green-700'
                   }`}>
                     {s.avgDesvio !== null ? `${s.avgDesvio > 0 ? '+' : ''}${s.avgDesvio.toFixed(1)}%` : '—'}
                   </p>
-                  <p className="text-[10px] text-gray-400">Desvio médio</p>
+                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">Desv. médio</p>
                 </div>
-                <div className={`rounded-lg p-2 ${s.itemsAcimaDe20 > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
-                  <p className={`text-lg font-bold ${s.itemsAcimaDe20 > 0 ? 'text-red-600' : 'text-green-700'}`}>
-                    {s.itemsAcimaDe20}
-                  </p>
-                  <p className="text-[10px] text-gray-400">Acima +20%</p>
+                <div className={`rounded-lg p-2 ${s.itemsAcimaDe20 > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+                  <p className={`text-sm font-bold ${s.itemsAcimaDe20 > 0 ? 'text-red-600' : 'text-gray-400'}`}>{s.itemsAcimaDe20}</p>
+                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">Ac. +20%</p>
+                </div>
+                <div className={`rounded-lg p-2 ${s.itemsAbaixoRef > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
+                  <p className={`text-sm font-bold ${s.itemsAbaixoRef > 0 ? 'text-green-700' : 'text-gray-400'}`}>{s.itemsAbaixoRef}</p>
+                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">Ab. ref.</p>
+                </div>
+                <div className={`rounded-lg p-2 ${s.itemsMinPreco > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                  <p className={`text-sm font-bold ${s.itemsMinPreco > 0 ? 'text-amber-700' : 'text-gray-400'}`}>{s.itemsMinPreco}</p>
+                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">Min. preço</p>
                 </div>
               </div>
-              {/* Itens faltando */}
-              {s.itemsFaltando > 0 && (
+              {/* Status */}
+              {s.itemsFaltando > 0 ? (
                 <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-2 py-1.5">
                   <AlertTriangle size={11} />
                   {s.itemsFaltando} {s.itemsFaltando === 1 ? 'item sem preço' : 'itens sem preço'}
                 </div>
-              )}
-              {s.itemsFaltando === 0 && (
+              ) : (
                 <div className="flex items-center gap-1.5 text-xs text-green-600 bg-green-50 rounded-lg px-2 py-1.5">
                   <CheckCircle size={11} />
-                  Proposta completa
+                  Proposta completa — todos os itens preenchidos
                 </div>
               )}
             </div>
@@ -706,23 +766,30 @@ function PanelFornecedores({
 // ── Painel: Distribuição ──────────────────────────────────────────────────────
 
 function PanelDistribuicao({
-  disciplines, categorias,
+  disciplines, categorias, localidades,
 }: {
   disciplines: DisciplineSummary[]
   categorias: CategoriaSummary[]
+  localidades: LocalidadeSummary[]
 }) {
-  if (disciplines.length === 0 && categorias.length === 0) {
-    return <EmptyState message="Cadastre disciplinas e categorias nos itens da Planilha PQ." />
+  if (disciplines.length === 0 && categorias.length === 0 && localidades.length === 0) {
+    return <EmptyState message="Preencha disciplina, categoria ou localidade nos itens da Planilha PQ para ver a distribuição." />
   }
+
+  const sections = [
+    { show: localidades.length > 0, content: <DisciplineChart data={localidades} nameKey="localidade" title="Distribuição por Localidade (R$)" /> },
+    { show: disciplines.length > 0, content: <DisciplineChart data={disciplines} nameKey="disciplina" title="Distribuição por Disciplina (R$)" /> },
+    { show: categorias.length > 0, content: <DisciplineChart data={categorias} nameKey="categoria" title="Distribuição por Categoria (R$)" /> },
+  ].filter((s) => s.show)
+
   return (
-    <div className="space-y-8">
-      <DisciplineChart data={disciplines} nameKey="disciplina" title="Distribuição por Disciplina (R$)" />
-      {categorias.length > 0 && (
-        <>
-          <hr className="border-gray-100" />
-          <DisciplineChart data={categorias} nameKey="categoria" title="Distribuição por Categoria (R$)" />
-        </>
-      )}
+    <div className="space-y-10">
+      {sections.map((s, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <hr className="border-gray-100" />}
+          {s.content}
+        </React.Fragment>
+      ))}
     </div>
   )
 }
@@ -734,7 +801,7 @@ export default function Analytics() {
   const pid = Number(projectId)
   const [tab, setTab] = useState<Tab>('pareto')
   const [source, setSource] = useState<'referencia' | 'propostas'>('referencia')
-  const [filters, setFilters] = useState<Filters>({ categoria: '', disciplina: '', fornecedores: [] })
+  const [filters, setFilters] = useState<Filters>({ categoria: '', disciplina: '', localidade: '', fornecedores: [] })
   const [exporting, setExporting] = useState(false)
   const [selectedRevisionId, setSelectedRevisionId] = useState<number | null>(null)
 
@@ -783,6 +850,13 @@ export default function Analytics() {
   })
   const categorias: CategoriaSummary[] = Array.isArray(_rawCategorias) ? _rawCategorias : []
 
+  const { data: _rawLocalidades } = useQuery<LocalidadeSummary[]>({
+    queryKey: ['localidades', pid, selectedRevisionId],
+    queryFn: () => analyticsAPI.getLocalidades(pid, selectedRevisionId).then((r) => r.data),
+    enabled: selectedRevisionId !== null,
+  })
+  const localidades: LocalidadeSummary[] = Array.isArray(_rawLocalidades) ? _rawLocalidades : []
+
   // Build filter options from data
   const categoriasOpts = useMemo(() => {
     const s = new Set<string>()
@@ -793,6 +867,12 @@ export default function Analytics() {
   const disciplinasOpts = useMemo(() => {
     const s = new Set<string>()
     equalization?.items.forEach((i) => { if (i.disciplina) s.add(i.disciplina) })
+    return [...s].sort()
+  }, [equalization])
+
+  const localidadesOpts = useMemo(() => {
+    const s = new Set<string>()
+    equalization?.items.forEach((i) => { if (i.localidade) s.add(i.localidade) })
     return [...s].sort()
   }, [equalization])
 
@@ -876,7 +956,7 @@ export default function Analytics() {
               {[...revisionsList].sort((a, b) => a.numero - b.numero).map((rev) => (
                 <button
                   key={rev.id}
-                  onClick={() => { setSelectedRevisionId(rev.id); setFilters({ categoria: '', disciplina: '', fornecedores: [] }) }}
+                  onClick={() => { setSelectedRevisionId(rev.id); setFilters({ categoria: '', disciplina: '', localidade: '', fornecedores: [] }) }}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                     selectedRevisionId === rev.id
                       ? 'bg-blue-600 text-white shadow-sm'
@@ -938,6 +1018,7 @@ export default function Analytics() {
                 proposals={equalization?.proposals ?? []}
                 categorias={categoriasOpts}
                 disciplinas={disciplinasOpts}
+                localidades={localidadesOpts}
               />
             </div>
           )}
@@ -996,6 +1077,8 @@ export default function Analytics() {
                             <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Pos.</th>
                             <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Item</th>
                             <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Descrição</th>
+                            <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Localidade</th>
+                            <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Disciplina</th>
                             <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Categoria</th>
                             <th className="px-3 py-2.5 text-right font-semibold text-gray-600">Qtd</th>
                             <th className="px-3 py-2.5 text-right font-semibold text-gray-600">Preço Médio</th>
@@ -1013,6 +1096,8 @@ export default function Analytics() {
                               <td className="px-3 py-2 text-gray-700 max-w-[240px]">
                                 <div className="truncate" title={item.descricao}>{item.descricao}</div>
                               </td>
+                              <td className="px-3 py-2 text-gray-400">{item.localidade ?? '—'}</td>
+                              <td className="px-3 py-2 text-gray-400">{item.disciplina ?? '—'}</td>
                               <td className="px-3 py-2 text-gray-400">{item.categoria ?? '—'}</td>
                               <td className="px-3 py-2 text-right">{formatNumber(item.quantidade, 0)}</td>
                               <td className="px-3 py-2 text-right">{formatBRL(Number(item.preco_medio))}</td>
@@ -1055,7 +1140,7 @@ export default function Analytics() {
 
             {/* ── DISTRIBUIÇÃO ── */}
             {tab === 'distribuicao' && (
-              <PanelDistribuicao disciplines={disciplines} categorias={categorias} />
+              <PanelDistribuicao disciplines={disciplines} categorias={categorias} localidades={localidades} />
             )}
 
             {/* ── VALIDAÇÃO DE ESCOPO ── */}

@@ -8,7 +8,7 @@ from app.models.proposal_item import ProposalItem
 from app.schemas.analytics import (
     ABCItem, ParetoData, ProposalComparisonItem,
     EqualizationResponse, EqualizationProposal,
-    DisciplineSummary, CategoriaSummary,
+    DisciplineSummary, CategoriaSummary, LocalidadeSummary,
 )
 
 
@@ -79,6 +79,7 @@ class AnalyticsService:
                 quantidade=r["item"].quantidade,
                 categoria=r["item"].categoria,
                 disciplina=r["item"].disciplina,
+                localidade=r["item"].localidade,
                 preco_medio=_dec(r["preco_medio"]),
                 valor_total=_dec(r["valor"]),
                 percentual=round(pct, 2),
@@ -162,6 +163,7 @@ class AnalyticsService:
                 quantidade=item.quantidade,
                 categoria=item.categoria,
                 disciplina=item.disciplina,
+                localidade=item.localidade,
                 preco_referencia=item.preco_referencia,
                 valor_referencia=_dec(val_ref) if val_ref else None,
                 precos=precos,
@@ -242,6 +244,35 @@ class AnalyticsService:
         return [
             CategoriaSummary(
                 categoria=k, valor_total=_dec(v),
+                percentual=round(v / grand * 100, 2) if grand else 0,
+                count_items=counts[k],
+            )
+            for k, v in sorted(totals.items(), key=lambda x: x[1], reverse=True)
+        ]
+
+    @staticmethod
+    def get_localidade_summary(db: Session, project_id: int, revision_id: int | None = None) -> List[LocalidadeSummary]:
+        q = db.query(PQItem).filter(PQItem.project_id == project_id)
+        if revision_id is not None:
+            q = q.filter(PQItem.revision_id == revision_id)
+        items = q.all()
+        totals: dict[str, float] = {}
+        counts: dict[str, int] = {}
+        grand = 0.0
+
+        for item in items:
+            key = item.localidade or "Sem Localidade"
+            totals.setdefault(key, 0.0)
+            counts.setdefault(key, 0)
+            if item.preco_referencia and item.quantidade:
+                v = float(item.quantidade) * float(item.preco_referencia)
+                totals[key] += v
+                grand += v
+            counts[key] += 1
+
+        return [
+            LocalidadeSummary(
+                localidade=k, valor_total=_dec(v),
                 percentual=round(v / grand * 100, 2) if grand else 0,
                 count_items=counts[k],
             )

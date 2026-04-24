@@ -129,6 +129,7 @@ export interface ABCItem {
   quantidade: number
   categoria?: string
   disciplina?: string
+  localidade?: string
   preco_medio: number
   valor_total: number
   percentual: number
@@ -156,6 +157,7 @@ export interface ProposalComparisonItem {
   quantidade: number
   categoria?: string
   disciplina?: string
+  localidade?: string
   preco_referencia?: number
   valor_referencia?: number
   precos: Record<string, number | null>
@@ -190,6 +192,13 @@ export interface DisciplineSummary {
 
 export interface CategoriaSummary {
   categoria: string
+  valor_total: number
+  percentual: number
+  count_items: number
+}
+
+export interface LocalidadeSummary {
+  localidade: string
   valor_total: number
   percentual: number
   count_items: number

@@ -12,7 +12,7 @@ from app.models.project_revision import ProjectRevision
 from app.models.pq_item import PQItem
 from app.models.proposal import Proposal
 from app.models.proposal_item import ProposalItem
-from app.schemas.analytics import ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary
+from app.schemas.analytics import ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary, LocalidadeSummary
 from app.services.analytics import AnalyticsService
 from app.services.excel import gerar_relatorio_equalizacao, gerar_baseline_excel
 from typing import List, Optional
@@ -61,6 +61,16 @@ def get_categorias(
     current_user: User = Depends(get_current_user),
 ):
     return AnalyticsService.get_categoria_summary(db, project_id, revision_id)
+
+
+@router.get("/localidades/{project_id}", response_model=list[LocalidadeSummary])
+def get_localidades(
+    project_id: int,
+    revision_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return AnalyticsService.get_localidade_summary(db, project_id, revision_id)
 
 
 @router.get("/scope-validation/{project_id}")

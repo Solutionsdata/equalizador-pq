@@ -131,6 +131,8 @@ export const analyticsAPI = {
     api.get(`/analytics/disciplines/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
   getCategorias: (projectId: number, revisionId?: number | null) =>
     api.get(`/analytics/categorias/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
+  getLocalidades: (projectId: number, revisionId?: number | null) =>
+    api.get(`/analytics/localidades/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
   exportExcel: (projectId: number) =>
     api.get(`/analytics/export/${projectId}`, { responseType: 'blob' }),
   getBaseline: () => api.get('/analytics/baseline'),
