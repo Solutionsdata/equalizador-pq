@@ -54,10 +54,11 @@ export default function Baseline() {
   const [expanded, setExpanded] = useState<number | null>(null)
   const [cancelConfirm, setCancelConfirm] = useState<number | null>(null)
 
-  const { data: entries = [], isLoading } = useQuery<BaselineEntry[]>({
+  const { data: _rawEntries, isLoading } = useQuery({
     queryKey: ['baseline'],
     queryFn: () => analyticsAPI.getBaseline().then((r) => r.data),
   })
+  const entries: BaselineEntry[] = Array.isArray(_rawEntries) ? _rawEntries : []
 
   const unsetWinnerMutation = useMutation({
     mutationFn: (proposalId: number) => proposalsAPI.unsetWinner(proposalId),
@@ -127,12 +128,6 @@ export default function Baseline() {
 
   // ── Dados de custo por km ───────────────────────────────────────────────────
   const kmEntries = filtered.filter((e) => e.extensao_km)
-  const kmData = useMemo(() => kmEntries.map((e) => ({
-    name: e.project_nome.length > 22 ? e.project_nome.slice(0, 20) + '…' : e.project_nome,
-    'R$/km': Math.round(e.valor_total / e.extensao_km!),
-    valor: e.valor_total,
-    km: e.extensao_km,
-  })), [kmEntries])
 
   // R$/km por disciplina (média ponderada de todos projetos com km)
   const kmDisciplinaData = useMemo(() => {
