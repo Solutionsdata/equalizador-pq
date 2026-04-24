@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { proposalsAPI, pqAPI, projectsAPI, downloadBlob } from '../services/api'
 import type { ProposalWithItems, PQItem } from '../types'
@@ -7,13 +7,17 @@ import { formatBRL, formatNumber } from '../types'
 import toast from 'react-hot-toast'
 import { Save, ArrowLeft, Building2, FileDown, FileUp, FileSpreadsheet, ChevronDown } from 'lucide-react'
 
-type PriceMap = Record<number, { preco_unitario: string; bdi: string }>
+type PriceMap = Record<number, {
+  preco_unitario: string
+  bdi: string
+  custo_unit_com_reidi: string
+  bdi_com_reidi: string
+}>
 
 export default function ProposalInput() {
   const { projectId, proposalId } = useParams<{ projectId: string; proposalId: string }>()
   const pid = Number(projectId)
   const rid = Number(proposalId)
-  const navigate = useNavigate()
   const qc = useQueryClient()
   const importRef = useRef<HTMLInputElement>(null)
   const [excelMenu, setExcelMenu] = useState(false)
@@ -48,6 +52,8 @@ export default function ProposalInput() {
         map[item.pq_item_id] = {
           preco_unitario: item.preco_unitario ? String(item.preco_unitario) : '',
           bdi: item.bdi ? String(item.bdi) : '',
+          custo_unit_com_reidi: item.custo_unit_com_reidi ? String(item.custo_unit_com_reidi) : '',
+          bdi_com_reidi: item.bdi_com_reidi ? String(item.bdi_com_reidi) : '',
         }
       })
       setPrices(map)
@@ -61,6 +67,8 @@ export default function ProposalInput() {
         pq_item_id: pq.id,
         preco_unitario: prices[pq.id]?.preco_unitario ? Number(prices[pq.id].preco_unitario) : null,
         bdi: prices[pq.id]?.bdi ? Number(prices[pq.id].bdi) : null,
+        custo_unit_com_reidi: prices[pq.id]?.custo_unit_com_reidi ? Number(prices[pq.id].custo_unit_com_reidi) : null,
+        bdi_com_reidi: prices[pq.id]?.bdi_com_reidi ? Number(prices[pq.id].bdi_com_reidi) : null,
       }))
       return proposalsAPI.updateItems(rid, items)
     },
@@ -73,10 +81,13 @@ export default function ProposalInput() {
     onError: () => toast.error('Erro ao salvar a proposta'),
   })
 
-  function setPrice(pqId: number, field: 'preco_unitario' | 'bdi', value: string) {
+  function setPrice(pqId: number, field: keyof PriceMap[number], value: string) {
     setPrices((prev) => ({
       ...prev,
-      [pqId]: { ...(prev[pqId] ?? { preco_unitario: '', bdi: '' }), [field]: value },
+      [pqId]: {
+        ...(prev[pqId] ?? { preco_unitario: '', bdi: '', custo_unit_com_reidi: '', bdi_com_reidi: '' }),
+        [field]: value,
+      },
     }))
     setDirty(true)
   }
@@ -122,12 +133,13 @@ export default function ProposalInput() {
     const toastId = toast.loading('Importando preços…')
     try {
       const res = await proposalsAPI.importExcel(rid, file)
-      // Atualiza o mapa de preços com os dados importados
       const newMap: PriceMap = {}
       res.data.items.forEach((item: any) => {
         newMap[item.pq_item_id] = {
           preco_unitario: item.preco_unitario ? String(item.preco_unitario) : '',
           bdi: item.bdi ? String(item.bdi) : '',
+          custo_unit_com_reidi: item.custo_unit_com_reidi ? String(item.custo_unit_com_reidi) : '',
+          bdi_com_reidi: item.bdi_com_reidi ? String(item.bdi_com_reidi) : '',
         }
       })
       setPrices(newMap)
@@ -143,16 +155,16 @@ export default function ProposalInput() {
     }
   }
 
+  // Total COM REIDI — mesma lógica do backend (analytics usa este valor)
   const total = pqItems.reduce((acc, pq) => {
-    const pu = Number(prices[pq.id]?.preco_unitario) || 0
-    const bdiItem = Number(prices[pq.id]?.bdi) || Number(bdiGlobal) || 0
-    return acc + pq.quantidade * pu * (1 + bdiItem / 100)
+    const comPrice = Number(prices[pq.id]?.custo_unit_com_reidi) || Number(prices[pq.id]?.preco_unitario) || 0
+    const bdiComVal = prices[pq.id]?.custo_unit_com_reidi
+      ? (Number(prices[pq.id]?.bdi_com_reidi) || Number(bdiGlobal) || 0)
+      : (Number(prices[pq.id]?.bdi) || Number(bdiGlobal) || 0)
+    return acc + (comPrice > 0 ? pq.quantidade * comPrice * (1 + bdiComVal / 100) : 0)
   }, 0)
 
-  const totalRef = pqItems.reduce((acc, pq) => {
-    return acc + pq.quantidade * (pq.preco_referencia ?? 0)
-  }, 0)
-
+  const totalRef = pqItems.reduce((acc, pq) => acc + pq.quantidade * (pq.preco_referencia ?? 0), 0)
   const desvio = totalRef > 0 ? ((total - totalRef) / totalRef) * 100 : null
 
   if (loadingProposal) return <div className="p-8 text-gray-400">Carregando proposta…</div>
@@ -176,7 +188,7 @@ export default function ProposalInput() {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <p className="text-xs text-gray-400">Total da Proposta</p>
+            <p className="text-xs text-gray-400">Total COM REIDI</p>
             <p className="text-lg font-bold text-gray-900">{formatBRL(total)}</p>
             {desvio !== null && (
               <p className={`text-xs font-medium ${desvio > 10 ? 'text-red-500' : desvio < -10 ? 'text-green-600' : 'text-gray-500'}`}>
@@ -267,7 +279,7 @@ export default function ProposalInput() {
             className="input w-24 text-center"
             placeholder="0.00"
           />
-          <span className="text-xs text-gray-400">Aplicado a todos os itens sem BDI individual</span>
+          <span className="text-xs text-gray-400">Aplicado a itens sem BDI individual</span>
         </div>
         <div className="ml-auto text-sm text-gray-500">
           CNPJ: <strong>{proposal.cnpj ?? '—'}</strong> ·
@@ -282,77 +294,135 @@ export default function ProposalInput() {
         <div className="card overflow-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
+              {/* Linha de grupo */}
+              <tr className="text-xs font-bold text-center">
+                <th colSpan={12} className="px-2 py-2 text-blue-800 bg-blue-100 border-r border-blue-200">
+                  DADOS PQ
+                </th>
+                <th colSpan={4} className="px-2 py-2 text-orange-800 bg-orange-100 border-r border-orange-200">
+                  SEM REIDI
+                </th>
+                <th colSpan={4} className="px-2 py-2 text-green-800 bg-green-100">
+                  COM REIDI
+                </th>
+              </tr>
+              {/* Linha de colunas */}
               <tr className="bg-gray-100 text-gray-600 text-xs">
-                <th className="px-3 py-3 text-left font-semibold w-16">Item</th>
-                <th className="px-3 py-3 text-left font-semibold w-20">Código</th>
-                <th className="px-3 py-3 text-left font-semibold">Descrição</th>
-                <th className="px-3 py-3 text-left font-semibold w-16">Un</th>
-                <th className="px-3 py-3 text-right font-semibold w-24">Qtd</th>
-                <th className="px-3 py-3 text-right font-semibold w-32">Preço Ref. (R$)</th>
-                <th className="px-3 py-3 text-right font-semibold w-32 text-blue-600">Preço Unit. *</th>
-                <th className="px-3 py-3 text-right font-semibold w-20 text-blue-600">BDI %</th>
-                <th className="px-3 py-3 text-right font-semibold w-36">Total (R$)</th>
-                <th className="px-3 py-3 text-right font-semibold w-20">Δ Ref.</th>
+                <th className="px-2 py-2 text-left font-semibold w-16 whitespace-nowrap">Item</th>
+                <th className="px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Localidade</th>
+                <th className="px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Disciplina</th>
+                <th className="px-2 py-2 text-left font-semibold w-28 whitespace-nowrap">Categoria</th>
+                <th className="px-2 py-2 text-left font-semibold w-20 whitespace-nowrap">Código</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Descrição</th>
+                <th className="px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">Un.</th>
+                <th className="px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Qtd</th>
+                <th className="px-2 py-2 text-left font-semibold w-20 whitespace-nowrap">Referência</th>
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap">P. Unit. RF</th>
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap bg-blue-50">P. Total RF</th>
+                <th className="px-2 py-2 text-left font-semibold w-28 whitespace-nowrap border-r border-blue-200">Obs.</th>
+                {/* SEM REIDI */}
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-orange-700 bg-orange-50">CUD (R$)</th>
+                <th className="px-2 py-2 text-right font-semibold w-20 whitespace-nowrap text-orange-700 bg-orange-50">BDI %</th>
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-orange-700 bg-orange-50">CUD c/BDI</th>
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-orange-700 bg-orange-50 border-r border-orange-200">Total s/REIDI</th>
+                {/* COM REIDI */}
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-green-700 bg-green-50">CUD (R$)</th>
+                <th className="px-2 py-2 text-right font-semibold w-20 whitespace-nowrap text-green-700 bg-green-50">BDI %</th>
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-green-700 bg-green-50">CUD c/BDI</th>
+                <th className="px-2 py-2 text-right font-semibold w-28 whitespace-nowrap text-green-700 bg-green-50">Total c/REIDI</th>
               </tr>
             </thead>
             <tbody>
               {pqItems.map((pq) => {
-                const pu = Number(prices[pq.id]?.preco_unitario) || 0
-                const bdiItem = Number(prices[pq.id]?.bdi) || Number(bdiGlobal) || 0
-                const lineTotal = pq.quantidade * pu * (1 + bdiItem / 100)
-                const refTotal = pq.quantidade * (pq.preco_referencia ?? 0)
-                const delta = refTotal > 0 && pu > 0
-                  ? ((pu - (pq.preco_referencia ?? 0)) / (pq.preco_referencia ?? 1)) * 100
-                  : null
+                // PQ computed
+                const pTotalRF = pq.quantidade * (pq.preco_referencia ?? 0)
+
+                // SEM REIDI
+                const cudSem = Number(prices[pq.id]?.preco_unitario) || 0
+                const bdiSemVal = prices[pq.id]?.bdi
+                  ? Number(prices[pq.id].bdi)
+                  : Number(bdiGlobal) || 0
+                const cudBdiSem = cudSem > 0 ? cudSem * (1 + bdiSemVal / 100) : 0
+                const totalSem = cudBdiSem > 0 ? pq.quantidade * cudBdiSem : 0
+
+                // COM REIDI
+                const cudCom = Number(prices[pq.id]?.custo_unit_com_reidi) || 0
+                const bdiComVal = prices[pq.id]?.bdi_com_reidi
+                  ? Number(prices[pq.id].bdi_com_reidi)
+                  : Number(bdiGlobal) || 0
+                const cudBdiCom = cudCom > 0 ? cudCom * (1 + bdiComVal / 100) : 0
+                const totalCom = cudBdiCom > 0 ? pq.quantidade * cudBdiCom : 0
 
                 return (
-                  <tr key={pq.id} className="border-t border-gray-100 hover:bg-blue-50/30">
-                    <td className="px-3 py-2 text-xs font-mono text-gray-500">{pq.numero_item}</td>
-                    <td className="px-3 py-2 text-xs text-gray-400">{pq.codigo}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">
-                      <div>{pq.descricao}</div>
-                      {(pq.categoria || pq.disciplina) && (
-                        <div className="text-xs text-gray-400 mt-0.5">
-                          {[pq.categoria, pq.disciplina].filter(Boolean).join(' · ')}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-center text-gray-500">{pq.unidade}</td>
-                    <td className="px-3 py-2 text-right text-sm">{formatNumber(pq.quantidade, 4)}</td>
-                    <td className="px-3 py-2 text-right text-xs text-gray-400">
+                  <tr key={pq.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                    {/* PQ info */}
+                    <td className="px-2 py-1 text-xs font-mono text-gray-500 whitespace-nowrap">{pq.numero_item}</td>
+                    <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.localidade || '—'}</td>
+                    <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.disciplina || '—'}</td>
+                    <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.categoria || '—'}</td>
+                    <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.codigo || '—'}</td>
+                    <td className="px-2 py-1 text-sm text-gray-700 max-w-xs">{pq.descricao}</td>
+                    <td className="px-2 py-1 text-xs text-center text-gray-500">{pq.unidade}</td>
+                    <td className="px-2 py-1 text-right text-xs tabular-nums">{formatNumber(pq.quantidade, 4)}</td>
+                    <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.referencia_codigo || '—'}</td>
+                    <td className="px-2 py-1 text-right text-xs text-gray-500 tabular-nums whitespace-nowrap">
                       {pq.preco_referencia ? formatBRL(pq.preco_referencia) : '—'}
                     </td>
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 text-right text-xs font-medium text-blue-700 bg-blue-50/30 tabular-nums whitespace-nowrap">
+                      {pTotalRF > 0 ? formatBRL(pTotalRF) : '—'}
+                    </td>
+                    <td className="px-2 py-1 text-xs text-gray-400 border-r border-blue-100">{pq.observacao || ''}</td>
+
+                    {/* SEM REIDI */}
+                    <td className="px-1 py-0.5 bg-orange-50/20">
                       <input
-                        type="number"
-                        step="0.0001"
-                        min="0"
+                        type="number" step="0.0001" min="0"
                         value={prices[pq.id]?.preco_unitario ?? ''}
                         onChange={(e) => setPrice(pq.id, 'preco_unitario', e.target.value)}
-                        placeholder="0,0000"
-                        className="w-full text-right text-sm border border-blue-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-blue-50"
+                        placeholder="0.0000"
+                        className="w-full text-right text-xs border border-orange-200 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 bg-orange-50"
                       />
                     </td>
-                    <td className="px-2 py-1">
+                    <td className="px-1 py-0.5 bg-orange-50/20">
                       <input
-                        type="number"
-                        step="0.01"
-                        min="0"
+                        type="number" step="0.01" min="0"
                         value={prices[pq.id]?.bdi ?? ''}
                         onChange={(e) => setPrice(pq.id, 'bdi', e.target.value)}
                         placeholder={bdiGlobal || '0'}
-                        className="w-full text-right text-sm border border-blue-100 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                        className="w-full text-right text-xs border border-orange-100 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-white"
                       />
                     </td>
-                    <td className="px-3 py-2 text-right text-sm font-medium">
-                      {lineTotal > 0 ? formatBRL(lineTotal) : '—'}
+                    <td className="px-2 py-1 text-right text-xs text-orange-700 bg-orange-50/20 tabular-nums whitespace-nowrap">
+                      {cudBdiSem > 0 ? formatBRL(cudBdiSem) : '—'}
                     </td>
-                    <td className="px-3 py-2 text-right text-xs">
-                      {delta !== null ? (
-                        <span className={delta > 15 ? 'text-red-500 font-bold' : delta < -15 ? 'text-green-600 font-bold' : 'text-gray-500'}>
-                          {delta > 0 ? '+' : ''}{delta.toFixed(1)}%
-                        </span>
-                      ) : '—'}
+                    <td className="px-2 py-1 text-right text-xs font-medium text-orange-800 bg-orange-50/20 tabular-nums whitespace-nowrap border-r border-orange-100">
+                      {totalSem > 0 ? formatBRL(totalSem) : '—'}
+                    </td>
+
+                    {/* COM REIDI */}
+                    <td className="px-1 py-0.5 bg-green-50/20">
+                      <input
+                        type="number" step="0.0001" min="0"
+                        value={prices[pq.id]?.custo_unit_com_reidi ?? ''}
+                        onChange={(e) => setPrice(pq.id, 'custo_unit_com_reidi', e.target.value)}
+                        placeholder="0.0000"
+                        className="w-full text-right text-xs border border-green-200 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-green-400 bg-green-50"
+                      />
+                    </td>
+                    <td className="px-1 py-0.5 bg-green-50/20">
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={prices[pq.id]?.bdi_com_reidi ?? ''}
+                        onChange={(e) => setPrice(pq.id, 'bdi_com_reidi', e.target.value)}
+                        placeholder={bdiGlobal || '0'}
+                        className="w-full text-right text-xs border border-green-100 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-green-300 bg-white"
+                      />
+                    </td>
+                    <td className="px-2 py-1 text-right text-xs text-green-700 bg-green-50/20 tabular-nums whitespace-nowrap">
+                      {cudBdiCom > 0 ? formatBRL(cudBdiCom) : '—'}
+                    </td>
+                    <td className="px-2 py-1 text-right text-xs font-medium text-green-800 bg-green-50/20 tabular-nums whitespace-nowrap">
+                      {totalCom > 0 ? formatBRL(totalCom) : '—'}
                     </td>
                   </tr>
                 )
@@ -360,14 +430,11 @@ export default function ProposalInput() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                <td colSpan={8} className="px-3 py-3 text-right text-gray-600">Total da Proposta:</td>
-                <td className="px-3 py-3 text-right text-gray-900 text-base">{formatBRL(total)}</td>
-                <td className="px-3 py-3 text-right text-sm">
-                  {desvio !== null && (
-                    <span className={desvio > 0 ? 'text-red-500' : 'text-green-600'}>
-                      {desvio > 0 ? '+' : ''}{desvio.toFixed(1)}%
-                    </span>
-                  )}
+                <td colSpan={19} className="px-3 py-3 text-right text-gray-600 text-sm">
+                  Total da Proposta (COM REIDI):
+                </td>
+                <td className="px-3 py-3 text-right text-green-900 text-base tabular-nums whitespace-nowrap">
+                  {formatBRL(total)}
                 </td>
               </tr>
             </tfoot>
@@ -385,7 +452,7 @@ export default function ProposalInput() {
       )}
 
       <p className="text-xs text-gray-400 mt-3">
-        * Campos em azul são editáveis · Preço Total = Qtd × Preço Unitário × (1 + BDI%)
+        Campos editáveis destacados (laranja = SEM REIDI · verde = COM REIDI) · Análise comparativa usa preços COM REIDI
       </p>
     </div>
   )

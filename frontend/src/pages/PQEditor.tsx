@@ -240,8 +240,9 @@ export default function PQEditor() {
     { key: 'unidade',          label: 'Un. Medida',   width: 'w-20',  type: 'datalist' as const, options: UNIDADES },
     { key: 'quantidade',       label: 'Qtd',          width: 'w-24',  type: 'number' as const },
     { key: 'referencia_codigo',label: 'Referência',   width: 'w-24',  type: 'text' as const },
-    { key: 'preco_referencia', label: 'P. Unit. RF',  width: 'w-32',  type: 'number' as const },
-    { key: 'observacao',       label: 'Obs.',         width: 'w-32',  type: 'text' as const },
+    { key: 'preco_referencia', label: 'P. Unit. RF',  width: 'w-32',  type: 'number'   as const },
+    { key: '_total_rf',        label: 'P. Total RF',  width: 'w-36',  type: 'computed' as const },
+    { key: 'observacao',       label: 'Obs.',         width: 'w-32',  type: 'text'     as const },
   ]
 
   return (
@@ -365,17 +366,27 @@ export default function PQEditor() {
               {rows.map((row, idx) => (
                 <tr key={row._key} className="border-t border-gray-100 hover:bg-blue-50/30 group">
                   <td className="px-2 py-1 text-center text-xs text-gray-400 font-mono">{idx + 1}</td>
-                  {columns.map((col) => (
-                    <td key={col.key} className="px-1 py-0.5">
-                      <Cell
-                        value={row[col.key as keyof Row] as string | number | undefined}
-                        onChange={(v) => updateRow(row._key, col.key as keyof Row, v)}
-                        type={col.type}
-                        options={col.options}
-                        placeholder={col.placeholder}
-                      />
-                    </td>
-                  ))}
+                  {columns.map((col) =>
+                    col.type === 'computed' ? (
+                      <td key={col.key} className="px-2 py-1 text-right text-xs font-medium text-blue-700 bg-blue-50/40 whitespace-nowrap tabular-nums">
+                        {(() => {
+                          const qt = Number(row.quantidade) || 0
+                          const pr = Number(row.preco_referencia) || 0
+                          return qt && pr ? formatBRL(qt * pr) : '—'
+                        })()}
+                      </td>
+                    ) : (
+                      <td key={col.key} className="px-1 py-0.5">
+                        <Cell
+                          value={row[col.key as keyof Row] as string | number | undefined}
+                          onChange={(v) => updateRow(row._key, col.key as keyof Row, v)}
+                          type={col.type as 'text' | 'number' | 'select' | 'datalist'}
+                          options={(col as any).options}
+                          placeholder={(col as any).placeholder}
+                        />
+                      </td>
+                    )
+                  )}
                   <td className="px-2 py-1">
                     <button
                       onClick={() => deleteRow(row._key)}
@@ -389,10 +400,11 @@ export default function PQEditor() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
-                <td colSpan={columns.length} className="px-3 py-2 text-right text-gray-600">
+                <td colSpan={columns.length - 1} className="px-3 py-2 text-right text-gray-600">
                   Total Referência:
                 </td>
-                <td className="px-2 py-2 text-gray-800">{formatBRL(totalRef)}</td>
+                <td className="px-2 py-2 text-blue-800 text-right tabular-nums">{formatBRL(totalRef)}</td>
+                <td></td>
                 <td></td>
               </tr>
             </tfoot>
