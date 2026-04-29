@@ -581,6 +581,9 @@ function PanelFornecedores({
 
   const totalItems = filteredItems.length
 
+  // Médias das propostas por item (referência)
+  const mediaTotal = filteredItems.reduce((acc, item) => acc + (Number(item.preco_medio) || 0) * item.quantidade, 0)
+
   // cherry pick wins per supplier
   const cherryWins: Record<string, number> = {}
   for (const item of filteredItems) {
@@ -596,29 +599,38 @@ function PanelFornecedores({
   const stats = proposals.map((p) => {
     let itemsPreenchidos = 0
     let itemsFaltando = 0
-    let itemsAcimaDe20 = 0
-    let itemsAbaixoRef = 0
+    let itemsAcimaDaMedia = 0
+    let itemsAbaixoMedia = 0
     let somaDesvios = 0
     let countDesvios = 0
+    let itemsDescDiff = 0
+    let itemsUnidDiff = 0
+    let itemsQtdDiff = 0
 
     for (const item of filteredItems) {
       const price = item.precos[String(p.id)]
       if (price == null) { itemsFaltando++; continue }
       itemsPreenchidos++
-      const pct = pctDiff(price, item.preco_referencia)
+      const pct = pctDiff(price, item.preco_medio ?? undefined)
       if (pct !== null) {
         somaDesvios += pct
         countDesvios++
-        if (pct > 20) itemsAcimaDe20++
-        if (pct < 0) itemsAbaixoRef++
+        if (pct > 10) itemsAcimaDaMedia++
+        if (pct < -10) itemsAbaixoMedia++
       }
     }
 
     const avgDesvio = countDesvios > 0 ? somaDesvios / countDesvios : null
     const coveragePercent = totalItems > 0 ? (itemsPreenchidos / totalItems) * 100 : 0
     const itemsMinPreco = cherryWins[String(p.id)] ?? 0
+    const propTotal = p.valor_total
+    const diffVsMedia = mediaTotal > 0 ? ((propTotal - mediaTotal) / mediaTotal) * 100 : null
 
-    return { proposal: p, itemsPreenchidos, itemsFaltando, itemsAcimaDe20, itemsAbaixoRef, avgDesvio, coveragePercent, itemsMinPreco }
+    return {
+      proposal: p, itemsPreenchidos, itemsFaltando, itemsAcimaDaMedia, itemsAbaixoMedia,
+      avgDesvio, coveragePercent, itemsMinPreco, propTotal, diffVsMedia,
+      itemsDescDiff, itemsUnidDiff, itemsQtdDiff,
+    }
   })
 
   const ranked = [...stats].sort((a, b) => (a.avgDesvio ?? Infinity) - (b.avgDesvio ?? Infinity))
@@ -627,81 +639,112 @@ function PanelFornecedores({
     return <EmptyState message="Adicione propostas para ver a análise por fornecedor." />
   }
 
+  const melhorTotal = Math.min(...proposals.map((p) => p.valor_total))
+
   return (
     <div className="space-y-6">
-      {/* Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {/* Texto explicativo */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 text-sm text-blue-800 space-y-1.5">
+        <p className="font-semibold text-blue-900">Análise Comparativa por Fornecedor</p>
+        <p>
+          O desvio é calculado em relação à <strong>média das propostas</strong> para cada item —
+          não ao preço de referência da PQ. Isso permite identificar quais fornecedores estão sistematicamente
+          acima ou abaixo do mercado nesta concorrência.
+        </p>
+        <p className="text-xs text-blue-600">
+          {proposals.length} proponente{proposals.length !== 1 ? 's' : ''} · {totalItems} itens analisados ·
+          Média total das propostas: <strong>{formatBRL(mediaTotal)}</strong> ·
+          Menor proposta: <strong>{formatBRL(melhorTotal)}</strong>
+        </p>
+      </div>
+
+      {/* Cards por fornecedor */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {ranked.map((s, i) => (
-          <div key={s.proposal.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                  i === 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+          <div key={s.proposal.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            {/* Cabeçalho do card */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-gray-50/60">
+              <div className="flex items-center gap-3">
+                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                  i === 0 ? 'bg-green-500 text-white' : i === 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
                 }`}>{i + 1}</span>
-                <span className="text-sm font-semibold text-gray-800 truncate">{s.proposal.empresa}</span>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">{s.proposal.empresa}</p>
+                  <p className="text-[10px] text-gray-400">BDI global: {s.proposal.bdi_global.toFixed(1)}%</p>
+                </div>
               </div>
-              {i === 0 && <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">Melhor desvio</span>}
+              <div className="flex gap-2 items-center">
+                {i === 0 && <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 rounded px-2 py-0.5">Menor desvio</span>}
+                {s.proposal.valor_total === melhorTotal && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-0.5">Menor total</span>}
+              </div>
             </div>
-            <div className="px-4 py-3 space-y-3">
+
+            <div className="px-5 py-4 space-y-4">
+              {/* Valor total + desvio vs média */}
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{formatBRL(s.propTotal)}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Valor total da proposta</p>
+                </div>
+                {s.diffVsMedia !== null && (
+                  <div className={`text-right px-3 py-2 rounded-xl ${
+                    s.diffVsMedia > 5 ? 'bg-red-50 text-red-700' :
+                    s.diffVsMedia < -5 ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600'
+                  }`}>
+                    <p className="text-base font-bold">{s.diffVsMedia > 0 ? '+' : ''}{s.diffVsMedia.toFixed(1)}%</p>
+                    <p className="text-[10px] font-medium">vs média</p>
+                  </div>
+                )}
+              </div>
+
               {/* Cobertura */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-gray-500">Cobertura de itens</span>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-gray-500 font-medium">Cobertura de itens</span>
                   <span className="text-xs font-semibold text-gray-700">{s.itemsPreenchidos}/{totalItems} ({s.coveragePercent.toFixed(0)}%)</span>
                 </div>
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${s.coveragePercent === 100 ? 'bg-green-500' : s.coveragePercent > 80 ? 'bg-blue-500' : 'bg-amber-400'}`}
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${s.coveragePercent === 100 ? 'bg-green-500' : s.coveragePercent > 80 ? 'bg-blue-500' : 'bg-amber-400'}`}
                     style={{ width: `${s.coveragePercent}%` }} />
                 </div>
               </div>
-              {/* Valor + BDI */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-base font-bold text-gray-900">{formatBRL(s.proposal.valor_total)}</p>
-                  <p className="text-[10px] text-gray-400">Valor total</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-gray-600">{s.proposal.bdi_global.toFixed(1)}%</p>
-                  <p className="text-[10px] text-gray-400">BDI global</p>
-                </div>
-              </div>
-              {/* Stats grid */}
-              <div className="grid grid-cols-4 gap-1.5 text-center">
-                <div className={`rounded-lg p-2 ${
-                  s.avgDesvio === null ? 'bg-gray-50' :
-                  s.avgDesvio > 20 ? 'bg-red-50' : s.avgDesvio > 5 ? 'bg-amber-50' : 'bg-green-50'
+
+              {/* Grade de métricas */}
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div className={`rounded-xl p-2.5 ${
+                  s.avgDesvio === null ? 'bg-gray-50' : Math.abs(s.avgDesvio) < 5 ? 'bg-green-50' : s.avgDesvio > 10 ? 'bg-red-50' : 'bg-amber-50'
                 }`}>
-                  <p className={`text-sm font-bold ${
-                    s.avgDesvio === null ? 'text-gray-400' :
-                    s.avgDesvio > 20 ? 'text-red-600' : s.avgDesvio > 5 ? 'text-amber-600' : 'text-green-700'
+                  <p className={`text-base font-bold ${
+                    s.avgDesvio === null ? 'text-gray-400' : Math.abs(s.avgDesvio) < 5 ? 'text-green-700' : s.avgDesvio > 10 ? 'text-red-600' : 'text-amber-600'
                   }`}>
                     {s.avgDesvio !== null ? `${s.avgDesvio > 0 ? '+' : ''}${s.avgDesvio.toFixed(1)}%` : '—'}
                   </p>
                   <p className="text-[9px] text-gray-400 leading-tight mt-0.5">Desv. médio</p>
                 </div>
-                <div className={`rounded-lg p-2 ${s.itemsAcimaDe20 > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
-                  <p className={`text-sm font-bold ${s.itemsAcimaDe20 > 0 ? 'text-red-600' : 'text-gray-400'}`}>{s.itemsAcimaDe20}</p>
-                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">Ac. +20%</p>
+                <div className={`rounded-xl p-2.5 ${s.itemsAcimaDaMedia > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+                  <p className={`text-base font-bold ${s.itemsAcimaDaMedia > 0 ? 'text-red-600' : 'text-gray-400'}`}>{s.itemsAcimaDaMedia}</p>
+                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">+10% média</p>
                 </div>
-                <div className={`rounded-lg p-2 ${s.itemsAbaixoRef > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
-                  <p className={`text-sm font-bold ${s.itemsAbaixoRef > 0 ? 'text-green-700' : 'text-gray-400'}`}>{s.itemsAbaixoRef}</p>
-                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">Ab. ref.</p>
+                <div className={`rounded-xl p-2.5 ${s.itemsAbaixoMedia > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
+                  <p className={`text-base font-bold ${s.itemsAbaixoMedia > 0 ? 'text-green-700' : 'text-gray-400'}`}>{s.itemsAbaixoMedia}</p>
+                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">-10% média</p>
                 </div>
-                <div className={`rounded-lg p-2 ${s.itemsMinPreco > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
-                  <p className={`text-sm font-bold ${s.itemsMinPreco > 0 ? 'text-amber-700' : 'text-gray-400'}`}>{s.itemsMinPreco}</p>
-                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">Min. preço</p>
+                <div className={`rounded-xl p-2.5 ${s.itemsMinPreco > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                  <p className={`text-base font-bold ${s.itemsMinPreco > 0 ? 'text-amber-700' : 'text-gray-400'}`}>{s.itemsMinPreco}</p>
+                  <p className="text-[9px] text-gray-400 leading-tight mt-0.5">Mín. preço</p>
                 </div>
               </div>
-              {/* Status */}
+
+              {/* Status de itens */}
               {s.itemsFaltando > 0 ? (
-                <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-2 py-1.5">
-                  <AlertTriangle size={11} />
-                  {s.itemsFaltando} {s.itemsFaltando === 1 ? 'item sem preço' : 'itens sem preço'}
+                <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                  <AlertTriangle size={12} />
+                  {s.itemsFaltando} {s.itemsFaltando === 1 ? 'item sem preço' : 'itens sem preço'} — proposta incompleta
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5 text-xs text-green-600 bg-green-50 rounded-lg px-2 py-1.5">
-                  <CheckCircle size={11} />
-                  Proposta completa — todos os itens preenchidos
+                <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 rounded-lg px-3 py-2">
+                  <CheckCircle size={12} />
+                  Proposta completa — todos os {totalItems} itens preenchidos
                 </div>
               )}
             </div>
@@ -709,18 +752,21 @@ function PanelFornecedores({
         ))}
       </div>
 
-      {/* Tabela comparativa de desvios */}
+      {/* Tabela comparativa vs média */}
       <div>
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Desvio por item × fornecedor</h3>
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+          Preço unitário × Média das Propostas (desvio em %)
+        </h3>
         <div className="overflow-auto rounded-xl border border-gray-200">
           <table className="w-full text-xs border-collapse min-w-max">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Item</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Descrição</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-blue-50">Ref.</th>
+                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-blue-50">Ref. PQ</th>
+                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-purple-50">Média</th>
                 {proposals.map((p) => (
-                  <th key={p.id} className="px-3 py-2.5 text-right font-semibold text-gray-600 max-w-[100px]">
+                  <th key={p.id} className="px-3 py-2.5 text-right font-semibold text-gray-600 max-w-[110px]">
                     <div className="truncate" title={p.empresa}>{p.empresa}</div>
                   </th>
                 ))}
@@ -729,19 +775,20 @@ function PanelFornecedores({
             <tbody>
               {filteredItems.slice(0, 100).map((item, idx) => (
                 <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                  <td className="px-3 py-1.5 font-mono text-gray-500">{item.numero_item}</td>
+                  <td className="px-3 py-1.5 font-mono text-gray-500 whitespace-nowrap">{item.numero_item}</td>
                   <td className="px-3 py-1.5 text-gray-700 max-w-[180px]">
                     <div className="truncate" title={item.descricao}>{item.descricao}</div>
                   </td>
-                  <td className="px-3 py-1.5 text-right text-blue-700 bg-blue-50/40">{formatBRL(item.preco_referencia)}</td>
+                  <td className="px-3 py-1.5 text-right text-blue-700 bg-blue-50/40 whitespace-nowrap">{formatBRL(item.preco_referencia)}</td>
+                  <td className="px-3 py-1.5 text-right text-purple-700 bg-purple-50/40 font-medium whitespace-nowrap">{formatBRL(item.preco_medio)}</td>
                   {proposals.map((p) => {
                     const price = item.precos[String(p.id)]
-                    const pct = price != null ? pctDiff(price, item.preco_referencia) : null
+                    const pct = price != null ? pctDiff(price, item.preco_medio ?? undefined) : null
                     return (
-                      <td key={p.id} className={`px-3 py-1.5 text-right ${
+                      <td key={p.id} className={`px-3 py-1.5 text-right whitespace-nowrap ${
                         price == null ? 'text-gray-200' :
-                        pct != null && pct > 20 ? 'bg-red-50 text-red-600' :
-                        pct != null && pct > 5 ? 'bg-amber-50 text-amber-700' :
+                        pct != null && pct > 10 ? 'bg-red-50 text-red-600' :
+                        pct != null && pct < -10 ? 'bg-green-50 text-green-700' :
                         'text-gray-700'
                       }`}>
                         {price == null ? '—' : pctBadge(pct)}
@@ -776,6 +823,12 @@ function PanelDistribuicao({
     return <EmptyState message="Preencha disciplina, categoria ou localidade nos itens da Planilha PQ para ver a distribuição." />
   }
 
+  // Totais consolidados do conjunto com mais dados
+  const base = disciplines.length > 0 ? disciplines : categorias.length > 0 ? categorias : localidades
+  const totalValor = base.reduce((s, d) => s + Number((d as any).valor_total), 0)
+  const totalItens = base.reduce((s, d) => s + (d as any).count_items, 0)
+  const precoMedio = totalItens > 0 ? totalValor / totalItens : 0
+
   const sections = [
     { show: localidades.length > 0, content: <DisciplineChart data={localidades} nameKey="localidade" title="Distribuição por Localidade (R$)" /> },
     { show: disciplines.length > 0, content: <DisciplineChart data={disciplines} nameKey="disciplina" title="Distribuição por Disciplina (R$)" /> },
@@ -783,7 +836,25 @@ function PanelDistribuicao({
   ].filter((s) => s.show)
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
+      {/* Card de resumo */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-blue-600 text-white rounded-xl px-5 py-4">
+          <p className="text-xs font-medium opacity-75 mb-1">Valor Total (PQ)</p>
+          <p className="text-2xl font-bold">{formatBRL(totalValor)}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl px-5 py-4">
+          <p className="text-xs text-gray-400 font-medium mb-1">Total de Itens</p>
+          <p className="text-2xl font-bold text-gray-900">{totalItens}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{base.length} grupos</p>
+        </div>
+        <div className="bg-white border border-purple-200 rounded-xl px-5 py-4">
+          <p className="text-xs text-purple-500 font-medium mb-1">Preço Médio por Item</p>
+          <p className="text-2xl font-bold text-purple-700">{formatBRL(precoMedio)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">referência interna</p>
+        </div>
+      </div>
+
       {sections.map((s, i) => (
         <React.Fragment key={i}>
           {i > 0 && <hr className="border-gray-100" />}
@@ -1028,45 +1099,54 @@ export default function Analytics() {
 
             {/* ── PARETO / ABC ── */}
             {tab === 'pareto' && (
-              <div className="space-y-8">
+              <div className="space-y-6">
                 {loadingPareto ? <Loading /> : !paretoData?.items.length ? (
                   <EmptyState message="Cadastre preços de referência na Planilha PQ para visualizar o Pareto." />
                 ) : (
                   <>
-                    {/* ABC Summary badges — with Total Global */}
-                    <div className="flex gap-4 flex-wrap items-start">
-                      {/* Total global destacado */}
-                      <div className="border-2 border-blue-300 bg-blue-600 text-white rounded-xl px-5 py-3 shadow-sm">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-xl font-bold">Total Geral</span>
-                          <span className="text-sm font-medium opacity-80">{(paretoData.count_a + paretoData.count_b + paretoData.count_c)} itens</span>
-                        </div>
-                        <p className="text-lg font-bold mt-0.5 opacity-95">{formatBRL(Number(paretoData.total_valor))}</p>
-                      </div>
-                      {(['A', 'B', 'C'] as const).map((cls) => {
-                        const count = cls === 'A' ? paretoData.count_a : cls === 'B' ? paretoData.count_b : paretoData.count_c
-                        const valor = cls === 'A' ? paretoData.valor_a : cls === 'B' ? paretoData.valor_b : paretoData.valor_c
-                        const colors = { A: 'border-green-300 bg-green-50 text-green-800', B: 'border-amber-300 bg-amber-50 text-amber-800', C: 'border-gray-300 bg-gray-50 text-gray-700' }
-                        const pct = Number(paretoData.total_valor) > 0
-                          ? Math.round((Number(valor) / Number(paretoData.total_valor)) * 100)
-                          : 0
-                        return (
-                          <div key={cls} className={`border rounded-xl px-4 py-3 ${colors[cls]}`}>
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-xl font-bold">Classe {cls}</span>
-                              <span className="text-sm font-medium">{count} itens</span>
-                            </div>
-                            <p className="text-sm font-semibold mt-0.5">{formatBRL(Number(valor))}</p>
-                            <p className="text-xs opacity-60 mt-0.5">{pct}% do total</p>
+                    {/* Cards + Pizza lado a lado */}
+                    <div className="flex gap-6 items-stretch">
+                      {/* Cards de classe */}
+                      <div className="flex flex-col gap-3 flex-shrink-0">
+                        <div className="border-2 border-blue-300 bg-blue-600 text-white rounded-xl px-5 py-3 shadow-sm">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-lg font-bold">Total Geral</span>
+                            <span className="text-sm font-medium opacity-80">{(paretoData.count_a + paretoData.count_b + paretoData.count_c)} itens</span>
                           </div>
-                        )
-                      })}
+                          <p className="text-xl font-bold mt-0.5 opacity-95">{formatBRL(Number(paretoData.total_valor))}</p>
+                        </div>
+                        {(['A', 'B', 'C'] as const).map((cls) => {
+                          const count = cls === 'A' ? paretoData.count_a : cls === 'B' ? paretoData.count_b : paretoData.count_c
+                          const valor = cls === 'A' ? paretoData.valor_a : cls === 'B' ? paretoData.valor_b : paretoData.valor_c
+                          const styles = {
+                            A: { border: 'border-blue-200', bg: 'bg-blue-50', text: 'text-blue-800', accent: '#2563eb', pct: '~80%' },
+                            B: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-800', accent: '#f59e0b', pct: '~15%' },
+                            C: { border: 'border-gray-200', bg: 'bg-gray-50', text: 'text-gray-700', accent: '#10b981', pct: '~5%' },
+                          }[cls]
+                          const pct = Number(paretoData.total_valor) > 0
+                            ? ((Number(valor) / Number(paretoData.total_valor)) * 100).toFixed(0)
+                            : 0
+                          return (
+                            <div key={cls} className={`border-l-4 rounded-xl px-4 py-3 ${styles.border} ${styles.bg} ${styles.text}`} style={{ borderLeftColor: styles.accent }}>
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-base font-bold">Classe {cls}</span>
+                                <span className="text-sm font-medium">{count} itens</span>
+                              </div>
+                              <p className="text-sm font-semibold mt-0.5">{formatBRL(Number(valor))}</p>
+                              <p className="text-xs opacity-60 mt-0.5">{pct}% do total</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {/* Gráfico de pizza */}
+                      <div className="flex-1 bg-white border border-gray-100 rounded-xl flex items-center justify-center py-2">
+                        <ABCCurveChart data={paretoData} />
+                      </div>
                     </div>
 
-                    <ParetoChart items={paretoData.items} />
-
-                    <div>
-                      <ABCCurveChart data={paretoData} />
+                    {/* Gráfico de Pareto */}
+                    <div className="bg-white border border-gray-100 rounded-xl p-4">
+                      <ParetoChart items={paretoData.items} />
                     </div>
 
                     {/* ABC Table */}
@@ -1147,69 +1227,148 @@ export default function Analytics() {
             {tab === 'escopo' && (
               loadingScope ? <Loading /> : !scopeData ? (
                 <EmptyState message="Nenhuma revisão encontrada. Crie uma revisão para validar o escopo." />
-              ) : !scopeData.any_changes ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-3">
-                  <CheckCircle size={48} className="text-green-500" />
-                  <p className="text-green-700 font-semibold text-base">Nenhuma alteração de escopo detectada nas propostas em relação à PQ.</p>
-                  <p className="text-gray-400 text-sm">Revisão {scopeData.revision_numero} — todas as propostas estão alinhadas com o escopo da PQ.</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                    <AlertTriangle size={16} />
-                    <span className="text-sm font-medium">
-                      Alterações de escopo detectadas na Revisão {scopeData.revision_numero}
-                    </span>
-                  </div>
-                  {scopeData.proposals.filter((p) => p.has_changes).map((proposal) => (
-                    <div key={proposal.id} className="border border-gray-200 rounded-xl overflow-hidden">
-                      <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-                        <Trophy size={14} className="text-gray-400" />
-                        <span className="font-semibold text-gray-800 text-sm">{proposal.empresa}</span>
-                        <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 ml-auto">
-                          {proposal.changes.length} alteração{proposal.changes.length !== 1 ? 'ões' : ''}
-                        </span>
+              ) : (() => {
+                const allProposals = scopeData.proposals
+                const withChanges = allProposals.filter((p: any) => p.has_changes)
+                const totalChanges = withChanges.reduce((acc: number, p: any) => acc + p.changes.length, 0)
+                const descChanges = withChanges.reduce((acc: number, p: any) =>
+                  acc + p.changes.filter((c: any) => c.changed_fields.includes('descricao')).length, 0)
+                const unidChanges = withChanges.reduce((acc: number, p: any) =>
+                  acc + p.changes.filter((c: any) => c.changed_fields.includes('unidade')).length, 0)
+                const qtdChanges = withChanges.reduce((acc: number, p: any) =>
+                  acc + p.changes.filter((c: any) => c.changed_fields.includes('quantidade')).length, 0)
+
+                // Agrupar todas as alterações por item (para visão consolidada)
+                const byItem: Record<string, { numero_item: string; proposals: Array<{ empresa: string; change: any }> }> = {}
+                for (const p of withChanges) {
+                  for (const c of p.changes) {
+                    if (!byItem[c.numero_item]) byItem[c.numero_item] = { numero_item: c.numero_item, proposals: [] }
+                    byItem[c.numero_item].proposals.push({ empresa: p.empresa, change: c })
+                  }
+                }
+                const byItemList = Object.values(byItem).sort((a, b) => a.numero_item.localeCompare(b.numero_item))
+
+                return (
+                  <div className="space-y-6">
+                    {/* Cards de resumo */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-blue-600 text-white rounded-xl px-4 py-4">
+                        <p className="text-xs font-medium opacity-75">Propostas analisadas</p>
+                        <p className="text-3xl font-bold mt-1">{allProposals.length}</p>
+                        <p className="text-xs opacity-60 mt-0.5">Rev. {scopeData.revision_numero}</p>
                       </div>
-                      <div className="overflow-auto">
-                        <table className="w-full text-xs border-collapse">
-                          <thead>
-                            <tr className="bg-gray-50 border-b border-gray-200">
-                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Item</th>
-                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Campo</th>
-                              <th className="px-3 py-2 text-left font-semibold text-gray-600 text-blue-700">Valor PQ</th>
-                              <th className="px-3 py-2 text-left font-semibold text-gray-600 text-amber-700">Valor Proposta</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {proposal.changes.map((change) =>
-                              change.changed_fields.map((field, fi) => (
-                                <tr key={`${change.numero_item}-${field}`} className={`border-b border-gray-100 ${fi % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
-                                  {fi === 0 && (
-                                    <td className="px-3 py-2 font-mono text-gray-500 align-top" rowSpan={change.changed_fields.length}>
-                                      {change.numero_item}
-                                    </td>
-                                  )}
-                                  <td className="px-3 py-2 text-gray-500 capitalize">{field}</td>
-                                  <td className="px-3 py-2 text-blue-700 font-medium">
-                                    {field === 'descricao' ? change.descricao_pq
-                                      : field === 'unidade' ? change.unidade_pq
-                                      : formatNumber(change.quantidade_pq, 4)}
-                                  </td>
-                                  <td className="px-3 py-2 text-amber-700 font-semibold bg-amber-50">
-                                    {field === 'descricao' ? (change.descricao_proposta ?? '—')
-                                      : field === 'unidade' ? (change.unidade_proposta ?? '—')
-                                      : formatNumber(change.quantidade_proposta ?? null, 4)}
-                                  </td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
+                      <div className={`rounded-xl px-4 py-4 border ${withChanges.length > 0 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+                        <p className={`text-xs font-medium ${withChanges.length > 0 ? 'text-amber-600' : 'text-green-600'}`}>Com alterações</p>
+                        <p className={`text-3xl font-bold mt-1 ${withChanges.length > 0 ? 'text-amber-700' : 'text-green-700'}`}>{withChanges.length}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{totalChanges} item(ns) alterado(s)</p>
+                      </div>
+                      <div className="bg-white border border-gray-200 rounded-xl px-4 py-4">
+                        <p className="text-xs text-gray-400 font-medium">Sem alterações</p>
+                        <p className="text-3xl font-bold text-gray-700 mt-1">{allProposals.length - withChanges.length}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">alinhadas com a PQ</p>
+                      </div>
+                      <div className="bg-white border border-gray-200 rounded-xl px-4 py-4">
+                        <p className="text-xs text-gray-400 font-medium mb-2">Campos alterados</p>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs"><span className="text-gray-500">Descrição</span><span className="font-semibold text-red-600">{descChanges}</span></div>
+                          <div className="flex justify-between text-xs"><span className="text-gray-500">Unidade</span><span className="font-semibold text-amber-600">{unidChanges}</span></div>
+                          <div className="flex justify-between text-xs"><span className="text-gray-500">Quantidade</span><span className="font-semibold text-orange-600">{qtdChanges}</span></div>
+                        </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )
+
+                    {!scopeData.any_changes ? (
+                      <div className="flex flex-col items-center justify-center py-12 gap-3">
+                        <CheckCircle size={48} className="text-green-500" />
+                        <p className="text-green-700 font-semibold">Nenhuma alteração de escopo detectada.</p>
+                        <p className="text-gray-400 text-sm">Todas as propostas estão alinhadas com a PQ.</p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Cards por proposta */}
+                        <div>
+                          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Resumo por Proponente</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                            {allProposals.map((p: any) => (
+                              <div key={p.id} className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${p.has_changes ? 'border-amber-200 bg-amber-50' : 'border-green-200 bg-green-50'}`}>
+                                {p.has_changes ? <AlertTriangle size={16} className="text-amber-500 flex-shrink-0" /> : <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-gray-800 truncate">{p.empresa}</p>
+                                  <p className={`text-xs ${p.has_changes ? 'text-amber-600' : 'text-green-600'}`}>
+                                    {p.has_changes ? `${p.changes.length} item(ns) com divergência` : 'Escopo em conformidade'}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Detalhamento por item */}
+                        <div>
+                          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                            Detalhamento por Item ({byItemList.length} item{byItemList.length !== 1 ? 'ns' : ''} com divergência)
+                          </h3>
+                          <div className="space-y-3">
+                            {byItemList.map(({ numero_item, proposals: propList }) => (
+                              <div key={numero_item} className="border border-gray-200 rounded-xl overflow-hidden">
+                                <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
+                                  <span className="text-xs font-mono font-bold text-gray-700">{numero_item}</span>
+                                  <span className="text-xs text-gray-400">{propList[0].change.descricao_pq}</span>
+                                  <span className="ml-auto text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                    {propList.length} proponente{propList.length !== 1 ? 's' : ''}
+                                  </span>
+                                </div>
+                                <div className="overflow-auto">
+                                  <table className="w-full text-xs border-collapse">
+                                    <thead>
+                                      <tr className="bg-white border-b border-gray-100">
+                                        <th className="px-3 py-2 text-left font-semibold text-gray-500">Proponente</th>
+                                        <th className="px-3 py-2 text-left font-semibold text-gray-500">Campo</th>
+                                        <th className="px-3 py-2 text-left font-semibold text-blue-600">PQ (original)</th>
+                                        <th className="px-3 py-2 text-left font-semibold text-amber-600">Proposta (alterado)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {propList.flatMap(({ empresa, change }, pi) =>
+                                        change.changed_fields.map((field: string, fi: number) => (
+                                          <tr key={`${empresa}-${field}`} className={`border-b border-gray-100 ${pi % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
+                                            {fi === 0 && (
+                                              <td className="px-3 py-2 font-semibold text-gray-700 align-top" rowSpan={change.changed_fields.length}>
+                                                {empresa}
+                                              </td>
+                                            )}
+                                            <td className="px-3 py-2 text-gray-500 capitalize">
+                                              {field === 'descricao' ? 'Descrição' : field === 'unidade' ? 'Unidade' : 'Quantidade'}
+                                            </td>
+                                            <td className="px-3 py-2 text-blue-700 font-medium max-w-[220px]">
+                                              <div className="truncate" title={field === 'descricao' ? change.descricao_pq : undefined}>
+                                                {field === 'descricao' ? change.descricao_pq
+                                                  : field === 'unidade' ? change.unidade_pq
+                                                  : formatNumber(change.quantidade_pq, 4)}
+                                              </div>
+                                            </td>
+                                            <td className="px-3 py-2 text-amber-700 font-semibold bg-amber-50 max-w-[220px]">
+                                              <div className="truncate" title={field === 'descricao' ? (change.descricao_proposta ?? '—') : undefined}>
+                                                {field === 'descricao' ? (change.descricao_proposta ?? '—')
+                                                  : field === 'unidade' ? (change.unidade_proposta ?? '—')
+                                                  : formatNumber(change.quantidade_proposta ?? null, 4)}
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        ))
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })()
             )}
 
             {/* ── REVISÕES ── */}

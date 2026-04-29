@@ -193,11 +193,42 @@ class AnalyticsService:
         )
 
     @staticmethod
+    def _avg_proposal_prices(db: Session, project_id: int, revision_id: int | None, pq_item_ids: list[int]) -> dict[int, float]:
+        """Returns average proposal unit price (COM REIDI or SEM REIDI) per PQ item id."""
+        if not pq_item_ids:
+            return {}
+        prop_q = db.query(Proposal).filter(Proposal.project_id == project_id)
+        if revision_id is not None:
+            prop_q = prop_q.filter(Proposal.revision_id == revision_id)
+        prop_ids = [p.id for p in prop_q.with_entities(Proposal.id).all()]
+        if not prop_ids:
+            return {}
+
+        avg_prices: dict[int, float] = {}
+        pi_rows = (
+            db.query(ProposalItem)
+            .filter(
+                ProposalItem.proposal_id.in_(prop_ids),
+                ProposalItem.pq_item_id.in_(pq_item_ids),
+            )
+            .all()
+        )
+        buckets: dict[int, list[float]] = {}
+        for pi in pi_rows:
+            price = float(pi.custo_unit_com_reidi or pi.preco_unitario or 0)
+            if price > 0:
+                buckets.setdefault(pi.pq_item_id, []).append(price)
+        for pq_id, prices in buckets.items():
+            avg_prices[pq_id] = sum(prices) / len(prices)
+        return avg_prices
+
+    @staticmethod
     def get_discipline_summary(db: Session, project_id: int, revision_id: int | None = None) -> List[DisciplineSummary]:
         q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             q = q.filter(PQItem.revision_id == revision_id)
         items = q.all()
+        avg_prices = AnalyticsService._avg_proposal_prices(db, project_id, revision_id, [i.id for i in items])
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
         grand = 0.0
@@ -206,8 +237,9 @@ class AnalyticsService:
             key = item.disciplina or "Sem Disciplina"
             totals.setdefault(key, 0.0)
             counts.setdefault(key, 0)
-            if item.preco_referencia and item.quantidade:
-                v = float(item.quantidade) * float(item.preco_referencia)
+            unit_price = avg_prices.get(item.id) or (float(item.preco_referencia) if item.preco_referencia else None)
+            if unit_price and item.quantidade:
+                v = float(item.quantidade) * unit_price
                 totals[key] += v
                 grand += v
             counts[key] += 1
@@ -227,6 +259,7 @@ class AnalyticsService:
         if revision_id is not None:
             q = q.filter(PQItem.revision_id == revision_id)
         items = q.all()
+        avg_prices = AnalyticsService._avg_proposal_prices(db, project_id, revision_id, [i.id for i in items])
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
         grand = 0.0
@@ -235,8 +268,9 @@ class AnalyticsService:
             key = item.categoria or "Sem Categoria"
             totals.setdefault(key, 0.0)
             counts.setdefault(key, 0)
-            if item.preco_referencia and item.quantidade:
-                v = float(item.quantidade) * float(item.preco_referencia)
+            unit_price = avg_prices.get(item.id) or (float(item.preco_referencia) if item.preco_referencia else None)
+            if unit_price and item.quantidade:
+                v = float(item.quantidade) * unit_price
                 totals[key] += v
                 grand += v
             counts[key] += 1
@@ -256,6 +290,7 @@ class AnalyticsService:
         if revision_id is not None:
             q = q.filter(PQItem.revision_id == revision_id)
         items = q.all()
+        avg_prices = AnalyticsService._avg_proposal_prices(db, project_id, revision_id, [i.id for i in items])
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
         grand = 0.0
@@ -264,8 +299,9 @@ class AnalyticsService:
             key = item.localidade or "Sem Localidade"
             totals.setdefault(key, 0.0)
             counts.setdefault(key, 0)
-            if item.preco_referencia and item.quantidade:
-                v = float(item.quantidade) * float(item.preco_referencia)
+            unit_price = avg_prices.get(item.id) or (float(item.preco_referencia) if item.preco_referencia else None)
+            if unit_price and item.quantidade:
+                v = float(item.quantidade) * unit_price
                 totals[key] += v
                 grand += v
             counts[key] += 1

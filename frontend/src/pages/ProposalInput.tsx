@@ -170,10 +170,17 @@ export default function ProposalInput() {
   if (loadingProposal) return <div className="p-8 text-gray-400">Carregando proposta…</div>
   if (!proposal) return <div className="p-8 text-red-500">Proposta não encontrada.</div>
 
+  const totalSemGlobal = pqItems.reduce((acc, pq) => {
+    const cudSem = Number(prices[pq.id]?.preco_unitario) || 0
+    const bdiSemV = prices[pq.id]?.bdi ? Number(prices[pq.id].bdi) : Number(bdiGlobal) || 0
+    const cudBdi = cudSem > 0 ? cudSem * (1 + bdiSemV / 100) : 0
+    return acc + (cudBdi > 0 ? pq.quantidade * cudBdi : 0)
+  }, 0)
+
   return (
-    <div className="page">
+    <div className="px-6 py-4 max-w-[1800px] mx-auto flex flex-col h-screen overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-3 flex-shrink-0">
         <div className="flex items-center gap-3">
           <Link to={`/projetos/${pid}/equalizacao`} className="text-gray-400 hover:text-gray-600">
             <ArrowLeft size={20} />
@@ -187,14 +194,21 @@ export default function ProposalInput() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-xs text-gray-400">Total COM REIDI</p>
-            <p className="text-lg font-bold text-gray-900">{formatBRL(total)}</p>
-            {desvio !== null && (
-              <p className={`text-xs font-medium ${desvio > 10 ? 'text-red-500' : desvio < -10 ? 'text-green-600' : 'text-gray-500'}`}>
-                {desvio > 0 ? '+' : ''}{desvio.toFixed(1)}% vs. referência
-              </p>
-            )}
+          <div className="flex items-center gap-6">
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Total SEM REIDI</p>
+              <p className="text-base font-bold text-orange-700">{formatBRL(totalSemGlobal)}</p>
+            </div>
+            <div className="w-px h-10 bg-gray-200" />
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Total COM REIDI</p>
+              <p className="text-lg font-bold text-gray-900">{formatBRL(total)}</p>
+              {desvio !== null && (
+                <p className={`text-xs font-medium ${desvio > 10 ? 'text-red-500' : desvio < -10 ? 'text-green-600' : 'text-gray-500'}`}>
+                  {desvio > 0 ? '+' : ''}{desvio.toFixed(1)}% vs. referência
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Menu Excel */}
@@ -266,7 +280,7 @@ export default function ProposalInput() {
       </div>
 
       {/* BDI Global */}
-      <div className="card p-4 mb-4 flex items-center gap-6">
+      <div className="card p-3 mb-2 flex items-center gap-6 flex-shrink-0">
         <div className="flex items-center gap-3">
           <label className="text-sm font-medium text-gray-700 whitespace-nowrap">BDI Global (%):</label>
           <input
@@ -291,7 +305,7 @@ export default function ProposalInput() {
       {importing ? (
         <div className="text-center py-20 text-gray-400">Importando preços do Excel…</div>
       ) : (
-        <div className="card overflow-auto">
+        <div className="card overflow-auto flex-1 min-h-0">
           <table className="w-full text-sm border-collapse">
             <thead>
               {/* Linha de grupo — idêntico ao cabeçalho do Excel */}
@@ -313,7 +327,7 @@ export default function ProposalInput() {
                 <th className="px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Disciplina</th>
                 <th className="px-2 py-2 text-left font-semibold w-32 whitespace-nowrap">Categoria</th>
                 <th className="px-2 py-2 text-left font-semibold w-20 whitespace-nowrap">Código</th>
-                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Descrição</th>
+                <th className="px-2 py-2 text-left font-semibold min-w-[300px] whitespace-nowrap">Descrição</th>
                 <th className="px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Unidade Medida</th>
                 <th className="px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Quantidade</th>
                 <th className="px-2 py-2 text-left font-semibold w-20 whitespace-nowrap">Referência</th>
@@ -361,7 +375,7 @@ export default function ProposalInput() {
                     <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.disciplina || '—'}</td>
                     <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.categoria || '—'}</td>
                     <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.codigo || '—'}</td>
-                    <td className="px-2 py-1 text-sm text-gray-700 max-w-xs">{pq.descricao}</td>
+                    <td className="px-2 py-1 text-xs text-gray-700 whitespace-nowrap max-w-[300px] overflow-hidden text-ellipsis" title={pq.descricao}>{pq.descricao}</td>
                     <td className="px-2 py-1 text-xs text-center text-gray-500">{pq.unidade}</td>
                     <td className="px-2 py-1 text-right text-xs tabular-nums">{formatNumber(pq.quantidade, 4)}</td>
                     <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.referencia_codigo || '—'}</td>
@@ -430,10 +444,16 @@ export default function ProposalInput() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                <td colSpan={19} className="px-3 py-3 text-right text-gray-600 text-sm">
-                  Total da Proposta (COM REIDI):
+                <td colSpan={15} className="px-3 py-2.5 text-right text-gray-600 text-sm">
+                  Total SEM REIDI:
                 </td>
-                <td className="px-3 py-3 text-right text-green-900 text-base tabular-nums whitespace-nowrap">
+                <td className="px-3 py-2.5 text-right text-orange-800 text-sm tabular-nums whitespace-nowrap">
+                  {formatBRL(totalSemGlobal)}
+                </td>
+                <td colSpan={3} className="px-3 py-2.5 text-right text-gray-600 text-sm">
+                  Total COM REIDI:
+                </td>
+                <td className="px-3 py-2.5 text-right text-green-900 text-base tabular-nums whitespace-nowrap">
                   {formatBRL(total)}
                 </td>
               </tr>
@@ -451,7 +471,7 @@ export default function ProposalInput() {
         </div>
       )}
 
-      <p className="text-xs text-gray-400 mt-3">
+      <p className="text-xs text-gray-400 py-2 flex-shrink-0">
         Campos editáveis destacados (laranja = SEM REIDI · verde = COM REIDI) · Análise comparativa usa preços COM REIDI
       </p>
     </div>

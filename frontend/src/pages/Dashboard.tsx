@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { projectsAPI, analyticsAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import type { Project, BaselineEntry } from '../types'
-import { getTipoObraLabel, STATUS_LABELS, formatBRL, formatPercent } from '../types'
+import { getTipoObraLabel, STATUS_LABELS, SPE_OPTIONS, formatBRL, formatPercent } from '../types'
 import {
   FolderOpen, Plus, ArrowRight, ChevronRight,
   TrendingDown, Trophy, TrendingUp, BarChart3,
@@ -567,6 +567,31 @@ export default function Dashboard() {
     return map
   }, [baseline])
 
+  // SPE breakdown
+  const speStats = useMemo(() => {
+    const projectSpe: Record<number, string> = {}
+    for (const p of projects) {
+      if (p.spe_unidade) projectSpe[p.id] = p.spe_unidade
+    }
+    const stats: Record<string, { count: number; emAndamento: number; concluidos: number; valorTotal: number }> = {}
+    for (const spe of SPE_OPTIONS) {
+      stats[spe] = { count: 0, emAndamento: 0, concluidos: 0, valorTotal: 0 }
+    }
+    for (const p of projects) {
+      const spe = p.spe_unidade
+      if (!spe || !stats[spe]) continue
+      stats[spe].count++
+      if (p.status === 'EM_ANDAMENTO') stats[spe].emAndamento++
+      if (p.status === 'CONCLUIDO') stats[spe].concluidos++
+    }
+    for (const e of baseline) {
+      const spe = projectSpe[e.project_id]
+      if (!spe || !stats[spe]) continue
+      stats[spe].valorTotal += e.valor_total
+    }
+    return SPE_OPTIONS.map((spe) => ({ spe, ...stats[spe] }))
+  }, [projects, baseline])
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -626,6 +651,50 @@ export default function Dashboard() {
             iconBg="bg-indigo-50" iconColor="text-indigo-600" border="border-indigo-100"
           />
         </div>
+
+        {/* ── SPE — Unidades Contratantes ───────────────────────────────── */}
+        {projects.some((p) => p.spe_unidade) && (
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-1 h-5 bg-purple-500 rounded-full" />
+              <h2 className="text-sm font-bold text-gray-900">Volume por SPE — Unidade Contratante</h2>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+              {speStats.map(({ spe, count, emAndamento, concluidos: conc, valorTotal }) => (
+                <div
+                  key={spe}
+                  className={`bg-white border rounded-xl p-3 flex flex-col gap-1.5 hover:shadow-sm transition-shadow ${
+                    count > 0 ? 'border-purple-100' : 'border-gray-100 opacity-50'
+                  }`}
+                >
+                  <p className="text-[11px] font-bold text-purple-700 leading-tight">{spe}</p>
+                  <p className="text-xl font-black text-gray-900 leading-none">
+                    {valorTotal > 0 ? fmtShort(valorTotal) : '—'}
+                  </p>
+                  <p className="text-[10px] text-gray-400">valor contratado</p>
+                  <div className="border-t border-gray-100 pt-1.5 flex flex-col gap-0.5">
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-gray-400">Projetos</span>
+                      <span className="font-semibold text-gray-700">{count}</span>
+                    </div>
+                    {emAndamento > 0 && (
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-blue-500">Em andamento</span>
+                        <span className="font-semibold text-blue-600">{emAndamento}</span>
+                      </div>
+                    )}
+                    {conc > 0 && (
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-green-500">Concluídos</span>
+                        <span className="font-semibold text-green-600">{conc}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── Seção de Indicadores de Performance ──────────────────────── */}
         {concluidos > 0 && (

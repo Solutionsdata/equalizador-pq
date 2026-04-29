@@ -7,6 +7,7 @@ from app.deps import get_current_user
 from app.models.user import User
 from app.models.project import Project
 from app.models.pq_item import PQItem
+from app.models.proposal_item import ProposalItem
 from app.schemas.pq_item import PQItemCreate, PQItemUpdate, PQItemResponse, PQItemBulkSave
 from app.services.excel import gerar_modelo_pq, importar_pq_excel
 
@@ -33,7 +34,35 @@ def list_pq_items(
     q = db.query(PQItem).filter(PQItem.project_id == project_id)
     if revision_id is not None:
         q = q.filter(PQItem.revision_id == revision_id)
-    return q.order_by(PQItem.ordem, PQItem.numero_item).all()
+    items = q.order_by(PQItem.id).all()
+
+    # Deduplicate by content key, preferring items that have proposal prices (smallest ID first).
+    # This handles cases where the same item was accidentally saved multiple times.
+    item_ids = [item.id for item in items]
+    items_with_prices: set[int] = set()
+    if item_ids:
+        rows = db.query(ProposalItem.pq_item_id).filter(
+            ProposalItem.pq_item_id.in_(item_ids)
+        ).distinct().all()
+        items_with_prices = {r.pq_item_id for r in rows}
+
+    seen: dict[tuple, PQItem] = {}
+    for item in items:
+        key = (
+            item.numero_item,
+            item.localidade or '',
+            item.codigo or '',
+            item.descricao,
+            item.unidade,
+            str(item.quantidade),
+        )
+        if key not in seen:
+            seen[key] = item
+        elif item.id in items_with_prices and seen[key].id not in items_with_prices:
+            # Prefer the item that actually has proposal prices linked
+            seen[key] = item
+
+    return sorted(seen.values(), key=lambda x: (x.ordem, x.numero_item, x.id))
 
 
 @router.post("/project/{project_id}", response_model=PQItemResponse, status_code=status.HTTP_201_CREATED)

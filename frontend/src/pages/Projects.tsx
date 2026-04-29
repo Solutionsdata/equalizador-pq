@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { projectsAPI } from '../services/api'
 import type { Project, ProjectStatus } from '../types'
-import { TIPO_OBRA_OPTIONS, getTipoObraLabel, STATUS_LABELS } from '../types'
+import { TIPO_OBRA_OPTIONS, SPE_OPTIONS, getTipoObraLabel, STATUS_LABELS } from '../types'
 import toast from 'react-hot-toast'
 import {
   Plus, FolderOpen, Table2, FileText, LineChart,
@@ -26,11 +26,12 @@ interface ProjectForm {
   tipo_obra: string
   outraTipoObra: string
   extensao_km: string
+  spe_unidade: string
   status?: ProjectStatus
 }
 
 const EMPTY_FORM: ProjectForm = {
-  nome: '', descricao: '', numero_licitacao: '', tipo_obra: 'Duplicação', outraTipoObra: '', extensao_km: '',
+  nome: '', descricao: '', numero_licitacao: '', tipo_obra: 'Duplicação', outraTipoObra: '', extensao_km: '', spe_unidade: '',
 }
 
 export default function Projects() {
@@ -97,6 +98,7 @@ export default function Projects() {
       tipo_obra: isKnown ? project.tipo_obra : 'Outra',
       outraTipoObra: isKnown ? '' : project.tipo_obra,
       extensao_km: project.extensao_km != null ? String(project.extensao_km) : '',
+      spe_unidade: project.spe_unidade ?? '',
       status: project.status,
     })
     setModal('edit')
@@ -113,6 +115,7 @@ export default function Projects() {
       numero_licitacao: form.numero_licitacao,
       tipo_obra: tipoObra,
       extensao_km: form.extensao_km ? Number(form.extensao_km) : null,
+      spe_unidade: form.spe_unidade || null,
       status: form.status,
     }
     if (modal === 'create') createMutation.mutate(payload as any)
@@ -160,11 +163,16 @@ export default function Projects() {
                 </span>
               </div>
 
-              {/* Tipo e descrição */}
+              {/* Tipo, SPE e descrição */}
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-medium">
                   {getTipoObraLabel(project.tipo_obra)}
                 </span>
+                {project.spe_unidade && (
+                  <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded font-medium">
+                    {project.spe_unidade}
+                  </span>
+                )}
                 {project.extensao_km != null && (
                   <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded font-medium">
                     {Number(project.extensao_km).toFixed(3)} km
@@ -296,6 +304,23 @@ export default function Projects() {
                     onChange={(e) => setForm((f) => ({ ...f, numero_licitacao: e.target.value }))}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  SPE — Unidade Contratante *
+                </label>
+                <select
+                  className="input"
+                  value={form.spe_unidade}
+                  onChange={(e) => setForm((f) => ({ ...f, spe_unidade: e.target.value }))}
+                  required
+                >
+                  <option value="">Selecione a empresa do grupo…</option>
+                  {SPE_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

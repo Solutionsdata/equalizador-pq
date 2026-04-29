@@ -112,7 +112,8 @@ export default function PQEditor() {
 
   const { data: _rawItems, isLoading } = useQuery<PQItem[]>({
     queryKey: ['pq', pid, currentRevisionId],
-    queryFn: () => pqAPI.list(pid, currentRevisionId ?? undefined).then((r) => r.data),
+    queryFn: () => pqAPI.list(pid, currentRevisionId!).then((r) => r.data),
+    enabled: currentRevisionId !== null,
   })
   const serverItems: PQItem[] = Array.isArray(_rawItems) ? _rawItems : []
 
@@ -247,7 +248,7 @@ export default function PQEditor() {
   ]
 
   return (
-    <div className="page">
+    <div className="px-6 py-4 max-w-[1600px] mx-auto flex flex-col h-screen overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
@@ -350,7 +351,7 @@ export default function PQEditor() {
           {importing ? 'Importando planilha…' : 'Carregando planilha…'}
         </div>
       ) : (
-        <div className="card overflow-auto">
+        <div className="card overflow-auto flex-1 min-h-0">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-gray-100 text-gray-600 text-xs">
@@ -422,7 +423,7 @@ export default function PQEditor() {
         </div>
       )}
 
-      <p className="text-xs text-gray-400 mt-3">
+      <p className="text-xs text-gray-400 py-2 flex-shrink-0">
         Planilha PQ · 12 colunas · {rows.length} itens · Clique em qualquer célula para editar · Salve para confirmar
       </p>
     </div>

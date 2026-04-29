@@ -3,6 +3,16 @@ export type WorkType = string
 export type ProjectStatus = 'RASCUNHO' | 'EM_ANDAMENTO' | 'CONCLUIDO' | 'ARQUIVADO'
 
 export const TIPO_OBRA_OPTIONS = ['Duplicação', 'Edificação', 'OAE', 'Outra']
+
+export const SPE_OPTIONS = [
+  'Litoral Pioneiro',
+  'Via Mineira',
+  'Iguaçu',
+  'Sul de Minas',
+  'Paraná',
+  'Triangulo',
+  'Vias do Café',
+]
 export type ProposalStatus = 'RECEBIDA' | 'EM_ANALISE' | 'VENCEDORA' | 'PERDEDORA' | 'DESCLASSIFICADA'
 export type ABCClass = 'A' | 'B' | 'C'
 
@@ -27,6 +37,7 @@ export interface Project {
   numero_licitacao?: string
   tipo_obra: WorkType
   extensao_km?: number | null
+  spe_unidade?: string | null
   status: ProjectStatus
   created_at: string
   updated_at: string
