@@ -363,13 +363,13 @@ def gerar_modelo_proposta(
         c.number_format = FMT["pct"]; c.alignment = _align("right")
 
         c = ws.cell(row=ri, column=col_cud_bdi_sem,
-                    value=f"={cud_sem_ref}*(1+{bdi_sem_ref}/100)")
+                    value=f"={cud_sem_ref}*(1+{bdi_sem_ref})")
         c.fill = _fill(LARANJA_LINHA_A if alt else LARANJA_LINHA_B)
         c.font = _font(size=9); c.border = _border()
         c.number_format = FMT["brl4"]; c.alignment = _align("right")
 
         c = ws.cell(row=ri, column=col_total_sem,
-                    value=f"={qtd_letter}{ri}*{cud_sem_ref}*(1+{bdi_sem_ref}/100)")
+                    value=f"={qtd_letter}{ri}*{cud_sem_ref}*(1+{bdi_sem_ref})")
         c.fill = _fill(LARANJA_LINHA_A if alt else LARANJA_LINHA_B)
         c.font = _font("C2410C", bold=True, size=9); c.border = _border()
         c.number_format = FMT["brl2"]; c.alignment = _align("right")
@@ -392,13 +392,13 @@ def gerar_modelo_proposta(
         c.number_format = FMT["pct"]; c.alignment = _align("right")
 
         c = ws.cell(row=ri, column=col_cud_bdi_com,
-                    value=f"={cud_com_ref}*(1+{bdi_com_ref}/100)")
+                    value=f"={cud_com_ref}*(1+{bdi_com_ref})")
         c.fill = _fill(VERDE_LINHA_A if alt else VERDE_LINHA_B)
         c.font = _font(size=9); c.border = _border()
         c.number_format = FMT["brl4"]; c.alignment = _align("right")
 
         c = ws.cell(row=ri, column=col_total_com,
-                    value=f"={qtd_letter}{ri}*{cud_com_ref}*(1+{bdi_com_ref}/100)")
+                    value=f"={qtd_letter}{ri}*{cud_com_ref}*(1+{bdi_com_ref})")
         c.fill = _fill(VERDE_LINHA_A if alt else VERDE_LINHA_B)
         c.font = _font("15803D", bold=True, size=9); c.border = _border()
         c.number_format = FMT["brl2"]; c.alignment = _align("right")

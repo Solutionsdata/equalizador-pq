@@ -139,8 +139,12 @@ class AnalyticsService:
                 if pi and pu_raw:
                     pu = float(pu_raw)
                     bdi_val = pi.bdi_com_reidi if com_price else pi.bdi
-                    bdi = float(bdi_val if bdi_val is not None else p.bdi_global or 0)
-                    total = float(item.quantidade) * pu * (1 + bdi / 100)
+                    # Individual BDI stored as fraction (0.43 = 43%); global BDI stored as percentage (43 = 43%)
+                    if bdi_val is not None:
+                        bdi_factor = 1 + float(bdi_val)
+                    else:
+                        bdi_factor = 1 + float(p.bdi_global or 0) / 100
+                    total = float(item.quantidade) * pu * bdi_factor
                     precos[str(p.id)] = pu
                     totais[str(p.id)] = round(total, 2)
                     prices_list.append(pu)

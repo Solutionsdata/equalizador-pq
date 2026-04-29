@@ -155,13 +155,24 @@ export default function ProposalInput() {
     }
   }
 
+  // Individual BDI é fração (0.43 = 43%) → fator = (1 + BDI)
+  // BDI Global é percentual (43 = 43%) → fator = (1 + BDI/100)
+  function bdiFactorSem(pqId: number): number {
+    const indiv = prices[pqId]?.bdi
+    if (indiv && indiv !== '') return 1 + Number(indiv)
+    return 1 + (Number(bdiGlobal) || 0) / 100
+  }
+  function bdiFactorCom(pqId: number): number {
+    const hasCom = !!(prices[pqId]?.custo_unit_com_reidi)
+    const indiv = hasCom ? prices[pqId]?.bdi_com_reidi : prices[pqId]?.bdi
+    if (indiv && indiv !== '') return 1 + Number(indiv)
+    return 1 + (Number(bdiGlobal) || 0) / 100
+  }
+
   // Total COM REIDI — mesma lógica do backend (analytics usa este valor)
   const total = pqItems.reduce((acc, pq) => {
     const comPrice = Number(prices[pq.id]?.custo_unit_com_reidi) || Number(prices[pq.id]?.preco_unitario) || 0
-    const bdiComVal = prices[pq.id]?.custo_unit_com_reidi
-      ? (Number(prices[pq.id]?.bdi_com_reidi) || Number(bdiGlobal) || 0)
-      : (Number(prices[pq.id]?.bdi) || Number(bdiGlobal) || 0)
-    return acc + (comPrice > 0 ? pq.quantidade * comPrice * (1 + bdiComVal / 100) : 0)
+    return acc + (comPrice > 0 ? pq.quantidade * comPrice * bdiFactorCom(pq.id) : 0)
   }, 0)
 
   const totalRef = pqItems.reduce((acc, pq) => acc + pq.quantidade * (pq.preco_referencia ?? 0), 0)
@@ -172,8 +183,7 @@ export default function ProposalInput() {
 
   const totalSemGlobal = pqItems.reduce((acc, pq) => {
     const cudSem = Number(prices[pq.id]?.preco_unitario) || 0
-    const bdiSemV = prices[pq.id]?.bdi ? Number(prices[pq.id].bdi) : Number(bdiGlobal) || 0
-    const cudBdi = cudSem > 0 ? cudSem * (1 + bdiSemV / 100) : 0
+    const cudBdi = cudSem > 0 ? cudSem * bdiFactorSem(pq.id) : 0
     return acc + (cudBdi > 0 ? pq.quantidade * cudBdi : 0)
   }, 0)
 
@@ -351,20 +361,14 @@ export default function ProposalInput() {
                 // PQ computed
                 const pTotalRF = pq.quantidade * (pq.preco_referencia ?? 0)
 
-                // SEM REIDI
+                // SEM REIDI — BDI individual é fração (0.43 = 43%)
                 const cudSem = Number(prices[pq.id]?.preco_unitario) || 0
-                const bdiSemVal = prices[pq.id]?.bdi
-                  ? Number(prices[pq.id].bdi)
-                  : Number(bdiGlobal) || 0
-                const cudBdiSem = cudSem > 0 ? cudSem * (1 + bdiSemVal / 100) : 0
+                const cudBdiSem = cudSem > 0 ? cudSem * bdiFactorSem(pq.id) : 0
                 const totalSem = cudBdiSem > 0 ? pq.quantidade * cudBdiSem : 0
 
-                // COM REIDI
+                // COM REIDI — BDI individual é fração (0.43 = 43%)
                 const cudCom = Number(prices[pq.id]?.custo_unit_com_reidi) || 0
-                const bdiComVal = prices[pq.id]?.bdi_com_reidi
-                  ? Number(prices[pq.id].bdi_com_reidi)
-                  : Number(bdiGlobal) || 0
-                const cudBdiCom = cudCom > 0 ? cudCom * (1 + bdiComVal / 100) : 0
+                const cudBdiCom = cudCom > 0 ? cudCom * bdiFactorCom(pq.id) : 0
                 const totalCom = cudBdiCom > 0 ? pq.quantidade * cudBdiCom : 0
 
                 return (

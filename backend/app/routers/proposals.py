@@ -215,9 +215,13 @@ def bulk_update_items(
         com_bdi   = item_data.bdi_com_reidi if item_data.custo_unit_com_reidi else item_data.bdi
         if com_price and item_data.pq_item_id in pq_map:
             pq_item = pq_map[item_data.pq_item_id]
-            bdi_rate = float(com_bdi if com_bdi is not None else proposal.bdi_global or 0)
+            # Individual BDI stored as fraction (0.43 = 43%); global BDI stored as percentage (43 = 43%)
+            if com_bdi is not None:
+                bdi_factor = 1 + float(com_bdi)
+            else:
+                bdi_factor = 1 + float(proposal.bdi_global or 0) / 100
             pi.preco_total = Decimal(str(
-                float(pq_item.quantidade) * float(com_price) * (1 + bdi_rate / 100)
+                float(pq_item.quantidade) * float(com_price) * bdi_factor
             ))
         else:
             pi.preco_total = None
@@ -366,9 +370,13 @@ async def import_proposal(
         com_bdi   = pi.bdi_com_reidi if pi.custo_unit_com_reidi else pi.bdi
         if com_price and row["pq_item_id"] in pq_map:
             pq_item = pq_map[row["pq_item_id"]]
-            bdi_rate = float(com_bdi if com_bdi is not None else proposal.bdi_global or 0)
+            # Individual BDI stored as fraction (0.43 = 43%); global BDI stored as percentage (43 = 43%)
+            if com_bdi is not None:
+                bdi_factor = 1 + float(com_bdi)
+            else:
+                bdi_factor = 1 + float(proposal.bdi_global or 0) / 100
             pi.preco_total = Decimal(str(
-                float(pq_item.quantidade) * float(com_price) * (1 + bdi_rate / 100)
+                float(pq_item.quantidade) * float(com_price) * bdi_factor
             ))
         else:
             pi.preco_total = None
