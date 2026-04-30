@@ -403,7 +403,7 @@ export default function ProposalInput() {
                     </td>
                     <td className="px-1 py-0.5 bg-orange-50/20">
                       <input
-                        type="number" step="0.01" min="0"
+                        type="number" step="0.0001" min="0"
                         value={prices[pq.id]?.bdi ?? ''}
                         onChange={(e) => setPrice(pq.id, 'bdi', e.target.value)}
                         placeholder={bdiGlobal || '0'}
@@ -429,7 +429,7 @@ export default function ProposalInput() {
                     </td>
                     <td className="px-1 py-0.5 bg-green-50/20">
                       <input
-                        type="number" step="0.01" min="0"
+                        type="number" step="0.0001" min="0"
                         value={prices[pq.id]?.bdi_com_reidi ?? ''}
                         onChange={(e) => setPrice(pq.id, 'bdi_com_reidi', e.target.value)}
                         placeholder={bdiGlobal || '0'}

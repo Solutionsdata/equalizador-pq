@@ -145,12 +145,13 @@ function RevisionPanel({
         {/* Summary Stats */}
         {!isLoading && proposals.length > 0 && (() => {
           const somaTotal = proposals.reduce((s, p) => s + p.valor_total, 0)
+          const mediaProponente = proposals.length > 0 ? somaTotal / proposals.length : 0
           const qtdLinhas = items.length
           const somaQtd = items.reduce((s, i) => s + Number(i.quantidade ?? 0), 0)
           return (
             <div className="flex flex-wrap gap-4 px-4 pt-4 pb-2">
               {[
-                { label: 'Soma das Propostas', value: formatBRL(somaTotal), cls: 'text-blue-700' },
+                { label: 'Média por Proponente', value: formatBRL(mediaProponente), cls: 'text-blue-700' },
                 { label: 'Qtd. de Linhas (PQ)', value: qtdLinhas.toLocaleString('pt-BR'), cls: 'text-gray-800' },
                 { label: 'Soma das Quantidades', value: Number(somaQtd.toFixed(2)).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), cls: 'text-purple-700' },
               ].map((s) => (
