@@ -52,12 +52,12 @@ def list_pq_items(
     seen: dict[tuple, PQItem] = {}
     for item in items:
         key = (
-            item.numero_item,
-            item.localidade or '',
-            item.codigo or '',
-            item.descricao,
-            item.unidade,
-            str(item.quantidade),
+            (item.numero_item or '').strip(),
+            (item.localidade or '').strip(),
+            (item.codigo or '').strip(),
+            (item.descricao or '').strip(),
+            (item.unidade or '').strip(),
+            round(float(item.quantidade or 0), 4),
         )
         if key not in seen:
             seen[key] = item

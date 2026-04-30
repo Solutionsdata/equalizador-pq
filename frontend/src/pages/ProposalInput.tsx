@@ -51,9 +51,9 @@ export default function ProposalInput() {
       proposal.items.forEach((item) => {
         map[item.pq_item_id] = {
           preco_unitario: item.preco_unitario ? String(item.preco_unitario) : '',
-          bdi: item.bdi ? String(item.bdi) : '',
+          bdi: item.bdi ? Number(item.bdi).toFixed(4) : '',
           custo_unit_com_reidi: item.custo_unit_com_reidi ? String(item.custo_unit_com_reidi) : '',
-          bdi_com_reidi: item.bdi_com_reidi ? String(item.bdi_com_reidi) : '',
+          bdi_com_reidi: item.bdi_com_reidi ? Number(item.bdi_com_reidi).toFixed(4) : '',
         }
       })
       setPrices(map)
@@ -403,10 +403,10 @@ export default function ProposalInput() {
                     </td>
                     <td className="px-1 py-0.5 bg-orange-50/20">
                       <input
-                        type="number" step="0.0001" min="0"
+                        type="text" inputMode="decimal"
                         value={prices[pq.id]?.bdi ?? ''}
                         onChange={(e) => setPrice(pq.id, 'bdi', e.target.value)}
-                        placeholder={bdiGlobal || '0'}
+                        placeholder={bdiGlobal ? Number(bdiGlobal).toFixed(4) : '0.0000'}
                         className="w-full text-right text-xs border border-orange-100 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-white"
                       />
                     </td>
@@ -429,10 +429,10 @@ export default function ProposalInput() {
                     </td>
                     <td className="px-1 py-0.5 bg-green-50/20">
                       <input
-                        type="number" step="0.0001" min="0"
+                        type="text" inputMode="decimal"
                         value={prices[pq.id]?.bdi_com_reidi ?? ''}
                         onChange={(e) => setPrice(pq.id, 'bdi_com_reidi', e.target.value)}
-                        placeholder={bdiGlobal || '0'}
+                        placeholder={bdiGlobal ? Number(bdiGlobal).toFixed(4) : '0.0000'}
                         className="w-full text-right text-xs border border-green-100 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-green-300 bg-white"
                       />
                     </td>
