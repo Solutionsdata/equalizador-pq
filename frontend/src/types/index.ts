@@ -264,6 +264,9 @@ export interface RevisionCompareResponse {
   rev_a: number
   rev_b: number
   global: { total_a: number; total_b: number; delta: number; delta_pct: number }
+  pq_stats?: { count_a: number; count_b: number; sum_qty_a: number; sum_qty_b: number }
+  proposals_a?: { empresa: string; valor_total: number; status: string }[]
+  proposals_b?: { empresa: string; valor_total: number; status: string }[]
   by_discipline: { disciplina: string; total_a: number; total_b: number; delta: number; delta_pct: number }[]
   by_category: { categoria: string; total_a: number; total_b: number; delta: number; delta_pct: number }[]
   by_item: RevisionCompareItem[]
