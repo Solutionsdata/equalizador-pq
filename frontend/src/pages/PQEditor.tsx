@@ -146,7 +146,7 @@ export default function PQEditor() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pq', pid] })
       qc.invalidateQueries({ queryKey: ['projects'] })
-      toast.success('Planilha PQ salva com sucesso!')
+      toast.success('Planilha de Quantidades salva com sucesso!')
       setDirty(false)
     },
     onError: (err: any) => {
@@ -256,7 +256,7 @@ export default function PQEditor() {
             <ArrowLeft size={20} />
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Planilha PQ</h1>
+            <h1 className="text-xl font-bold text-gray-900">Planilha de Quantidades</h1>
             <p className="text-sm text-gray-500">{project?.nome}</p>
           </div>
         </div>
@@ -424,7 +424,7 @@ export default function PQEditor() {
       )}
 
       <p className="text-xs text-gray-400 py-2 flex-shrink-0">
-        Planilha PQ · 12 colunas · {rows.length} itens · Clique em qualquer célula para editar · Salve para confirmar
+        Planilha de Quantidades · 12 colunas · {rows.length} itens · Clique em qualquer célula para editar · Salve para confirmar
       </p>
     </div>
   )

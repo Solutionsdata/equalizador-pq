@@ -244,6 +244,12 @@ def compare_revisions(
         d_pct = ((d / v["total_a"]) * 100) if v["total_a"] != 0 else 0.0
         by_category.append({**v, "delta": d, "delta_pct": d_pct})
 
+    # PQ stats per revision
+    pq_a_items = list(pq_a.values())
+    pq_b_items = list(pq_b.values())
+    pq_a_sum_qty = sum(float(i.quantidade or 0) for i in pq_a_items)
+    pq_b_sum_qty = sum(float(i.quantidade or 0) for i in pq_b_items)
+
     return {
         "rev_a": rev_a,
         "rev_b": rev_b,
@@ -253,6 +259,20 @@ def compare_revisions(
             "delta": delta,
             "delta_pct": delta_pct,
         },
+        "pq_stats": {
+            "count_a": len(pq_a_items),
+            "count_b": len(pq_b_items),
+            "sum_qty_a": round(pq_a_sum_qty, 4),
+            "sum_qty_b": round(pq_b_sum_qty, 4),
+        },
+        "proposals_a": [
+            {"empresa": p.empresa, "valor_total": proposal_total(p), "status": p.status.value}
+            for p in proposals_a
+        ],
+        "proposals_b": [
+            {"empresa": p.empresa, "valor_total": proposal_total(p), "status": p.status.value}
+            for p in proposals_b
+        ],
         "by_discipline": by_discipline,
         "by_category": by_category,
         "by_item": all_items,

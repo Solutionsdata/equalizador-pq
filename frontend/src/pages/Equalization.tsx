@@ -142,6 +142,27 @@ function RevisionPanel({
       </div>
 
       <div className="bg-white">
+        {/* Summary Stats */}
+        {!isLoading && proposals.length > 0 && (() => {
+          const somaTotal = proposals.reduce((s, p) => s + p.valor_total, 0)
+          const qtdLinhas = items.length
+          const somaQtd = items.reduce((s, i) => s + Number(i.quantidade ?? 0), 0)
+          return (
+            <div className="flex flex-wrap gap-4 px-4 pt-4 pb-2">
+              {[
+                { label: 'Soma das Propostas', value: formatBRL(somaTotal), cls: 'text-blue-700' },
+                { label: 'Qtd. de Linhas (PQ)', value: qtdLinhas.toLocaleString('pt-BR'), cls: 'text-gray-800' },
+                { label: 'Soma das Quantidades', value: Number(somaQtd.toFixed(2)).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), cls: 'text-purple-700' },
+              ].map((s) => (
+                <div key={s.label} className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 flex flex-col gap-0.5">
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{s.label}</span>
+                  <span className={`text-base font-bold ${s.cls}`}>{s.value}</span>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
+
         {/* Proposal Cards */}
         {isLoading ? (
           <div className="py-8 text-center text-gray-400 text-sm">Carregando…</div>
@@ -173,7 +194,7 @@ function RevisionPanel({
                   {p.is_winner && <Trophy size={16} className="text-green-500 flex-shrink-0" />}
                 </div>
                 <p className="text-lg font-bold text-gray-900">{formatBRL(p.valor_total)}</p>
-                <p className="text-xs text-gray-400">BDI: {Number(p.bdi_global).toFixed(2)}%</p>
+                <p className="text-xs text-gray-400">BDI: {Number(p.bdi_global).toFixed(4)}%</p>
                 <span className={`text-xs px-2 py-0.5 rounded-full mt-1 inline-block ${PROPOSAL_STATUS_COLORS[p.status]}`}>
                   {PROPOSAL_STATUS_LABELS[p.status as keyof typeof PROPOSAL_STATUS_LABELS]}
                 </span>

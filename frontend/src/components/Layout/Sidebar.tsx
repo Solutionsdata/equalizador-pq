@@ -90,7 +90,7 @@ export default function Sidebar() {
                 <NavItem
                   to={`/projetos/${projectId}/pq`}
                   icon={Table2}
-                  label="Planilha PQ"
+                  label="Planilha de Quantidades"
                   indent
                 />
                 <NavItem

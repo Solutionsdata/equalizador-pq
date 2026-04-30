@@ -1420,19 +1420,81 @@ export default function Analytics() {
                   const unchanged = compareData.by_item.filter((i: any) => i.status === 'unchanged')
                   return (
                   <div className="space-y-6">
-                    {/* Global metrics */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {[
-                        { label: `Total Rev. ${compareData.rev_a}`, value: formatBRL(compareData.global.total_a), color: 'text-gray-800', sub: null },
-                        { label: `Total Rev. ${compareData.rev_b}`, value: formatBRL(compareData.global.total_b), color: 'text-gray-800', sub: null },
-                        { label: 'Delta (R$)', value: (compareData.global.delta >= 0 ? '+' : '') + formatBRL(compareData.global.delta), color: compareData.global.delta >= 0 ? 'text-red-600' : 'text-green-700', sub: null },
-                        { label: 'Delta (%)', value: (compareData.global.delta_pct >= 0 ? '+' : '') + formatPercent(compareData.global.delta_pct), color: compareData.global.delta_pct >= 0 ? 'text-red-600' : 'text-green-700', sub: null },
-                      ].map((m) => (
-                        <div key={m.label} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                          <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{m.label}</p>
-                          <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+                    {/* PQ Stats comparison */}
+                    {compareData.pq_stats && (
+                      <div>
+                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Planilha de Quantidades</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {[
+                            { label: `Linhas Rev. ${compareData.rev_a}`, value: compareData.pq_stats.count_a.toLocaleString('pt-BR'), color: 'text-gray-800' },
+                            { label: `Linhas Rev. ${compareData.rev_b}`, value: compareData.pq_stats.count_b.toLocaleString('pt-BR'), color: 'text-gray-800' },
+                            { label: `Soma Qtd Rev. ${compareData.rev_a}`, value: Number(compareData.pq_stats.sum_qty_a).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), color: 'text-blue-700' },
+                            { label: `Soma Qtd Rev. ${compareData.rev_b}`, value: Number(compareData.pq_stats.sum_qty_b).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), color: 'text-blue-700' },
+                          ].map((m) => (
+                            <div key={m.label} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{m.label}</p>
+                              <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      </div>
+                    )}
+
+                    {/* Proposal values per revision */}
+                    {(compareData.proposals_a?.length > 0 || compareData.proposals_b?.length > 0) && (
+                      <div>
+                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Valores das Propostas por Revisão</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {([
+                            { label: `Rev. ${compareData.rev_a}`, proposals: compareData.proposals_a ?? [], cls: 'border-slate-300' },
+                            { label: `Rev. ${compareData.rev_b}`, proposals: compareData.proposals_b ?? [], cls: 'border-blue-300' },
+                          ] as { label: string; proposals: any[]; cls: string }[]).map((side) => (
+                            <div key={side.label} className={`border ${side.cls} rounded-xl overflow-hidden`}>
+                              <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 border-b border-gray-200">
+                                {side.label} — {side.proposals.length} proposta{side.proposals.length !== 1 ? 's' : ''}
+                              </div>
+                              {side.proposals.length === 0 ? (
+                                <p className="text-xs text-gray-400 p-3">Nenhuma proposta.</p>
+                              ) : (
+                                <table className="w-full text-xs border-collapse">
+                                  <tbody>
+                                    {side.proposals.map((p: any, i: number) => (
+                                      <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                        <td className="px-3 py-2 text-gray-700 font-medium truncate max-w-[180px]">{p.empresa}</td>
+                                        <td className="px-3 py-2 text-right font-semibold text-gray-800">{formatBRL(p.valor_total)}</td>
+                                      </tr>
+                                    ))}
+                                    <tr className="bg-blue-50 border-t-2 border-blue-200">
+                                      <td className="px-3 py-2 text-blue-700 font-semibold text-xs">Total</td>
+                                      <td className="px-3 py-2 text-right font-bold text-blue-700">
+                                        {formatBRL(side.proposals.reduce((s: number, p: any) => s + p.valor_total, 0))}
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Global metrics — proposal delta */}
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Delta de Propostas</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[
+                          { label: `Total Propostas Rev. ${compareData.rev_a}`, value: formatBRL(compareData.global.total_a), color: 'text-gray-800' },
+                          { label: `Total Propostas Rev. ${compareData.rev_b}`, value: formatBRL(compareData.global.total_b), color: 'text-gray-800' },
+                          { label: 'Delta (R$)', value: (compareData.global.delta >= 0 ? '+' : '') + formatBRL(compareData.global.delta), color: compareData.global.delta >= 0 ? 'text-red-600' : 'text-green-700' },
+                          { label: 'Delta (%)', value: (compareData.global.delta_pct >= 0 ? '+' : '') + formatPercent(compareData.global.delta_pct), color: compareData.global.delta_pct >= 0 ? 'text-red-600' : 'text-green-700' },
+                        ].map((m) => (
+                          <div key={m.label} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{m.label}</p>
+                            <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     {/* Item change summary */}

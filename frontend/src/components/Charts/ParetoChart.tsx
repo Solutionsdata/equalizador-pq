@@ -57,7 +57,7 @@ export default function ParetoChart({ items }: Props) {
         </div>
       </div>
       <ResponsiveContainer width="100%" height={380}>
-        <ComposedChart data={items} margin={{ top: 10, right: 60, left: 16, bottom: 30 }}>
+        <ComposedChart data={items} margin={{ top: 20, right: 60, left: 16, bottom: 30 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
           <XAxis
             dataKey="posicao"
@@ -73,6 +73,8 @@ export default function ParetoChart({ items }: Props) {
             axisLine={false}
             tickLine={false}
             width={60}
+            domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.12)]}
+            allowDataOverflow={false}
           />
           <YAxis
             yAxisId="pct"

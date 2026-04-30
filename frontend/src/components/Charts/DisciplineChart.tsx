@@ -85,6 +85,8 @@ export default function DisciplineChart({ data, nameKey, title }: Props) {
             tick={{ fontSize: 10, fill: '#9ca3af' }}
             axisLine={false}
             tickLine={false}
+            domain={[0, (dataMax: number) => dataMax * 1.35]}
+            allowDataOverflow={false}
           />
           <YAxis
             type="category"
