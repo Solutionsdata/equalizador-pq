@@ -1441,7 +1441,7 @@ export default function Analytics() {
                     )}
 
                     {/* Proposal values per revision */}
-                    {(compareData.proposals_a?.length > 0 || compareData.proposals_b?.length > 0) && (
+                    {((compareData.proposals_a?.length ?? 0) > 0 || (compareData.proposals_b?.length ?? 0) > 0) && (
                       <div>
                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Valores das Propostas por Revisão</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
