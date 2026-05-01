@@ -51,7 +51,7 @@ export default function DisciplineChart({ data, nameKey, title }: Props) {
   if (!data.length) return <p className="text-center text-gray-400 py-8 text-sm">Sem dados — preencha o campo "{nameKey}" nos itens da PQ.</p>
 
   const colors = PALETTES[nameKey] ?? PALETTES.disciplina
-  const height = Math.max(260, data.length * 42)
+  const height = Math.max(260, data.length * 36)
   const total = data.reduce((s, d) => s + Number((d as any).valor_total), 0)
   const totalItems = data.reduce((s, d) => s + (d as any).count_items, 0)
   const avgPerItem = totalItems > 0 ? total / totalItems : 0
@@ -76,7 +76,7 @@ export default function DisciplineChart({ data, nameKey, title }: Props) {
         <BarChart
           data={data}
           layout="vertical"
-          margin={{ top: 0, right: 110, left: 140, bottom: 0 }}
+          margin={{ top: 0, right: 220, left: 140, bottom: 0 }}
         >
           <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f3f4f6" />
           <XAxis
@@ -85,7 +85,7 @@ export default function DisciplineChart({ data, nameKey, title }: Props) {
             tick={{ fontSize: 10, fill: '#9ca3af' }}
             axisLine={false}
             tickLine={false}
-            domain={[0, (dataMax: number) => dataMax * 1.35]}
+            domain={[0, (dataMax: number) => dataMax * 1.55]}
             allowDataOverflow={false}
           />
           <YAxis
@@ -98,7 +98,7 @@ export default function DisciplineChart({ data, nameKey, title }: Props) {
           />
           <Tooltip content={<CustomTooltip nameKey={nameKey} />} />
           <ReferenceLine x={avgPerItem} stroke="#7c3aed" strokeDasharray="4 3" strokeOpacity={0.6} />
-          <Bar dataKey="valor_total" radius={[0, 4, 4, 0]} maxBarSize={30}>
+          <Bar dataKey="valor_total" radius={[0, 4, 4, 0]} maxBarSize={20}>
             {data.map((_, i) => (
               <Cell key={i} fill={colors[i % colors.length]} />
             ))}
