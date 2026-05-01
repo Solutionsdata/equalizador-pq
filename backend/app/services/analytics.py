@@ -19,11 +19,41 @@ def _dec(v: float) -> Decimal:
 class AnalyticsService:
 
     @staticmethod
+    def _dedup_pq_items(items: list, db: Session) -> list:
+        """Deduplicate PQ items by content key, preferring items linked to proposal prices."""
+        item_ids = [item.id for item in items]
+        items_with_prices: set = set()
+        if item_ids:
+            rows = (
+                db.query(ProposalItem.pq_item_id)
+                .filter(ProposalItem.pq_item_id.in_(item_ids))
+                .distinct()
+                .all()
+            )
+            items_with_prices = {r.pq_item_id for r in rows}
+        seen: dict = {}
+        for item in items:
+            key = (
+                (item.numero_item or '').strip(),
+                (item.localidade or '').strip(),
+                (item.codigo or '').strip(),
+                (item.descricao or '').strip(),
+                (item.unidade or '').strip(),
+                round(float(item.quantidade or 0), 4),
+            )
+            if key not in seen:
+                seen[key] = item
+            elif item.id in items_with_prices and seen[key].id not in items_with_prices:
+                seen[key] = item
+        return sorted(seen.values(), key=lambda x: (x.ordem, x.numero_item, x.id))
+
+    @staticmethod
     def get_pareto(db: Session, project_id: int, source: str = "referencia", revision_id: int | None = None) -> ParetoData:
         pq_q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             pq_q = pq_q.filter(PQItem.revision_id == revision_id)
         pq_items = pq_q.order_by(PQItem.ordem, PQItem.numero_item).all()
+        pq_items = AnalyticsService._dedup_pq_items(pq_items, db)
 
         # Batch-load all proposal prices upfront (avoids N+1)
         pi_by_pq_id: dict[int, list[float]] = {}
@@ -101,6 +131,7 @@ class AnalyticsService:
         if revision_id is not None:
             pq_q = pq_q.filter(PQItem.revision_id == revision_id)
         pq_items = pq_q.order_by(PQItem.ordem, PQItem.numero_item).all()
+        pq_items = AnalyticsService._dedup_pq_items(pq_items, db)
 
         prop_q = db.query(Proposal).filter(Proposal.project_id == project_id)
         if revision_id is not None:
@@ -231,7 +262,7 @@ class AnalyticsService:
         q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             q = q.filter(PQItem.revision_id == revision_id)
-        items = q.all()
+        items = AnalyticsService._dedup_pq_items(q.all(), db)
         avg_prices = AnalyticsService._avg_proposal_prices(db, project_id, revision_id, [i.id for i in items])
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
@@ -262,7 +293,7 @@ class AnalyticsService:
         q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             q = q.filter(PQItem.revision_id == revision_id)
-        items = q.all()
+        items = AnalyticsService._dedup_pq_items(q.all(), db)
         avg_prices = AnalyticsService._avg_proposal_prices(db, project_id, revision_id, [i.id for i in items])
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
@@ -293,7 +324,7 @@ class AnalyticsService:
         q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             q = q.filter(PQItem.revision_id == revision_id)
-        items = q.all()
+        items = AnalyticsService._dedup_pq_items(q.all(), db)
         avg_prices = AnalyticsService._avg_proposal_prices(db, project_id, revision_id, [i.id for i in items])
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
