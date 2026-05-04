@@ -2,6 +2,7 @@ import base64
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import delete as sa_delete, insert as sa_insert
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
@@ -254,7 +255,7 @@ class ImportB64Payload(BaseModel):
     content_b64: str  # base64-encoded xlsx bytes
 
 
-@router.post("/project/{project_id}/import-b64", response_model=list[PQItemResponse])
+@router.post("/project/{project_id}/import-b64")
 def import_pq_b64(
     project_id: int,
     payload: ImportB64Payload,
@@ -262,7 +263,10 @@ def import_pq_b64(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Importa PQ recebendo o arquivo Excel codificado em base64 (JSON body)."""
+    """Importa PQ recebendo o arquivo Excel codificado em base64 (JSON body).
+    Otimizado para grandes volumes: DELETE + INSERT em bulk (1 query cada).
+    Retorna apenas o total de itens importados; o frontend recarrega via GET.
+    """
     _check_project(db, project_id, current_user.id)
 
     filename = payload.filename.lower()
@@ -284,25 +288,25 @@ def import_pq_b64(
     except Exception as exc:
         raise HTTPException(
             status_code=400,
-            detail=f"Não foi possível ler o arquivo Excel. Verifique se ele não está corrompido. Detalhe: {exc}",
+            detail=f"Não foi possível ler o arquivo Excel. Verifique se não está corrompido. Detalhe: {exc}",
         )
 
-    q = db.query(PQItem).filter(PQItem.project_id == project_id)
+    # Bulk DELETE — 1 query; FK ON DELETE CASCADE cuida das proposal_items
+    del_stmt = sa_delete(PQItem).where(PQItem.project_id == project_id)
     if revision_id is not None:
-        q = q.filter(PQItem.revision_id == revision_id)
-    for old_item in q.all():
-        db.delete(old_item)
-    db.flush()
+        del_stmt = del_stmt.where(PQItem.revision_id == revision_id)
+    db.execute(del_stmt)
 
-    new_items = []
-    for row in rows:
-        item = PQItem(**row, project_id=project_id, revision_id=revision_id)
-        db.add(item)
-        new_items.append(item)
+    # Bulk INSERT — 1 query com todos os registros (muito mais rápido que ORM loop)
+    if rows:
+        records = [
+            {**row, "project_id": project_id, "revision_id": revision_id}
+            for row in rows
+        ]
+        db.execute(sa_insert(PQItem), records)
+
     db.commit()
-    for item in new_items:
-        db.refresh(item)
-    return new_items
+    return {"imported": len(rows)}
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
