@@ -37,10 +37,16 @@ export default function Login() {
     } catch (err: any) {
       const detail = err?.response?.data?.detail
       const status = err?.response?.status
-      if (status === 403) {
-        toast.error('Conta aguardando aprovação do administrador.')
+      if (status === 401) {
+        toast.error('E-mail ou senha inválidos. Verifique e tente novamente.')
+      } else if (status === 402) {
+        toast.error('Assinatura vencida. Contate o administrador para renovar o acesso.')
+      } else if (status === 403) {
+        toast.error('Conta aguardando aprovação ou desativada. Contate o administrador.')
+      } else if (err?.isServerStarting || !err?.response) {
+        toast.error('Servidor inicializando… aguarde 30 segundos e tente novamente.')
       } else {
-        toast.error(detail ?? 'Erro ao processar solicitação')
+        toast.error(detail ?? 'Erro ao processar solicitação.')
       }
     } finally {
       setLoading(false)

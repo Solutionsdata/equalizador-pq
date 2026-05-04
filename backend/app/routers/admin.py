@@ -52,7 +52,9 @@ def update_user(
         user.is_active = data.is_active
     if data.is_admin is not None:
         user.is_admin = data.is_admin
-    if data.assinatura_ate is not None:
+    if data.clear_assinatura:
+        user.assinatura_ate = None
+    elif data.assinatura_ate is not None:
         user.assinatura_ate = data.assinatura_ate
 
     db.commit()

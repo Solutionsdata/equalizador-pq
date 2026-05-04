@@ -29,6 +29,7 @@ class UserAdminUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None
     assinatura_ate: Optional[datetime] = None
+    clear_assinatura: bool = False
 
 
 class Token(BaseModel):

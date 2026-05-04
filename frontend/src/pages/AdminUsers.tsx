@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import {
   Shield, ShieldOff, UserCheck, UserX, Trash2,
   RefreshCw, Crown, Clock, CheckCircle, XCircle,
-  CalendarDays,
+  CalendarDays, AlertTriangle, Infinity,
 } from 'lucide-react'
 import type { User } from '../types'
 
@@ -19,60 +19,63 @@ function addMonths(months: number): string {
   return d.toISOString()
 }
 
-function assinaturaBadge(date?: string | null) {
-  if (!date) return { label: 'Sem vencimento', color: 'bg-gray-100 text-gray-500' }
+function assinaturaStatus(date?: string | null): 'none' | 'valid' | 'expiring' | 'expired' {
+  if (!date) return 'none'
   const d = new Date(date)
   const now = new Date()
-  if (d < now) return { label: `Vencida em ${d.toLocaleDateString('pt-BR')}`, color: 'bg-red-100 text-red-700' }
+  if (d < now) return 'expired'
   const days = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-  const label = days <= 30
-    ? `Vence em ${days}d (${d.toLocaleDateString('pt-BR')})`
-    : `Válida até ${d.toLocaleDateString('pt-BR')}`
-  return { label, color: 'bg-blue-100 text-blue-700' }
+  return days <= 30 ? 'expiring' : 'valid'
 }
 
-// ── Componentes ───────────────────────────────────────────────────────────────
-
-function StatusBadge({ active }: { active: boolean }) {
-  return active ? (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
-      <UserCheck size={11} /> Ativo
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
-      <Clock size={11} /> Pendente
-    </span>
-  )
+function assinaturaBadge(date?: string | null) {
+  const s = assinaturaStatus(date)
+  if (s === 'none') return { label: 'Sem vencimento', color: 'bg-gray-100 text-gray-500' }
+  const d = new Date(date!)
+  if (s === 'expired') return { label: `Vencida em ${d.toLocaleDateString('pt-BR')}`, color: 'bg-red-100 text-red-700' }
+  const days = Math.ceil((d.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+  return {
+    label: days <= 30 ? `Vence em ${days}d (${d.toLocaleDateString('pt-BR')})` : `Válida até ${d.toLocaleDateString('pt-BR')}`,
+    color: days <= 30 ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
+  }
 }
+
+// ── Subscription editor ───────────────────────────────────────────────────────
 
 interface MonthsInputProps {
   userId: number
-  onSave: (userId: number, months: number) => void
+  onSave: (userId: number, months: number | null) => void
   pending: boolean
   currentDate?: string | null
 }
 
 function MonthsInput({ userId, onSave, pending, currentDate }: MonthsInputProps) {
-  const [months, setMonths] = useState(1)
+  const [months, setMonths] = useState(3)
   const [open, setOpen] = useState(false)
   const badge = assinaturaBadge(currentDate)
+  const status = assinaturaStatus(currentDate)
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${badge.color}`}>
+        {status === 'expired' && <AlertTriangle size={11} />}
         {badge.label}
       </span>
       {!open ? (
-        <button onClick={() => setOpen(true)} className="text-xs text-blue-600 hover:underline">
-          Alterar
+        <button
+          onClick={() => setOpen(true)}
+          className={`text-xs font-medium hover:underline ${status === 'expired' ? 'text-red-600' : 'text-blue-600'}`}
+        >
+          {status === 'expired' ? 'Renovar agora' : 'Alterar'}
         </button>
       ) : (
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <input
             type="number"
             min={1}
             max={120}
             value={months}
+            autoFocus
             onChange={(e) => setMonths(Number(e.target.value))}
             className="border border-gray-300 rounded px-2 py-0.5 text-xs w-16 text-center"
           />
@@ -83,6 +86,14 @@ function MonthsInput({ userId, onSave, pending, currentDate }: MonthsInputProps)
             className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
           >
             OK
+          </button>
+          <button
+            onClick={() => { onSave(userId, null); setOpen(false) }}
+            disabled={pending}
+            title="Sem data de vencimento (acesso permanente)"
+            className="text-xs px-2 py-0.5 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50 flex items-center gap-1"
+          >
+            <Infinity size={11} /> Sem limite
           </button>
           <button
             onClick={() => setOpen(false)}
@@ -96,17 +107,18 @@ function MonthsInput({ userId, onSave, pending, currentDate }: MonthsInputProps)
   )
 }
 
-// ── Painel de aprovação (inline, exige período obrigatório) ───────────────────
+// ── Approve row ───────────────────────────────────────────────────────────────
 
 interface ApproveRowProps {
   u: User
-  onConfirm: (userId: number, months: number) => void
+  onConfirm: (userId: number, months: number | null) => void
   onReject: (userId: number) => void
   pending: boolean
 }
 
 function ApproveRow({ u, onConfirm, onReject, pending }: ApproveRowProps) {
-  const [months, setMonths] = useState<number>(1)
+  const [months, setMonths] = useState<number>(3)
+  const [noLimit, setNoLimit] = useState(false)
   const [etapa, setEtapa] = useState<'idle' | 'choosing'>('idle')
 
   if (etapa === 'idle') {
@@ -132,23 +144,40 @@ function ApproveRow({ u, onConfirm, onReject, pending }: ApproveRowProps) {
 
   return (
     <div className="flex items-center justify-end gap-2 flex-wrap">
-      <div className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
+      <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 flex-wrap">
         <CalendarDays size={13} className="text-green-700" />
         <span className="text-xs text-green-700 font-medium">Período:</span>
-        <input
-          type="number"
-          min={1}
-          max={120}
-          value={months}
-          autoFocus
-          onChange={(e) => setMonths(Math.max(1, Number(e.target.value)))}
-          className="border border-green-300 rounded px-2 py-0.5 text-xs w-14 text-center"
-        />
-        <span className="text-xs text-green-700">mes{months !== 1 ? 'es' : ''}</span>
+        {noLimit ? (
+          <span className="text-xs text-green-700 font-medium flex items-center gap-1">
+            <Infinity size={12} /> Sem vencimento
+          </span>
+        ) : (
+          <>
+            <input
+              type="number"
+              min={1}
+              max={120}
+              value={months}
+              autoFocus={!noLimit}
+              onChange={(e) => setMonths(Math.max(1, Number(e.target.value)))}
+              className="border border-green-300 rounded px-2 py-0.5 text-xs w-14 text-center"
+            />
+            <span className="text-xs text-green-700">mes{months !== 1 ? 'es' : ''}</span>
+          </>
+        )}
+        <label className="flex items-center gap-1 text-xs text-green-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={noLimit}
+            onChange={(e) => setNoLimit(e.target.checked)}
+            className="w-3 h-3"
+          />
+          Sem limite
+        </label>
       </div>
       <button
-        onClick={() => onConfirm(u.id, months)}
-        disabled={pending || months < 1}
+        onClick={() => onConfirm(u.id, noLimit ? null : months)}
+        disabled={pending || (!noLimit && months < 1)}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50"
       >
         <CheckCircle size={13} /> Confirmar
@@ -182,15 +211,12 @@ export default function AdminUsers() {
   const users: User[] = Array.isArray(rawUsers) ? rawUsers : []
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: object }) =>
-      adminAPI.updateUser(id, data),
+    mutationFn: ({ id, data }: { id: number; data: object }) => adminAPI.updateUser(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-users'] })
       toast.success('Usuário atualizado')
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail ?? 'Erro ao atualizar')
-    },
+    onError: (err: any) => toast.error(err.response?.data?.detail ?? 'Erro ao atualizar'),
   })
 
   const deleteMutation = useMutation({
@@ -200,25 +226,22 @@ export default function AdminUsers() {
       toast.success('Usuário excluído')
       setConfirmDelete(null)
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail ?? 'Erro ao excluir')
-    },
+    onError: (err: any) => toast.error(err.response?.data?.detail ?? 'Erro ao excluir'),
   })
 
-  // Aprovação exige período obrigatório — envia is_active + assinatura_ate juntos
-  function confirmarAprovacao(userId: number, months: number) {
+  // months=null → sem vencimento (acesso permanente)
+  function confirmarAprovacao(userId: number, months: number | null) {
     updateMutation.mutate({
       id: userId,
       data: {
         is_active: true,
-        assinatura_ate: addMonths(months),
+        assinatura_ate: months !== null ? addMonths(months) : null,
+        clear_assinatura: months === null,
       },
     })
   }
 
-  function reprovar(userId: number) {
-    deleteMutation.mutate(userId)
-  }
+  function reprovar(userId: number) { deleteMutation.mutate(userId) }
 
   function toggleAdmin(u: User) {
     updateMutation.mutate({ id: u.id, data: { is_admin: !u.is_admin } })
@@ -228,12 +251,18 @@ export default function AdminUsers() {
     updateMutation.mutate({ id: u.id, data: { is_active: !u.is_active } })
   }
 
-  function saveMonths(userId: number, months: number) {
-    updateMutation.mutate({ id: userId, data: { assinatura_ate: addMonths(months) } })
+  function saveMonths(userId: number, months: number | null) {
+    updateMutation.mutate({
+      id: userId,
+      data: months !== null
+        ? { assinatura_ate: addMonths(months) }
+        : { clear_assinatura: true },
+    })
   }
 
   const pending = users.filter(u => !u.is_active)
   const active = users.filter(u => u.is_active)
+  const cannotLogin = active.filter(u => !u.is_admin && u.assinatura_ate && new Date(u.assinatura_ate) < new Date())
 
   if (isLoading) {
     return (
@@ -257,7 +286,22 @@ export default function AdminUsers() {
         </p>
       </div>
 
-      {/* Seção: Aguardando Aprovação */}
+      {/* ── Alerta: assinatura vencida ── */}
+      {cannotLogin.length > 0 && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+          <AlertTriangle size={18} className="text-red-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-700">
+              {cannotLogin.length} usuário{cannotLogin.length > 1 ? 's' : ''} com assinatura vencida — não consegue{cannotLogin.length > 1 ? 'm' : ''} logar
+            </p>
+            <p className="text-xs text-red-500 mt-0.5">
+              {cannotLogin.map(u => u.nome).join(', ')} — clique em "Renovar agora" na coluna Assinatura para liberar o acesso.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Aguardando Aprovação ── */}
       {pending.length > 0 && (
         <div className="mb-8">
           <h2 className="text-sm font-semibold text-amber-700 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -280,9 +324,8 @@ export default function AdminUsers() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      <p>{u.empresa ?? '—'}</p>
-                      <p className="text-xs text-gray-400">{u.cargo ?? ''}</p>
+                    <td className="px-4 py-3 text-gray-600 text-xs text-gray-400">
+                      {u.cargo ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400">
                       Solicitado em {new Date(u.created_at).toLocaleDateString('pt-BR')}
@@ -301,12 +344,12 @@ export default function AdminUsers() {
             </table>
           </div>
           <p className="text-xs text-amber-700 mt-2 flex items-center gap-1">
-            <CalendarDays size={12} /> Ao aprovar, defina obrigatoriamente o período de acesso em meses.
+            <CalendarDays size={12} /> Defina o período de acesso ao aprovar. Escolha "Sem limite" para acesso permanente.
           </p>
         </div>
       )}
 
-      {/* Seção: Usuários Ativos */}
+      {/* ── Usuários Ativos ── */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
           Usuários ativos ({active.length})
@@ -316,7 +359,7 @@ export default function AdminUsers() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">Usuário</th>
-                <th className="text-left px-4 py-3 font-semibold text-gray-600">Empresa</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-600">Cargo</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">Status</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">Assinatura</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">Cadastro</th>
@@ -328,11 +371,13 @@ export default function AdminUsers() {
                 const isMe = u.id === me?.id
                 const isTargetSuperAdmin = u.email?.includes('solutionsdata') ?? false
                 const canDelete = !isMe && !isTargetSuperAdmin && (!u.is_admin || isSuperAdmin)
+                const subStatus = assinaturaStatus(u.assinatura_ate)
+                const rowBg = (!u.is_admin && subStatus === 'expired') ? 'bg-red-50' : 'hover:bg-gray-50'
                 return (
-                  <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={u.id} className={`${rowBg} transition-colors`}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${!u.is_admin && subStatus === 'expired' ? 'bg-red-400' : 'bg-blue-600'}`}>
                           {u.nome.charAt(0).toUpperCase()}
                         </div>
                         <div>
@@ -340,21 +385,27 @@ export default function AdminUsers() {
                             {u.nome}
                             {u.is_admin && <span title="Administrador"><Crown size={12} className="text-amber-500" /></span>}
                             {isMe && <span className="text-xs text-gray-400 font-normal">(você)</span>}
+                            {!u.is_admin && subStatus === 'expired' && (
+                              <span className="text-xs text-red-600 font-normal flex items-center gap-0.5">
+                                <AlertTriangle size={11} /> não consegue logar
+                              </span>
+                            )}
                           </p>
                           <p className="text-gray-400 text-xs">{u.email}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      <p>{u.empresa ?? '—'}</p>
-                      <p className="text-xs text-gray-400">{u.cargo ?? ''}</p>
-                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{u.cargo ?? '—'}</td>
                     <td className="px-4 py-3">
-                      <StatusBadge active={u.is_active} />
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {u.is_active ? <><UserCheck size={11} /> Ativo</> : <><Clock size={11} /> Pendente</>}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       {u.is_admin ? (
-                        <span className="text-xs text-gray-400 italic">Admin — isento</span>
+                        <span className="text-xs text-gray-400 italic flex items-center gap-1">
+                          <Infinity size={11} /> Admin — isento
+                        </span>
                       ) : (
                         <MonthsInput
                           userId={u.id}
@@ -370,22 +421,18 @@ export default function AdminUsers() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <button
-                          title="Desativar acesso"
+                          title={u.is_active ? 'Desativar acesso' : 'Reativar acesso'}
                           onClick={() => toggleActive(u)}
                           disabled={isMe || updateMutation.isPending}
                           className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          <UserX size={16} />
+                          {u.is_active ? <UserX size={16} /> : <UserCheck size={16} />}
                         </button>
                         <button
                           title={u.is_admin ? 'Remover admin' : 'Tornar admin'}
                           onClick={() => toggleAdmin(u)}
                           disabled={isMe || updateMutation.isPending}
-                          className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                            u.is_admin
-                              ? 'text-amber-500 hover:bg-amber-50'
-                              : 'text-gray-400 hover:bg-amber-50 hover:text-amber-500'
-                          }`}
+                          className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${u.is_admin ? 'text-amber-500 hover:bg-amber-50' : 'text-gray-400 hover:bg-amber-50 hover:text-amber-500'}`}
                         >
                           {u.is_admin ? <Shield size={16} /> : <ShieldOff size={16} />}
                         </button>
@@ -415,13 +462,13 @@ export default function AdminUsers() {
       </div>
 
       {/* Rodapé */}
-      <div className="mt-4 flex gap-6 text-sm text-gray-400">
+      <div className="mt-4 flex gap-6 text-sm text-gray-400 flex-wrap">
         <span>{users.length} usuário{users.length !== 1 ? 's' : ''} no total</span>
         <span className="text-amber-600">{pending.length} pendente{pending.length !== 1 ? 's' : ''}</span>
-        <span>{active.length} ativo{active.length !== 1 ? 's' : ''}</span>
-        <span className="text-red-500">
-          {active.filter(u => u.assinatura_ate && new Date(u.assinatura_ate) < new Date()).length} com assinatura vencida
-        </span>
+        <span className="text-green-600">{active.length} ativo{active.length !== 1 ? 's' : ''}</span>
+        {cannotLogin.length > 0 && (
+          <span className="text-red-600 font-medium">{cannotLogin.length} com assinatura vencida (não loga)</span>
+        )}
       </div>
 
       {/* Modal confirmação de exclusão */}
