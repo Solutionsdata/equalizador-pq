@@ -204,11 +204,28 @@ async def import_pq(
     """Importa itens da PQ a partir de um arquivo Excel (escopado por revisão)."""
     _check_project(db, project_id, current_user.id)
 
+    filename = (file.filename or "").lower()
+    if not (filename.endswith(".xlsx") or filename.endswith(".xls")):
+        raise HTTPException(status_code=400, detail="Envie um arquivo Excel (.xlsx).")
+    if filename.endswith(".xls"):
+        raise HTTPException(
+            status_code=400,
+            detail="Formato .xls não suportado. Salve o arquivo como .xlsx no Excel e importe novamente.",
+        )
+
     file_bytes = await file.read()
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="O arquivo enviado está vazio.")
+
     try:
         rows = importar_pq_excel(file_bytes)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Não foi possível ler o arquivo Excel. Verifique se ele não está corrompido ou protegido por senha. Detalhe: {exc}",
+        )
 
     # Remove via ORM para respeitar cascade (ProposalItems → PQItem FK)
     q = db.query(PQItem).filter(PQItem.project_id == project_id)

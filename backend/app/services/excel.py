@@ -7,6 +7,7 @@ Layouts:
 """
 
 import io
+import unicodedata
 from decimal import Decimal
 from typing import List, Optional
 
@@ -450,26 +451,55 @@ def importar_pq_excel(file_bytes: bytes) -> List[dict]:
     """
     Lê um Excel (modelo PQ ou qualquer planilha com cabeçalhos compatíveis)
     e retorna lista de dicts prontos para inserção no banco.
+    Normaliza acentos para aceitar arquivos salvos por diferentes softwares.
     """
     wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb.active
 
+    # Chaves sem acento (normalizadas por _normalize_header)
     MAPA_HEADERS = {
-        "item": "numero_item", "nº item": "numero_item", "número item": "numero_item",
+        # numero_item
+        "item": "numero_item",
+        "no item": "numero_item",
+        "n item": "numero_item",
+        "numero item": "numero_item",
+        "num item": "numero_item",
+        # campos simples
         "localidade": "localidade",
         "disciplina": "disciplina",
         "categoria": "categoria",
-        "código": "codigo", "codigo": "codigo",
-        "descrição": "descricao", "descricao": "descricao",
-        "unidade": "unidade", "un": "unidade", "unidade medida": "unidade",
-        "quantidade": "quantidade", "qtd": "quantidade",
-        "referência": "referencia_codigo", "referencia": "referencia_codigo",
+        "codigo": "codigo",
+        "cod": "codigo",
+        # descricao
+        "descricao": "descricao",
+        "descricoes": "descricao",
+        # unidade
+        "unidade": "unidade",
+        "unidade medida": "unidade",
+        "un": "unidade",
+        "und": "unidade",
+        # quantidade
+        "quantidade": "quantidade",
+        "qtd": "quantidade",
+        "qtde": "quantidade",
+        # referencia
+        "referencia": "referencia_codigo",
+        "referencia codigo": "referencia_codigo",
         "ref.": "referencia_codigo",
-        "preço unit. rf": "preco_referencia", "preço unitário rf": "preco_referencia",
-        "preço ref. (r$)": "preco_referencia", "preço ref.": "preco_referencia",
-        "preco referencia": "preco_referencia", "preço referência": "preco_referencia",
-        "observação": "observacao", "observacao": "observacao", "obs.": "observacao",
-        # Ignora a coluna de fórmula "Preço Total RF"
+        "ref": "referencia_codigo",
+        # preco_referencia
+        "preco unit. rf": "preco_referencia",
+        "preco unitario rf": "preco_referencia",
+        "preco ref. (r$)": "preco_referencia",
+        "preco ref.": "preco_referencia",
+        "preco referencia": "preco_referencia",
+        "preco unit rf": "preco_referencia",
+        "p.unit. rf": "preco_referencia",
+        # observacao
+        "observacao": "observacao",
+        "obs.": "observacao",
+        "obs": "observacao",
+        # coluna calculada — ignorada (Preço Total RF)
     }
 
     header_row, col_map = _find_header(ws, MAPA_HEADERS, required={"numero_item", "descricao"})
@@ -1116,19 +1146,28 @@ def _save(wb: Workbook) -> io.BytesIO:
 
 def _find_header(ws, mapa: dict, required: set):
     """Localiza a linha de cabeçalho e retorna (row_num, {col_idx: field_name})."""
-    for row in ws.iter_rows(min_row=1, max_row=12):
+    for row in ws.iter_rows(min_row=1, max_row=20):
         col_map = {}
         for cell in row:
-            key = str(cell.value or "").strip().lower()
+            key = _normalize_header(cell.value)
             field = mapa.get(key)
             if field:
                 col_map[cell.column] = field
         if required.issubset(col_map.values()):
             return cell.row, col_map
     raise ValueError(
-        f"Cabeçalhos obrigatórios não encontrados: {required}. "
-        "Verifique se o arquivo usa o modelo padrão."
+        "Cabeçalhos obrigatórios não encontrados (Item e Descrição). "
+        "Verifique se o arquivo usa o modelo padrão e se os cabeçalhos não foram modificados."
     )
+
+
+def _normalize_header(text: str) -> str:
+    """Normaliza texto de cabeçalho: minúsculo, sem acentos, sem espaços duplos."""
+    text = str(text or "").strip().lower()
+    # Remove acentos via decomposição unicode
+    nfkd = unicodedata.normalize("NFKD", text)
+    sem_acento = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return sem_acento
 
 
 def _str(v) -> Optional[str]:
