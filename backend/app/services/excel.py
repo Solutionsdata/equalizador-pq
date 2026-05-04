@@ -451,85 +451,62 @@ def importar_pq_excel(file_bytes: bytes) -> List[dict]:
     """
     Lê um Excel (modelo PQ ou qualquer planilha com cabeçalhos compatíveis)
     e retorna lista de dicts prontos para inserção no banco.
-    Normaliza acentos para aceitar arquivos salvos por diferentes softwares.
+    Usa read_only=True para processar linha a linha sem carregar tudo na RAM
+    (suporta planilhas com 20 000+ linhas sem estourar memória).
     """
-    wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
-    ws = wb.active
+    wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
+    try:
+        ws = wb.active
 
-    # Chaves sem acento (normalizadas por _normalize_header)
-    MAPA_HEADERS = {
-        # numero_item
-        "item": "numero_item",
-        "no item": "numero_item",
-        "n item": "numero_item",
-        "numero item": "numero_item",
-        "num item": "numero_item",
-        # campos simples
-        "localidade": "localidade",
-        "disciplina": "disciplina",
-        "categoria": "categoria",
-        "codigo": "codigo",
-        "cod": "codigo",
-        # descricao
-        "descricao": "descricao",
-        "descricoes": "descricao",
-        # unidade
-        "unidade": "unidade",
-        "unidade medida": "unidade",
-        "un": "unidade",
-        "und": "unidade",
-        # quantidade
-        "quantidade": "quantidade",
-        "qtd": "quantidade",
-        "qtde": "quantidade",
-        # referencia
-        "referencia": "referencia_codigo",
-        "referencia codigo": "referencia_codigo",
-        "ref.": "referencia_codigo",
-        "ref": "referencia_codigo",
-        # preco_referencia
-        "preco unit. rf": "preco_referencia",
-        "preco unitario rf": "preco_referencia",
-        "preco ref. (r$)": "preco_referencia",
-        "preco ref.": "preco_referencia",
-        "preco referencia": "preco_referencia",
-        "preco unit rf": "preco_referencia",
-        "p.unit. rf": "preco_referencia",
-        # observacao
-        "observacao": "observacao",
-        "obs.": "observacao",
-        "obs": "observacao",
-        # coluna calculada — ignorada (Preço Total RF)
-    }
+        # Chaves sem acento (normalizadas por _normalize_header)
+        MAPA_HEADERS = {
+            "item": "numero_item", "no item": "numero_item",
+            "n item": "numero_item", "numero item": "numero_item", "num item": "numero_item",
+            "localidade": "localidade", "disciplina": "disciplina",
+            "categoria": "categoria", "codigo": "codigo", "cod": "codigo",
+            "descricao": "descricao", "descricoes": "descricao",
+            "unidade": "unidade", "unidade medida": "unidade", "un": "unidade", "und": "unidade",
+            "quantidade": "quantidade", "qtd": "quantidade", "qtde": "quantidade",
+            "referencia": "referencia_codigo", "referencia codigo": "referencia_codigo",
+            "ref.": "referencia_codigo", "ref": "referencia_codigo",
+            "preco unit. rf": "preco_referencia", "preco unitario rf": "preco_referencia",
+            "preco ref. (r$)": "preco_referencia", "preco ref.": "preco_referencia",
+            "preco referencia": "preco_referencia", "preco unit rf": "preco_referencia",
+            "p.unit. rf": "preco_referencia",
+            "observacao": "observacao", "obs.": "observacao", "obs": "observacao",
+        }
 
-    header_row, col_map = _find_header(ws, MAPA_HEADERS, required={"numero_item", "descricao"})
+        # _find_header faz uma primeira passagem nas linhas 1-20 (pouca memória)
+        header_row, col_map = _find_header(ws, MAPA_HEADERS, required={"numero_item", "descricao"})
 
-    items = []
-    for row in ws.iter_rows(min_row=header_row + 1):
-        rd = {col_map[c.column]: c.value for c in row if c.column in col_map}
-        num = str(rd.get("numero_item") or "").strip()
-        desc = str(rd.get("descricao") or "").strip()
-        if not num or not desc:
-            continue
+        # Segunda passagem: lê dados linha a linha (read_only streaming)
+        items: list = []
+        for row in ws.iter_rows(min_row=header_row + 1):
+            rd = {col_map[c.column]: c.value for c in row if c.column in col_map}
+            num = str(rd.get("numero_item") or "").strip()
+            desc = str(rd.get("descricao") or "").strip()
+            if not num or not desc:
+                continue
+            items.append({
+                "numero_item":       num,
+                "localidade":        _str(rd.get("localidade")),
+                "disciplina":        _str(rd.get("disciplina")),
+                "categoria":         _str(rd.get("categoria")),
+                "codigo":            _str(rd.get("codigo")),
+                "descricao":         desc,
+                "unidade":           _str(rd.get("unidade")) or "un",
+                "quantidade":        _float(rd.get("quantidade")) or 0,
+                "referencia_codigo": _str(rd.get("referencia_codigo")),
+                "preco_referencia":  _float(rd.get("preco_referencia")),
+                "observacao":        _str(rd.get("observacao")),
+                "ordem":             len(items),
+            })
 
-        items.append({
-            "numero_item":       num,
-            "localidade":        _str(rd.get("localidade")),
-            "disciplina":        _str(rd.get("disciplina")),
-            "categoria":         _str(rd.get("categoria")),
-            "codigo":            _str(rd.get("codigo")),
-            "descricao":         desc,
-            "unidade":           _str(rd.get("unidade")) or "un",
-            "quantidade":        _float(rd.get("quantidade")) or 0,
-            "referencia_codigo": _str(rd.get("referencia_codigo")),
-            "preco_referencia":  _float(rd.get("preco_referencia")),
-            "observacao":        _str(rd.get("observacao")),
-            "ordem":             len(items),
-        })
-
-    if not items:
-        raise ValueError("Nenhum item válido encontrado. Verifique se o arquivo usa o modelo padrão.")
-    return items
+        if not items:
+            raise ValueError("Nenhum item válido encontrado. Verifique se o arquivo usa o modelo padrão.")
+        return items
+    finally:
+        wb.close()  # libera memória imediatamente
 
 
 # ── Importação: Proposta ──────────────────────────────────────────────────────
@@ -1145,8 +1122,13 @@ def _save(wb: Workbook) -> io.BytesIO:
 
 
 def _find_header(ws, mapa: dict, required: set):
-    """Localiza a linha de cabeçalho e retorna (row_num, {col_idx: field_name})."""
+    """Localiza a linha de cabeçalho e retorna (row_num, {col_idx: field_name}).
+    Compatível com read_only=True (captura row_num da primeira célula da linha).
+    """
     for row in ws.iter_rows(min_row=1, max_row=20):
+        if not row:
+            continue
+        row_num = row[0].row
         col_map = {}
         for cell in row:
             key = _normalize_header(cell.value)
@@ -1154,7 +1136,7 @@ def _find_header(ws, mapa: dict, required: set):
             if field:
                 col_map[cell.column] = field
         if required.issubset(col_map.values()):
-            return cell.row, col_map
+            return row_num, col_map
     raise ValueError(
         "Cabeçalhos obrigatórios não encontrados (Item e Descrição). "
         "Verifique se o arquivo usa o modelo padrão e se os cabeçalhos não foram modificados."
