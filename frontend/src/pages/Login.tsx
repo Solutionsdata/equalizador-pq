@@ -61,8 +61,7 @@ export default function Login() {
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600 mb-4">
             <BarChart3 size={28} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Software de Equalização</h1>
-          <p className="text-blue-300 text-sm mt-1">A solução que você precisava</p>
+          <h1 className="text-2xl font-bold text-white">Software Sourcing</h1>
         </div>
 
         {/* Tela pós-registro (aguardando aprovação) */}

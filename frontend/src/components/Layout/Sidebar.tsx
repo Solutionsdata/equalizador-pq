@@ -51,8 +51,8 @@ export default function Sidebar() {
             <BarChart3 size={16} className="text-white" />
           </div>
           <div className="min-w-0">
-            <p className="text-gray-900 font-bold text-xs leading-tight">Software de</p>
-            <p className="text-blue-600 font-bold text-xs leading-tight">Equalização</p>
+            <p className="text-gray-900 font-bold text-xs leading-tight">Software</p>
+            <p className="text-blue-600 font-bold text-xs leading-tight">Sourcing</p>
           </div>
         </div>
       </div>
