@@ -29,6 +29,12 @@ export interface User {
   created_at: string
 }
 
+export interface SharedUser {
+  id: number
+  nome: string
+  email: string
+}
+
 export interface Project {
   id: number
   user_id: number
@@ -43,6 +49,9 @@ export interface Project {
   updated_at: string
   total_pq_items: number
   total_proposals: number
+  is_shared?: boolean
+  owner_nome?: string | null
+  shared_with?: SharedUser[]
 }
 
 // ── Baseline ─────────────────────────────────────────────────────────────────

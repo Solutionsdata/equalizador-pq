@@ -7,8 +7,9 @@ import { TIPO_OBRA_OPTIONS, SPE_OPTIONS, getTipoObraLabel, STATUS_LABELS } from 
 import toast from 'react-hot-toast'
 import {
   Plus, FolderOpen, Table2, FileText, LineChart,
-  Pencil, Trash2, X, Check,
+  Pencil, Trash2, X, Check, Share2, Users,
 } from 'lucide-react'
+import ShareProjectModal from '../components/ShareProjectModal'
 
 const STATUS_OPTIONS: ProjectStatus[] = ['RASCUNHO', 'EM_ANDAMENTO', 'CONCLUIDO', 'ARQUIVADO']
 
@@ -40,6 +41,7 @@ export default function Projects() {
   const [selected, setSelected] = useState<Project | null>(null)
   const [form, setForm] = useState<ProjectForm>(EMPTY_FORM)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
+  const [shareProject, setShareProject] = useState<Project | null>(null)
 
   const { data: _rawProjects, isLoading } = useQuery<Project[]>({
     queryKey: ['projects'],
@@ -128,7 +130,10 @@ export default function Projects() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Projetos</h1>
-          <p className="text-gray-500 text-sm mt-0.5">{projects.length} projeto(s) cadastrado(s)</p>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {projects.filter((p) => !p.is_shared).length} próprio(s)
+            {projects.some((p) => p.is_shared) && ` · ${projects.filter((p) => p.is_shared).length} compartilhado(s)`}
+          </p>
         </div>
         <button onClick={openCreate} className="btn-primary">
           <Plus size={18} /> Novo Projeto
@@ -154,13 +159,25 @@ export default function Projects() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 truncate">{project.nome}</h3>
+                  {project.is_shared && project.owner_nome && (
+                    <p className="text-xs text-blue-500 mt-0.5 flex items-center gap-1">
+                      <Users size={11} /> Compartilhado por {project.owner_nome}
+                    </p>
+                  )}
                   {project.numero_licitacao && (
                     <p className="text-xs text-gray-400 mt-0.5">TR: {project.numero_licitacao}</p>
                   )}
                 </div>
-                <span className={`text-xs px-2 py-1 rounded-full font-medium flex-shrink-0 ${STATUS_COLORS[project.status]}`}>
-                  {STATUS_LABELS[project.status]}
-                </span>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLORS[project.status]}`}>
+                    {STATUS_LABELS[project.status]}
+                  </span>
+                  {!project.is_shared && (project.shared_with?.length ?? 0) > 0 && (
+                    <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Share2 size={10} /> {project.shared_with!.length} colaborador(es)
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Tipo, SPE e descrição */}
@@ -217,30 +234,41 @@ export default function Projects() {
                 </Link>
               </div>
 
-              {/* Editar / Excluir */}
+              {/* Editar / Compartilhar / Excluir */}
               <div className="flex gap-2">
                 <button onClick={() => openEdit(project)} className="btn-secondary flex-1 text-xs py-1.5 justify-center">
                   <Pencil size={13} /> Editar
                 </button>
-                {deleteConfirm === project.id ? (
-                  <div className="flex gap-1 flex-1">
-                    <button
-                      onClick={() => deleteMutation.mutate(project.id)}
-                      className="flex-1 flex items-center justify-center gap-1 text-xs py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
-                    >
-                      <Check size={13} /> Confirmar
-                    </button>
-                    <button onClick={() => setDeleteConfirm(null)} className="btn-secondary text-xs py-1.5 px-2">
-                      <X size={13} />
-                    </button>
-                  </div>
-                ) : (
+                {!project.is_shared && (
                   <button
-                    onClick={() => setDeleteConfirm(project.id)}
-                    className="btn-secondary text-xs py-1.5 px-3 text-red-500 hover:bg-red-50"
+                    onClick={() => setShareProject(project)}
+                    className="btn-secondary text-xs py-1.5 px-3 text-blue-500 hover:bg-blue-50"
+                    title="Compartilhar projeto"
                   >
-                    <Trash2 size={13} />
+                    <Share2 size={13} />
                   </button>
+                )}
+                {!project.is_shared && (
+                  deleteConfirm === project.id ? (
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => deleteMutation.mutate(project.id)}
+                        className="flex items-center justify-center gap-1 text-xs py-1.5 px-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                      >
+                        <Check size={13} />
+                      </button>
+                      <button onClick={() => setDeleteConfirm(null)} className="btn-secondary text-xs py-1.5 px-2">
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeleteConfirm(project.id)}
+                      className="btn-secondary text-xs py-1.5 px-3 text-red-500 hover:bg-red-50"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )
                 )}
               </div>
             </div>
@@ -248,7 +276,12 @@ export default function Projects() {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Share Modal */}
+      {shareProject && (
+        <ShareProjectModal project={shareProject} onClose={() => setShareProject(null)} />
+      )}
+
+      {/* Create/Edit Modal */}
       {modal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">

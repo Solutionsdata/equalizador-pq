@@ -7,6 +7,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.models.project import Project
+from app.models.project_share import ProjectShare
 from app.models.pq_item import PQItem
 from app.models.proposal import Proposal
 from app.models.proposal_item import ProposalItem
@@ -20,11 +21,16 @@ router = APIRouter()
 
 
 def _check_project(db: Session, project_id: int, user_id: int) -> Project:
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == user_id
-    ).first()
+    project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    if project.user_id != user_id:
+        share = db.query(ProjectShare).filter(
+            ProjectShare.project_id == project_id,
+            ProjectShare.user_id == user_id,
+        ).first()
+        if not share:
+            raise HTTPException(status_code=404, detail="Projeto não encontrado")
     return project
 
 

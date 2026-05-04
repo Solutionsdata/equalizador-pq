@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 from app.models.project import ProjectStatus
 
@@ -24,6 +24,13 @@ class ProjectUpdate(BaseModel):
     status: Optional[ProjectStatus] = None
 
 
+class SharedUserBrief(BaseModel):
+    id: int
+    nome: str
+    email: str
+    model_config = {"from_attributes": True}
+
+
 class ProjectResponse(BaseModel):
     id: int
     user_id: int
@@ -38,5 +45,8 @@ class ProjectResponse(BaseModel):
     updated_at: datetime
     total_pq_items: int = 0
     total_proposals: int = 0
+    is_shared: bool = False
+    owner_nome: Optional[str] = None
+    shared_with: List[SharedUserBrief] = []
 
     model_config = {"from_attributes": True}

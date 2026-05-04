@@ -139,6 +139,16 @@ export const analyticsAPI = {
   exportBaseline: () => api.get('/analytics/baseline/export', { responseType: 'blob' }),
 }
 
+// ── Sharing ───────────────────────────────────────────────────────────────────
+export const sharingAPI = {
+  listUsers: () => api.get('/users/list'),
+  listShares: (projectId: number) => api.get(`/projects/${projectId}/shares`),
+  addShare: (projectId: number, userId: number) =>
+    api.post(`/projects/${projectId}/shares`, { user_id: userId }),
+  removeShare: (projectId: number, userId: number) =>
+    api.delete(`/projects/${projectId}/shares/${userId}`),
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 export const adminAPI = {
   listUsers: () => api.get('/admin/users'),

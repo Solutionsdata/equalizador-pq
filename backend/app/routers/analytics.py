@@ -8,6 +8,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.models.project import Project
+from app.models.project_share import ProjectShare
 from app.models.project_revision import ProjectRevision
 from app.models.pq_item import PQItem
 from app.models.proposal import Proposal
@@ -20,6 +21,20 @@ from typing import List, Optional
 router = APIRouter()
 
 
+def _check_project_access(db: Session, project_id: int, user_id: int) -> Project:
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    if project.user_id != user_id:
+        share = db.query(ProjectShare).filter(
+            ProjectShare.project_id == project_id,
+            ProjectShare.user_id == user_id,
+        ).first()
+        if not share:
+            raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    return project
+
+
 @router.get("/pareto/{project_id}", response_model=ParetoData)
 def get_pareto(
     project_id: int,
@@ -29,6 +44,7 @@ def get_pareto(
     current_user: User = Depends(get_current_user),
 ):
     """Curva ABC / Pareto dos itens do projeto."""
+    _check_project_access(db, project_id, current_user.id)
     return AnalyticsService.get_pareto(db, project_id, source, revision_id)
 
 
@@ -40,6 +56,7 @@ def get_equalization(
     current_user: User = Depends(get_current_user),
 ):
     """Tabela de equalização — todas as propostas lado a lado, filtrada por revisão."""
+    _check_project_access(db, project_id, current_user.id)
     return AnalyticsService.get_equalization(db, project_id, revision_id)
 
 
@@ -50,6 +67,7 @@ def get_disciplines(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _check_project_access(db, project_id, current_user.id)
     return AnalyticsService.get_discipline_summary(db, project_id, revision_id)
 
 
@@ -60,6 +78,7 @@ def get_categorias(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _check_project_access(db, project_id, current_user.id)
     return AnalyticsService.get_categoria_summary(db, project_id, revision_id)
 
 
@@ -70,6 +89,7 @@ def get_localidades(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _check_project_access(db, project_id, current_user.id)
     return AnalyticsService.get_localidade_summary(db, project_id, revision_id)
 
 
@@ -81,11 +101,7 @@ def scope_validation(
     current_user: User = Depends(get_current_user),
 ):
     """Valida diferenças de escopo entre propostas e a PQ para uma revisão."""
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
-    ).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    project = _check_project_access(db, project_id, current_user.id)
 
     # Get the target revision (or latest)
     if revision_id:
@@ -168,8 +184,14 @@ def get_baseline(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Retorna todas as propostas vencedoras de todos os projetos do usuário."""
-    projects = db.query(Project).filter(Project.user_id == current_user.id).all()
+    """Retorna todas as propostas vencedoras de todos os projetos acessíveis ao usuário."""
+    owned = db.query(Project).filter(Project.user_id == current_user.id).all()
+    shared_ids = [
+        s.project_id
+        for s in db.query(ProjectShare).filter(ProjectShare.user_id == current_user.id).all()
+    ]
+    shared = db.query(Project).filter(Project.id.in_(shared_ids)).all() if shared_ids else []
+    projects = owned + shared
     project_map = {p.id: p for p in projects}
     project_ids = list(project_map.keys())
 
@@ -360,7 +382,13 @@ def export_baseline_excel(
     current_user: User = Depends(get_current_user),
 ):
     """Exporta o Baseline completo em Excel (multi-aba)."""
-    projects = db.query(Project).filter(Project.user_id == current_user.id).all()
+    owned = db.query(Project).filter(Project.user_id == current_user.id).all()
+    shared_ids = [
+        s.project_id
+        for s in db.query(ProjectShare).filter(ProjectShare.user_id == current_user.id).all()
+    ]
+    shared = db.query(Project).filter(Project.id.in_(shared_ids)).all() if shared_ids else []
+    projects = owned + shared
     project_map = {p.id: p for p in projects}
     project_ids = list(project_map.keys())
 
@@ -429,9 +457,7 @@ def export_analytics_excel(
     current_user: User = Depends(get_current_user),
 ):
     """Exporta relatório completo de equalização em Excel (5 abas)."""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    project = _check_project_access(db, project_id, current_user.id)
 
     eq_data = AnalyticsService.get_equalization(db, project_id)
     pareto_data = AnalyticsService.get_pareto(db, project_id, "referencia")

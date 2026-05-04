@@ -3,8 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from app.database import engine, Base
 from app.config import settings
-from app.routers import auth, projects, pq, proposals, analytics, admin, revisions
+from app.routers import auth, projects, pq, proposals, analytics, admin, revisions, sharing
 from app.routers import monitoring, hotmart
+from app.models import project_share  # noqa: F401 — ensure table is registered
 
 # Cria tabelas novas e adiciona colunas ausentes (migração simples sem Alembic)
 Base.metadata.create_all(bind=engine)
@@ -169,6 +170,23 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS spe_unidade VARCHAR(100)"
     ))
+    # ── Compartilhamento de projetos entre usuários ───────────────────────────
+    _conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS project_shares (
+            id           SERIAL PRIMARY KEY,
+            project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            shared_by_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_project_share UNIQUE (project_id, user_id)
+        )
+    """))
+    _conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_project_shares_project_id ON project_shares (project_id)"
+    ))
+    _conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_project_shares_user_id ON project_shares (user_id)"
+    ))
     _conn.commit()
 
 app = FastAPI(
@@ -204,6 +222,7 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Análises"]
 app.include_router(admin.router, prefix="/api/admin", tags=["Administração"])
 app.include_router(monitoring.router, prefix="/api/admin/monitoring", tags=["Monitoramento"])
 app.include_router(revisions.router, prefix="/api", tags=["Revisões"])
+app.include_router(sharing.router, prefix="/api", tags=["Compartilhamento"])
 app.include_router(hotmart.router, prefix="/api", tags=["Hotmart"])
 
 

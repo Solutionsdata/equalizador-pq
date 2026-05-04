@@ -31,3 +31,4 @@ class Project(Base):
     pq_items = relationship("PQItem", back_populates="project", cascade="all, delete-orphan")
     proposals = relationship("Proposal", back_populates="project", cascade="all, delete-orphan")
     revisions = relationship("ProjectRevision", back_populates="project", cascade="all, delete-orphan", order_by="ProjectRevision.numero")
+    shares = relationship("ProjectShare", back_populates="project", cascade="all, delete-orphan")
