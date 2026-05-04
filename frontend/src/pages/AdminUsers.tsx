@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import {
   Shield, ShieldOff, UserCheck, UserX, Trash2,
   RefreshCw, Crown, Clock, CheckCircle, XCircle,
-  CalendarDays, AlertTriangle, Infinity,
+  CalendarDays, AlertTriangle, Infinity, KeyRound, Eye, EyeOff,
 } from 'lucide-react'
 import type { User } from '../types'
 
@@ -199,6 +199,9 @@ export default function AdminUsers() {
   const { user: me } = useAuth()
   const qc = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState<User | null>(null)
+  const [resetPwdUser, setResetPwdUser] = useState<User | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [showNewPwd, setShowNewPwd] = useState(false)
 
   if (me && !me.is_admin) return <Navigate to="/" replace />
 
@@ -227,6 +230,17 @@ export default function AdminUsers() {
       setConfirmDelete(null)
     },
     onError: (err: any) => toast.error(err.response?.data?.detail ?? 'Erro ao excluir'),
+  })
+
+  const resetPwdMutation = useMutation({
+    mutationFn: ({ id, password }: { id: number; password: string }) =>
+      adminAPI.resetPassword(id, password),
+    onSuccess: () => {
+      toast.success('Senha redefinida com sucesso!')
+      setResetPwdUser(null)
+      setNewPassword('')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail ?? 'Erro ao redefinir senha'),
   })
 
   // months=null → sem vencimento (acesso permanente)
@@ -421,6 +435,14 @@ export default function AdminUsers() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <button
+                          title="Redefinir senha"
+                          onClick={() => { setResetPwdUser(u); setNewPassword(''); setShowNewPwd(false) }}
+                          disabled={updateMutation.isPending}
+                          className="p-1.5 rounded-lg text-gray-400 hover:bg-yellow-50 hover:text-yellow-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <KeyRound size={16} />
+                        </button>
+                        <button
                           title={u.is_active ? 'Desativar acesso' : 'Reativar acesso'}
                           onClick={() => toggleActive(u)}
                           disabled={isMe || updateMutation.isPending}
@@ -470,6 +492,54 @@ export default function AdminUsers() {
           <span className="text-red-600 font-medium">{cannotLogin.length} com assinatura vencida (não loga)</span>
         )}
       </div>
+
+      {/* Modal redefinição de senha */}
+      {resetPwdUser && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl">
+            <div className="flex items-center gap-2 mb-1">
+              <KeyRound size={18} className="text-yellow-600" />
+              <h3 className="text-lg font-bold text-gray-900">Redefinir Senha</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Nova senha para <strong>{resetPwdUser.nome}</strong> ({resetPwdUser.email})
+            </p>
+            <div className="relative mb-4">
+              <input
+                type={showNewPwd ? 'text' : 'password'}
+                className="input pr-10 w-full"
+                placeholder="Nova senha (mínimo 6 caracteres)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoFocus
+                minLength={6}
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPwd(!showNewPwd)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showNewPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setResetPwdUser(null); setNewPassword('') }}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => resetPwdMutation.mutate({ id: resetPwdUser.id, password: newPassword })}
+                disabled={newPassword.length < 6 || resetPwdMutation.isPending}
+                className="flex-1 px-4 py-2 rounded-lg bg-yellow-500 text-white text-sm font-medium hover:bg-yellow-600 disabled:opacity-50"
+              >
+                {resetPwdMutation.isPending ? 'Salvando…' : 'Salvar nova senha'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal confirmação de exclusão */}
       {confirmDelete && (

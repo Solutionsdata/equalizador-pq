@@ -4,6 +4,7 @@ Apenas usuários com is_admin=True podem acessar estes endpoints.
 """
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -57,6 +58,30 @@ def update_user(
     elif data.assinatura_ate is not None:
         user.assinatura_ate = data.assinatura_ate
 
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+class PasswordReset(BaseModel):
+    new_password: str
+
+
+@router.patch("/users/{user_id}/reset-password", response_model=UserResponse)
+def reset_password(
+    user_id: int,
+    data: PasswordReset,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """Admin redefine a senha de qualquer usuário."""
+    from app.services.auth import AuthService
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Senha deve ter no mínimo 6 caracteres")
+    user.hashed_password = AuthService.hash_password(data.new_password)
     db.commit()
     db.refresh(user)
     return user

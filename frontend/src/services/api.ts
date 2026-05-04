@@ -156,7 +156,10 @@ export const adminAPI = {
     is_active?: boolean
     is_admin?: boolean
     assinatura_ate?: string | null
+    clear_assinatura?: boolean
   }) => api.patch(`/admin/users/${id}`, data),
+  resetPassword: (id: number, newPassword: string) =>
+    api.patch(`/admin/users/${id}/reset-password`, { new_password: newPassword }),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
 }
 
