@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import React, { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { projectsAPI, sharingAPI } from '../services/api'
 import type { Project, ProjectStatus, SharedUser } from '../types'
@@ -7,8 +7,7 @@ import { TIPO_OBRA_OPTIONS, SPE_OPTIONS, getTipoObraLabel, STATUS_LABELS } from 
 import toast from 'react-hot-toast'
 import {
   Plus, FolderOpen, Table2, FileText, LineChart,
-  Pencil, Trash2, X, Check, Share2, Users,
-  UserPlus, UserMinus, Search,
+  Pencil, Trash2, X, Check, Share2, Users, Search,
 } from 'lucide-react'
 
 const STATUS_OPTIONS: ProjectStatus[] = ['EM_ANDAMENTO', 'CONCLUIDO', 'ARQUIVADO']
@@ -32,99 +31,71 @@ interface ProjectForm {
 }
 
 const EMPTY_FORM: ProjectForm = {
-  nome: '', descricao: '', numero_licitacao: '', tipo_obra: 'Duplicação', outraTipoObra: '', extensao_km: '', spe_unidade: '',
+  nome: '', descricao: '', numero_licitacao: '', tipo_obra: 'Duplicação',
+  outraTipoObra: '', extensao_km: '', spe_unidade: '',
 }
 
 export default function Projects() {
   const qc = useQueryClient()
+
+  // ── Modal state ──────────────────────────────────────────────────────────────
   const [modal, setModal] = useState<'create' | 'edit' | null>(null)
   const [selected, setSelected] = useState<Project | null>(null)
   const [form, setForm] = useState<ProjectForm>(EMPTY_FORM)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
-  const [shareSearch, setShareSearch] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
 
-  const isOwnerEdit = modal === 'edit' && selected && !selected.is_shared
+  // ── Collaborators state ──────────────────────────────────────────────────────
+  const [selectedCollaboratorIds, setSelectedCollaboratorIds] = useState<Set<number>>(new Set())
+  const [collaboratorSearch, setCollaboratorSearch] = useState('')
+  const [sharesInitialized, setSharesInitialized] = useState(false)
 
+  // Is the current user the owner (can manage collaborators)?
+  const isOwner = modal === 'create' || (modal === 'edit' && selected != null && !selected.is_shared)
+
+  // Load all available users when the modal is open and user is owner
   const { data: allUsers = [] } = useQuery<{ id: number; nome: string; email: string }[]>({
     queryKey: ['users-list'],
     queryFn: () => sharingAPI.listUsers().then((r) => r.data),
-    enabled: !!isOwnerEdit,
+    enabled: !!modal && isOwner,
+    staleTime: 5 * 60 * 1000,
   })
+
+  // Load current shares when editing an owned project
   const { data: shares = [] } = useQuery<SharedUser[]>({
     queryKey: ['project-shares', selected?.id],
     queryFn: () => sharingAPI.listShares(selected!.id).then((r) => r.data),
-    enabled: !!isOwnerEdit,
-  })
-  const sharedIds = new Set(shares.map((s) => s.id))
-
-  const addShareMutation = useMutation({
-    mutationFn: (userId: number) => sharingAPI.addShare(selected!.id, userId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project-shares', selected?.id] })
-      qc.invalidateQueries({ queryKey: ['projects'] })
-      toast.success('Colaborador adicionado!')
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.detail ?? 'Erro ao compartilhar'),
-  })
-  const removeShareMutation = useMutation({
-    mutationFn: (userId: number) => sharingAPI.removeShare(selected!.id, userId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project-shares', selected?.id] })
-      qc.invalidateQueries({ queryKey: ['projects'] })
-      toast.success('Acesso removido.')
-    },
-    onError: () => toast.error('Erro ao remover acesso'),
+    enabled: modal === 'edit' && selected != null && !selected.is_shared,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   })
 
-  const { data: _rawProjects, isLoading } = useQuery<Project[]>({
+  // Initialize checkbox selection from shares when edit modal loads
+  useEffect(() => {
+    if (modal === 'edit' && !sharesInitialized) {
+      setSelectedCollaboratorIds(new Set(shares.map((s) => s.id)))
+      if (shares.length > 0 || selected != null) setSharesInitialized(true)
+    }
+  }, [shares, modal, sharesInitialized, selected])
+
+  // ── Projects list ────────────────────────────────────────────────────────────
+  const { data: _raw, isLoading } = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: () => projectsAPI.list().then((r) => r.data),
   })
-  const projects: Project[] = Array.isArray(_rawProjects) ? _rawProjects : []
+  const projects: Project[] = Array.isArray(_raw) ? _raw : []
 
-  const createMutation = useMutation({
-    mutationFn: (data: ProjectForm) => projectsAPI.create(data),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['projects'] })
-      toast.success('Projeto criado! Adicione colaboradores abaixo.')
-      openEdit(res.data as Project)
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.detail
-        ?? (err?.isServerStarting
-          ? 'Servidor inicializando… tente novamente em 30 segundos.'
-          : 'Erro ao criar projeto')
-      toast.error(msg)
-    },
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: object }) => projectsAPI.update(id, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['projects'] })
-      toast.success('Projeto atualizado!')
-      closeModal()
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.detail ?? 'Erro ao atualizar'),
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => projectsAPI.delete(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['projects'] })
-      toast.success('Projeto excluído.')
-      setDeleteConfirm(null)
-    },
-    onError: () => toast.error('Erro ao excluir projeto'),
-  })
-
+  // ── Helpers ──────────────────────────────────────────────────────────────────
   function openCreate() {
     setForm(EMPTY_FORM)
+    setSelected(null)
+    setSelectedCollaboratorIds(new Set())
+    setSharesInitialized(false)
+    setCollaboratorSearch('')
     setModal('create')
   }
 
   function openEdit(project: Project) {
-    setSelected(project)
     const isKnown = TIPO_OBRA_OPTIONS.includes(project.tipo_obra)
     setForm({
       nome: project.nome,
@@ -136,14 +107,37 @@ export default function Projects() {
       spe_unidade: project.spe_unidade ?? '',
       status: project.status,
     })
+    setSelected(project)
+    setSelectedCollaboratorIds(new Set())
+    setSharesInitialized(false)
+    setCollaboratorSearch('')
     setModal('edit')
   }
 
-  function closeModal() { setModal(null); setSelected(null); setShareSearch('') }
+  function closeModal() {
+    setModal(null)
+    setSelected(null)
+    setSelectedCollaboratorIds(new Set())
+    setSharesInitialized(false)
+    setCollaboratorSearch('')
+  }
 
-  function handleSubmit(e: React.FormEvent) {
+  function toggleCollaborator(userId: number) {
+    setSelectedCollaboratorIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(userId)) next.delete(userId)
+      else next.add(userId)
+      return next
+    })
+  }
+
+  // ── Submit (create or edit + collaborator sync) ───────────────────────────────
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const tipoObra = form.tipo_obra === 'Outra' ? (form.outraTipoObra.trim() || 'Outra') : form.tipo_obra
+    setIsSaving(true)
+
+    const tipoObra =
+      form.tipo_obra === 'Outra' ? (form.outraTipoObra.trim() || 'Outra') : form.tipo_obra
     const payload = {
       nome: form.nome,
       descricao: form.descricao,
@@ -153,10 +147,60 @@ export default function Projects() {
       spe_unidade: form.spe_unidade || null,
       status: form.status,
     }
-    if (modal === 'create') createMutation.mutate(payload as any)
-    else if (modal === 'edit' && selected) updateMutation.mutate({ id: selected.id, data: payload })
+
+    try {
+      if (modal === 'create') {
+        const res = await projectsAPI.create(payload)
+        const newId = (res.data as Project).id
+        // Add all selected collaborators
+        for (const userId of selectedCollaboratorIds) {
+          await sharingAPI.addShare(newId, userId)
+        }
+        qc.invalidateQueries({ queryKey: ['projects'] })
+        toast.success('Projeto criado com sucesso!')
+        closeModal()
+      } else if (modal === 'edit' && selected) {
+        await projectsAPI.update(selected.id, payload)
+        // Sync collaborators (only owner can manage)
+        if (!selected.is_shared) {
+          const currentSharedIds = new Set(shares.map((s) => s.id))
+          for (const userId of selectedCollaboratorIds) {
+            if (!currentSharedIds.has(userId)) {
+              await sharingAPI.addShare(selected.id, userId)
+            }
+          }
+          for (const userId of currentSharedIds) {
+            if (!selectedCollaboratorIds.has(userId)) {
+              await sharingAPI.removeShare(selected.id, userId)
+            }
+          }
+        }
+        qc.invalidateQueries({ queryKey: ['projects'] })
+        qc.invalidateQueries({ queryKey: ['project-shares', selected.id] })
+        toast.success('Projeto atualizado!')
+        closeModal()
+      }
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.detail ??
+        (err?.isServerStarting
+          ? 'Servidor inicializando… tente novamente em 30 segundos.'
+          : 'Erro ao salvar projeto')
+      toast.error(msg)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
+  // ── Filtered users list for picker ───────────────────────────────────────────
+  const filteredUsers = allUsers.filter(
+    (u) =>
+      !collaboratorSearch.trim() ||
+      u.nome.toLowerCase().includes(collaboratorSearch.toLowerCase()) ||
+      u.email.toLowerCase().includes(collaboratorSearch.toLowerCase()),
+  )
+
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="page">
       {/* Header */}
@@ -165,7 +209,8 @@ export default function Projects() {
           <h1 className="text-2xl font-bold text-gray-900">Projetos</h1>
           <p className="text-gray-500 text-sm mt-0.5">
             {projects.filter((p) => !p.is_shared).length} próprio(s)
-            {projects.some((p) => p.is_shared) && ` · ${projects.filter((p) => p.is_shared).length} compartilhado(s)`}
+            {projects.some((p) => p.is_shared) &&
+              ` · ${projects.filter((p) => p.is_shared).length} compartilhado(s)`}
           </p>
         </div>
         <button onClick={openCreate} className="btn-primary">
@@ -173,7 +218,7 @@ export default function Projects() {
         </button>
       </div>
 
-      {/* Grid de projetos */}
+      {/* Project grid */}
       {isLoading ? (
         <div className="text-center py-20 text-gray-400">Carregando…</div>
       ) : projects.length === 0 ? (
@@ -188,7 +233,7 @@ export default function Projects() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {projects.map((project) => (
             <div key={project.id} className="card p-5 flex flex-col gap-3">
-              {/* Header do card */}
+              {/* Card header */}
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 truncate">{project.nome}</h3>
@@ -213,7 +258,7 @@ export default function Projects() {
                 </div>
               </div>
 
-              {/* Tipo, SPE e descrição */}
+              {/* Tags */}
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-medium">
                   {getTipoObraLabel(project.tipo_obra)}
@@ -233,7 +278,7 @@ export default function Projects() {
                 <p className="text-sm text-gray-500 line-clamp-2">{project.descricao}</p>
               )}
 
-              {/* Contadores */}
+              {/* Counters */}
               <div className="flex gap-4 text-sm text-gray-400 border-t border-gray-100 pt-3">
                 <span className="flex items-center gap-1">
                   <Table2 size={14} className="text-gray-300" />
@@ -245,7 +290,7 @@ export default function Projects() {
                 </span>
               </div>
 
-              {/* Ações */}
+              {/* Navigation */}
               <div className="flex gap-2 pt-1">
                 <Link
                   to={`/projetos/${project.id}/pq`}
@@ -267,24 +312,26 @@ export default function Projects() {
                 </Link>
               </div>
 
-              {/* Editar / Compartilhar / Excluir */}
+              {/* Edit / Delete */}
               <div className="flex gap-2">
-                <button onClick={() => openEdit(project)} className="btn-secondary flex-1 text-xs py-1.5 justify-center">
+                <button
+                  onClick={() => openEdit(project)}
+                  className="btn-secondary flex-1 text-xs py-1.5 justify-center"
+                >
                   <Pencil size={13} /> Editar
                 </button>
-                {!project.is_shared ? (
+                {!project.is_shared && (
                   <>
-                    <button
-                      onClick={() => openEdit(project)}
-                      className="flex items-center gap-1 text-xs py-1.5 px-3 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 font-medium transition-colors"
-                      title="Compartilhar projeto com colaboradores"
-                    >
-                      <Share2 size={13} /> Compartilhar
-                    </button>
                     {deleteConfirm === project.id ? (
                       <div className="flex gap-1">
                         <button
-                          onClick={() => deleteMutation.mutate(project.id)}
+                          onClick={() => {
+                            projectsAPI.delete(project.id).then(() => {
+                              qc.invalidateQueries({ queryKey: ['projects'] })
+                              toast.success('Projeto excluído.')
+                              setDeleteConfirm(null)
+                            }).catch(() => toast.error('Erro ao excluir projeto'))
+                          }}
                           className="flex items-center justify-center gap-1 text-xs py-1.5 px-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
                         >
                           <Check size={13} />
@@ -302,21 +349,21 @@ export default function Projects() {
                       </button>
                     )}
                   </>
-                ) : null}
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Create/Edit Modal */}
+      {/* ── Create / Edit Modal ──────────────────────────────────────────────── */}
       {modal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[92vh]">
 
             {/* Modal header */}
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">
                 {modal === 'create' ? 'Novo Projeto' : 'Editar Projeto'}
               </h2>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
@@ -326,7 +373,9 @@ export default function Projects() {
 
             {/* Scrollable body */}
             <div className="overflow-y-auto flex-1 px-6 py-5">
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} id="project-form" className="space-y-4">
+
+                {/* Nome */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Projeto *</label>
                   <input
@@ -338,6 +387,7 @@ export default function Projects() {
                   />
                 </div>
 
+                {/* Tipo de Obra + Nº TR */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Obra *</label>
@@ -371,6 +421,7 @@ export default function Projects() {
                   </div>
                 </div>
 
+                {/* SPE */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">SPE — Unidade Contratante *</label>
                   <select
@@ -386,6 +437,7 @@ export default function Projects() {
                   </select>
                 </div>
 
+                {/* Extensão km */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Extensão (km)
@@ -406,6 +458,7 @@ export default function Projects() {
                   <p className="text-xs text-gray-400 mt-1">Usado para calcular o custo por km no Baseline.</p>
                 </div>
 
+                {/* Status (edit only) */}
                 {modal === 'edit' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
@@ -421,117 +474,107 @@ export default function Projects() {
                   </div>
                 )}
 
+                {/* Descrição */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
                   <textarea
                     className="input resize-none"
-                    rows={3}
+                    rows={2}
                     placeholder="Detalhes da obra, localização, extensão…"
                     value={form.descricao}
                     onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value }))}
                   />
                 </div>
 
+                {/* ── Collaborators picker (owner only) ── */}
+                {isOwner && (
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    {/* Section header */}
+                    <div className="bg-gray-50 px-4 py-3 flex items-center justify-between border-b border-gray-200">
+                      <div className="flex items-center gap-2">
+                        <Users size={15} className="text-blue-600" />
+                        <span className="text-sm font-semibold text-gray-800">Colaboradores</span>
+                        <span className="text-xs text-gray-400">— podem editar, mas não excluir</span>
+                      </div>
+                      {selectedCollaboratorIds.size > 0 && (
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                          {selectedCollaboratorIds.size} selecionado(s)
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="p-3">
+                      {/* Search filter */}
+                      <div className="relative mb-2">
+                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        <input
+                          className="input pl-8 text-sm py-1.5"
+                          placeholder="Filtrar por nome ou e-mail…"
+                          value={collaboratorSearch}
+                          onChange={(e) => setCollaboratorSearch(e.target.value)}
+                        />
+                      </div>
+
+                      {/* User list */}
+                      {allUsers.length === 0 ? (
+                        <p className="text-xs text-gray-400 text-center py-4">
+                          Nenhum outro usuário cadastrado no sistema.
+                        </p>
+                      ) : filteredUsers.length === 0 ? (
+                        <p className="text-xs text-gray-400 text-center py-4">
+                          Nenhum usuário encontrado para "{collaboratorSearch}".
+                        </p>
+                      ) : (
+                        <div className="space-y-1 max-h-48 overflow-y-auto">
+                          {filteredUsers.map((u) => {
+                            const checked = selectedCollaboratorIds.has(u.id)
+                            return (
+                              <label
+                                key={u.id}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                                  checked
+                                    ? 'bg-blue-50 border border-blue-200'
+                                    : 'bg-white border border-transparent hover:bg-gray-50'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="w-4 h-4 rounded text-blue-600 flex-shrink-0"
+                                  checked={checked}
+                                  onChange={() => toggleCollaborator(u.id)}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium text-gray-800 truncate">{u.nome}</p>
+                                  <p className="text-xs text-gray-400 truncate">{u.email}</p>
+                                </div>
+                                {checked && (
+                                  <span className="text-xs text-blue-600 font-medium flex-shrink-0">✓ Selecionado</span>
+                                )}
+                              </label>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Submit buttons */}
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={closeModal} className="btn-secondary flex-1 justify-center">
                     Cancelar
                   </button>
                   <button
                     type="submit"
-                    disabled={createMutation.isPending || updateMutation.isPending}
+                    disabled={isSaving}
                     className="btn-primary flex-1 justify-center"
                   >
-                    {createMutation.isPending || updateMutation.isPending ? 'Salvando…' : 'Salvar'}
+                    {isSaving ? 'Salvando…' : modal === 'create' ? 'Criar Projeto' : 'Salvar Alterações'}
                   </button>
                 </div>
               </form>
-
-              {/* ── Collaborators section (edit modal, owner only) ── */}
-              {isOwnerEdit && (
-                <div className="mt-6 border-t border-gray-100 pt-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Users size={16} className="text-blue-600" />
-                    <h3 className="text-sm font-semibold text-gray-800">Colaboradores</h3>
-                    {shares.length > 0 && (
-                      <span className="ml-auto text-xs text-gray-400">{shares.length} com acesso</span>
-                    )}
-                  </div>
-
-                  {/* Active shares */}
-                  {shares.length > 0 && (
-                    <div className="space-y-1.5 mb-3">
-                      {shares.map((s) => (
-                        <div key={s.id} className="flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">{s.nome}</p>
-                            <p className="text-xs text-gray-400 truncate">{s.email}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeShareMutation.mutate(s.id)}
-                            disabled={removeShareMutation.isPending}
-                            className="ml-3 flex-shrink-0 flex items-center gap-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-2 py-1 transition-colors"
-                          >
-                            <UserMinus size={13} /> Remover
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* User search + add */}
-                  <div className="relative mb-2">
-                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      className="input pl-8 text-sm"
-                      placeholder="Buscar usuário por nome ou e-mail…"
-                      value={shareSearch}
-                      onChange={(e) => setShareSearch(e.target.value)}
-                    />
-                  </div>
-
-                  {shareSearch.trim() && (
-                    <div className="space-y-1 max-h-40 overflow-y-auto">
-                      {allUsers
-                        .filter(
-                          (u) =>
-                            !sharedIds.has(u.id) &&
-                            (u.nome.toLowerCase().includes(shareSearch.toLowerCase()) ||
-                              u.email.toLowerCase().includes(shareSearch.toLowerCase())),
-                        )
-                        .map((u) => (
-                          <div key={u.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{u.nome}</p>
-                              <p className="text-xs text-gray-400 truncate">{u.email}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => { addShareMutation.mutate(u.id); setShareSearch('') }}
-                              disabled={addShareMutation.isPending}
-                              className="ml-3 flex-shrink-0 flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded px-2 py-1 transition-colors"
-                            >
-                              <UserPlus size={13} /> Adicionar
-                            </button>
-                          </div>
-                        ))}
-                      {allUsers.filter(
-                        (u) =>
-                          !sharedIds.has(u.id) &&
-                          (u.nome.toLowerCase().includes(shareSearch.toLowerCase()) ||
-                            u.email.toLowerCase().includes(shareSearch.toLowerCase())),
-                      ).length === 0 && (
-                        <p className="text-xs text-gray-400 text-center py-3">Nenhum usuário encontrado.</p>
-                      )}
-                    </div>
-                  )}
-
-                  <p className="text-xs text-gray-400 mt-3">
-                    Colaboradores têm acesso completo de edição ao projeto.
-                  </p>
-                </div>
-              )}
             </div>
+
           </div>
         </div>
       )}

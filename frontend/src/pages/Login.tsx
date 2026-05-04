@@ -11,7 +11,7 @@ export default function Login() {
   const [registered, setRegistered] = useState(false)
 
   const [form, setForm] = useState({
-    nome: '', email: '', empresa: '', cargo: '', password: '',
+    nome: '', email: '', cargo: '', password: '',
   })
 
   function set(field: string, value: string) {
@@ -29,7 +29,6 @@ export default function Login() {
         await register({
           nome: form.nome,
           email: form.email,
-          empresa: form.empresa || undefined,
           cargo: form.cargo || undefined,
           password: form.password,
         })
@@ -108,15 +107,9 @@ export default function Login() {
                       required
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
-                      <input className="input" placeholder="Nome da empresa" value={form.empresa} onChange={(e) => set('empresa', e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Cargo</label>
-                      <input className="input" placeholder="Analista" value={form.cargo} onChange={(e) => set('cargo', e.target.value)} />
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Cargo</label>
+                    <input className="input" placeholder="Ex: Analista, Engenheiro..." value={form.cargo} onChange={(e) => set('cargo', e.target.value)} />
                   </div>
                   <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                     Após o cadastro, sua conta precisará ser aprovada pelo administrador antes do primeiro acesso.
