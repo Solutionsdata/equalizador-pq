@@ -48,7 +48,6 @@ export default function Projects() {
   // ── Collaborators state ──────────────────────────────────────────────────────
   const [selectedCollaboratorIds, setSelectedCollaboratorIds] = useState<Set<number>>(new Set())
   const [collaboratorSearch, setCollaboratorSearch] = useState('')
-  const [sharesInitialized, setSharesInitialized] = useState(false)
 
   // Is the current user the owner (can manage collaborators)?
   const isOwner = modal === 'create' || (modal === 'edit' && selected != null && !selected.is_shared)
@@ -70,13 +69,10 @@ export default function Projects() {
     refetchOnWindowFocus: false,
   })
 
-  // Initialize checkbox selection from shares when edit modal loads
+  // Sync checkbox selection whenever shares data arrives (or project changes)
   useEffect(() => {
-    if (modal === 'edit' && !sharesInitialized) {
-      setSelectedCollaboratorIds(new Set(shares.map((s) => s.id)))
-      if (shares.length > 0 || selected != null) setSharesInitialized(true)
-    }
-  }, [shares, modal, sharesInitialized, selected])
+    setSelectedCollaboratorIds(new Set(shares.map((s) => s.id)))
+  }, [shares])
 
   // ── Projects list ────────────────────────────────────────────────────────────
   const { data: _raw, isLoading } = useQuery<Project[]>({
@@ -90,7 +86,6 @@ export default function Projects() {
     setForm(EMPTY_FORM)
     setSelected(null)
     setSelectedCollaboratorIds(new Set())
-    setSharesInitialized(false)
     setCollaboratorSearch('')
     setModal('create')
   }
@@ -109,7 +104,6 @@ export default function Projects() {
     })
     setSelected(project)
     setSelectedCollaboratorIds(new Set())
-    setSharesInitialized(false)
     setCollaboratorSearch('')
     setModal('edit')
   }
@@ -118,7 +112,6 @@ export default function Projects() {
     setModal(null)
     setSelected(null)
     setSelectedCollaboratorIds(new Set())
-    setSharesInitialized(false)
     setCollaboratorSearch('')
   }
 
