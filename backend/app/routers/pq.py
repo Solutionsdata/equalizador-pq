@@ -1,5 +1,7 @@
+import base64
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
@@ -238,6 +240,62 @@ async def import_pq(
     new_items = []
     for row in rows:
         # 'ordem' já vem dentro de row — não passar explicitamente
+        item = PQItem(**row, project_id=project_id, revision_id=revision_id)
+        db.add(item)
+        new_items.append(item)
+    db.commit()
+    for item in new_items:
+        db.refresh(item)
+    return new_items
+
+
+class ImportB64Payload(BaseModel):
+    filename: str
+    content_b64: str  # base64-encoded xlsx bytes
+
+
+@router.post("/project/{project_id}/import-b64", response_model=list[PQItemResponse])
+def import_pq_b64(
+    project_id: int,
+    payload: ImportB64Payload,
+    revision_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Importa PQ recebendo o arquivo Excel codificado em base64 (JSON body)."""
+    _check_project(db, project_id, current_user.id)
+
+    filename = payload.filename.lower()
+    if not filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Envie um arquivo Excel (.xlsx).")
+
+    try:
+        file_bytes = base64.b64decode(payload.content_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Conteúdo base64 inválido.")
+
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="O arquivo enviado está vazio.")
+
+    try:
+        rows = importar_pq_excel(file_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Não foi possível ler o arquivo Excel. Verifique se ele não está corrompido. Detalhe: {exc}",
+        )
+
+    q = db.query(PQItem).filter(PQItem.project_id == project_id)
+    if revision_id is not None:
+        q = q.filter(PQItem.revision_id == revision_id)
+    for old_item in q.all():
+        db.delete(old_item)
+    db.flush()
+
+    new_items = []
+    for row in rows:
         item = PQItem(**row, project_id=project_id, revision_id=revision_id)
         db.add(item)
         new_items.append(item)
