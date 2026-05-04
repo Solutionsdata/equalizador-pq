@@ -314,7 +314,7 @@ export function getTipoObraLabel(tipo: string): string {
 }
 
 export const STATUS_LABELS: Record<ProjectStatus, string> = {
-  RASCUNHO: 'Rascunho',
+  RASCUNHO: 'Em Andamento',
   EM_ANDAMENTO: 'Em Andamento',
   CONCLUIDO: 'Concluído',
   ARQUIVADO: 'Arquivado',

@@ -170,6 +170,10 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS spe_unidade VARCHAR(100)"
     ))
+    # Migrar projetos RASCUNHO para EM_ANDAMENTO (status removido da UI)
+    _conn.execute(text(
+        "UPDATE projects SET status = 'EM_ANDAMENTO' WHERE status = 'RASCUNHO'"
+    ))
     # ── Compartilhamento de projetos entre usuários ───────────────────────────
     _conn.execute(text("""
         CREATE TABLE IF NOT EXISTS project_shares (

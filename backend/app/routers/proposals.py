@@ -6,7 +6,7 @@ from typing import Optional
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
-from app.models.project import Project
+from app.models.project import Project, ProjectStatus
 from app.models.project_share import ProjectShare
 from app.models.pq_item import PQItem
 from app.models.proposal import Proposal
@@ -171,6 +171,11 @@ def update_proposal(
     _check_project(db, proposal.project_id, current_user.id)
     for field, value in data.model_dump(exclude_none=True).items():
         setattr(proposal, field, value)
+    # Auto-complete project when a winner is selected
+    if data.is_winner is True:
+        project = db.query(Project).filter(Project.id == proposal.project_id).first()
+        if project and project.status != ProjectStatus.CONCLUIDO:
+            project.status = ProjectStatus.CONCLUIDO
     db.commit()
     db.refresh(proposal)
     return _to_response(proposal)

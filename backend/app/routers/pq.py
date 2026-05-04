@@ -57,18 +57,25 @@ def list_pq_items(
 
     seen: dict[tuple, PQItem] = {}
     for item in items:
+        # Quantity intentionally excluded from key: items with same identity but different
+        # quantities (from re-imports or corrupted data) should collapse to one row.
         key = (
             (item.numero_item or '').strip(),
             (item.localidade or '').strip(),
             (item.codigo or '').strip(),
             (item.descricao or '').strip(),
             (item.unidade or '').strip(),
-            round(float(item.quantidade or 0), 4),
         )
         if key not in seen:
             seen[key] = item
-        elif item.id in items_with_prices and seen[key].id not in items_with_prices:
-            seen[key] = item
+        else:
+            current = seen[key]
+            # Prefer item with prices; when tied, prefer highest id (latest import)
+            if item.id in items_with_prices and current.id not in items_with_prices:
+                seen[key] = item
+            elif item.id not in items_with_prices and current.id not in items_with_prices:
+                if item.id > current.id:
+                    seen[key] = item
 
     return sorted(seen.values(), key=lambda x: (x.ordem, x.numero_item, x.id))
 

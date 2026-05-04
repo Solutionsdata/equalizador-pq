@@ -11,10 +11,10 @@ import {
 } from 'lucide-react'
 import ShareProjectModal from '../components/ShareProjectModal'
 
-const STATUS_OPTIONS: ProjectStatus[] = ['RASCUNHO', 'EM_ANDAMENTO', 'CONCLUIDO', 'ARQUIVADO']
+const STATUS_OPTIONS: ProjectStatus[] = ['EM_ANDAMENTO', 'CONCLUIDO', 'ARQUIVADO']
 
 const STATUS_COLORS: Record<ProjectStatus, string> = {
-  RASCUNHO: 'bg-gray-100 text-gray-600',
+  RASCUNHO: 'bg-blue-100 text-blue-700',
   EM_ANDAMENTO: 'bg-blue-100 text-blue-700',
   CONCLUIDO: 'bg-green-100 text-green-700',
   ARQUIVADO: 'bg-gray-200 text-gray-400',
@@ -239,37 +239,37 @@ export default function Projects() {
                 <button onClick={() => openEdit(project)} className="btn-secondary flex-1 text-xs py-1.5 justify-center">
                   <Pencil size={13} /> Editar
                 </button>
-                {!project.is_shared && (
-                  <button
-                    onClick={() => setShareProject(project)}
-                    className="btn-secondary text-xs py-1.5 px-3 text-blue-500 hover:bg-blue-50"
-                    title="Compartilhar projeto"
-                  >
-                    <Share2 size={13} />
-                  </button>
-                )}
-                {!project.is_shared && (
-                  deleteConfirm === project.id ? (
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => deleteMutation.mutate(project.id)}
-                        className="flex items-center justify-center gap-1 text-xs py-1.5 px-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
-                      >
-                        <Check size={13} />
-                      </button>
-                      <button onClick={() => setDeleteConfirm(null)} className="btn-secondary text-xs py-1.5 px-2">
-                        <X size={13} />
-                      </button>
-                    </div>
-                  ) : (
+                {!project.is_shared ? (
+                  <>
                     <button
-                      onClick={() => setDeleteConfirm(project.id)}
-                      className="btn-secondary text-xs py-1.5 px-3 text-red-500 hover:bg-red-50"
+                      onClick={() => setShareProject(project)}
+                      className="flex items-center gap-1 text-xs py-1.5 px-3 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 font-medium transition-colors"
+                      title="Compartilhar projeto com colaboradores"
                     >
-                      <Trash2 size={13} />
+                      <Share2 size={13} /> Compartilhar
                     </button>
-                  )
-                )}
+                    {deleteConfirm === project.id ? (
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => deleteMutation.mutate(project.id)}
+                          className="flex items-center justify-center gap-1 text-xs py-1.5 px-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                        >
+                          <Check size={13} />
+                        </button>
+                        <button onClick={() => setDeleteConfirm(null)} className="btn-secondary text-xs py-1.5 px-2">
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setDeleteConfirm(project.id)}
+                        className="btn-secondary text-xs py-1.5 px-3 text-red-500 hover:bg-red-50"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </>
+                ) : null}
               </div>
             </div>
           ))}
