@@ -1,15 +1,15 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { projectsAPI } from '../services/api'
-import type { Project, ProjectStatus } from '../types'
+import { projectsAPI, sharingAPI } from '../services/api'
+import type { Project, ProjectStatus, SharedUser } from '../types'
 import { TIPO_OBRA_OPTIONS, SPE_OPTIONS, getTipoObraLabel, STATUS_LABELS } from '../types'
 import toast from 'react-hot-toast'
 import {
   Plus, FolderOpen, Table2, FileText, LineChart,
   Pencil, Trash2, X, Check, Share2, Users,
+  UserPlus, UserMinus, Search,
 } from 'lucide-react'
-import ShareProjectModal from '../components/ShareProjectModal'
 
 const STATUS_OPTIONS: ProjectStatus[] = ['EM_ANDAMENTO', 'CONCLUIDO', 'ARQUIVADO']
 
@@ -41,7 +41,40 @@ export default function Projects() {
   const [selected, setSelected] = useState<Project | null>(null)
   const [form, setForm] = useState<ProjectForm>(EMPTY_FORM)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
-  const [shareProject, setShareProject] = useState<Project | null>(null)
+  const [shareSearch, setShareSearch] = useState('')
+
+  const isOwnerEdit = modal === 'edit' && selected && !selected.is_shared
+
+  const { data: allUsers = [] } = useQuery<{ id: number; nome: string; email: string }[]>({
+    queryKey: ['users-list'],
+    queryFn: () => sharingAPI.listUsers().then((r) => r.data),
+    enabled: !!isOwnerEdit,
+  })
+  const { data: shares = [] } = useQuery<SharedUser[]>({
+    queryKey: ['project-shares', selected?.id],
+    queryFn: () => sharingAPI.listShares(selected!.id).then((r) => r.data),
+    enabled: !!isOwnerEdit,
+  })
+  const sharedIds = new Set(shares.map((s) => s.id))
+
+  const addShareMutation = useMutation({
+    mutationFn: (userId: number) => sharingAPI.addShare(selected!.id, userId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-shares', selected?.id] })
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      toast.success('Colaborador adicionado!')
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.detail ?? 'Erro ao compartilhar'),
+  })
+  const removeShareMutation = useMutation({
+    mutationFn: (userId: number) => sharingAPI.removeShare(selected!.id, userId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-shares', selected?.id] })
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      toast.success('Acesso removido.')
+    },
+    onError: () => toast.error('Erro ao remover acesso'),
+  })
 
   const { data: _rawProjects, isLoading } = useQuery<Project[]>({
     queryKey: ['projects'],
@@ -51,10 +84,10 @@ export default function Projects() {
 
   const createMutation = useMutation({
     mutationFn: (data: ProjectForm) => projectsAPI.create(data),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['projects'] })
-      toast.success('Projeto criado!')
-      closeModal()
+      toast.success('Projeto criado! Adicione colaboradores abaixo.')
+      openEdit(res.data as Project)
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.detail
@@ -106,7 +139,7 @@ export default function Projects() {
     setModal('edit')
   }
 
-  function closeModal() { setModal(null); setSelected(null) }
+  function closeModal() { setModal(null); setSelected(null); setShareSearch('') }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -242,7 +275,7 @@ export default function Projects() {
                 {!project.is_shared ? (
                   <>
                     <button
-                      onClick={() => setShareProject(project)}
+                      onClick={() => openEdit(project)}
                       className="flex items-center gap-1 text-xs py-1.5 px-3 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 font-medium transition-colors"
                       title="Compartilhar projeto com colaboradores"
                     >
@@ -276,17 +309,14 @@ export default function Projects() {
         </div>
       )}
 
-      {/* Share Modal */}
-      {shareProject && (
-        <ShareProjectModal project={shareProject} onClose={() => setShareProject(null)} />
-      )}
-
       {/* Create/Edit Modal */}
       {modal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold text-gray-900">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[92vh]">
+
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 {modal === 'create' ? 'Novo Projeto' : 'Editar Projeto'}
               </h2>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
@@ -294,129 +324,214 @@ export default function Projects() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Projeto *</label>
-                <input
-                  className="input"
-                  placeholder="Ex: Recuperação do Lote KM 45-120"
-                  value={form.nome}
-                  onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 px-6 py-5">
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Obra *</label>
-                  <select
-                    className="input"
-                    value={form.tipo_obra}
-                    onChange={(e) => setForm((f) => ({ ...f, tipo_obra: e.target.value, outraTipoObra: '' }))}
-                  >
-                    {TIPO_OBRA_OPTIONS.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                  {form.tipo_obra === 'Outra' && (
-                    <input
-                      className="input mt-1"
-                      placeholder="Especifique o tipo de obra…"
-                      value={form.outraTipoObra}
-                      onChange={(e) => setForm((f) => ({ ...f, outraTipoObra: e.target.value }))}
-                      required
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nº Termo de Referência</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Projeto *</label>
                   <input
                     className="input"
-                    placeholder="TR-2024/001"
-                    value={form.numero_licitacao}
-                    onChange={(e) => setForm((f) => ({ ...f, numero_licitacao: e.target.value }))}
+                    placeholder="Ex: Recuperação do Lote KM 45-120"
+                    value={form.nome}
+                    onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+                    required
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  SPE — Unidade Contratante *
-                </label>
-                <select
-                  className="input"
-                  value={form.spe_unidade}
-                  onChange={(e) => setForm((f) => ({ ...f, spe_unidade: e.target.value }))}
-                  required
-                >
-                  <option value="">Selecione a empresa do grupo…</option>
-                  {SPE_OPTIONS.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Obra *</label>
+                    <select
+                      className="input"
+                      value={form.tipo_obra}
+                      onChange={(e) => setForm((f) => ({ ...f, tipo_obra: e.target.value, outraTipoObra: '' }))}
+                    >
+                      {TIPO_OBRA_OPTIONS.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                    {form.tipo_obra === 'Outra' && (
+                      <input
+                        className="input mt-1"
+                        placeholder="Especifique o tipo de obra…"
+                        value={form.outraTipoObra}
+                        onChange={(e) => setForm((f) => ({ ...f, outraTipoObra: e.target.value }))}
+                        required
+                      />
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nº Termo de Referência</label>
+                    <input
+                      className="input"
+                      placeholder="TR-2024/001"
+                      value={form.numero_licitacao}
+                      onChange={(e) => setForm((f) => ({ ...f, numero_licitacao: e.target.value }))}
+                    />
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Extensão (km)
-                  {form.tipo_obra === 'Duplicação' && (
-                    <span className="ml-2 text-xs text-orange-600 font-normal">● obrigatório para duplicação</span>
-                  )}
-                </label>
-                <input
-                  className="input"
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  placeholder="Ex: 45.320"
-                  value={form.extensao_km}
-                  onChange={(e) => setForm((f) => ({ ...f, extensao_km: e.target.value }))}
-                  required={form.tipo_obra === 'Duplicação'}
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Usado para calcular o custo por km no Baseline.
-                </p>
-              </div>
-
-              {modal === 'edit' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">SPE — Unidade Contratante *</label>
                   <select
                     className="input"
-                    value={form.status}
-                    onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as ProjectStatus }))}
+                    value={form.spe_unidade}
+                    onChange={(e) => setForm((f) => ({ ...f, spe_unidade: e.target.value }))}
+                    required
                   >
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                    <option value="">Selecione a empresa do grupo…</option>
+                    {SPE_OPTIONS.map((s) => (
+                      <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Extensão (km)
+                    {form.tipo_obra === 'Duplicação' && (
+                      <span className="ml-2 text-xs text-orange-600 font-normal">● obrigatório para duplicação</span>
+                    )}
+                  </label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    placeholder="Ex: 45.320"
+                    value={form.extensao_km}
+                    onChange={(e) => setForm((f) => ({ ...f, extensao_km: e.target.value }))}
+                    required={form.tipo_obra === 'Duplicação'}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Usado para calcular o custo por km no Baseline.</p>
+                </div>
+
+                {modal === 'edit' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select
+                      className="input"
+                      value={form.status}
+                      onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as ProjectStatus }))}
+                    >
+                      {STATUS_OPTIONS.map((s) => (
+                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                  <textarea
+                    className="input resize-none"
+                    rows={3}
+                    placeholder="Detalhes da obra, localização, extensão…"
+                    value={form.descricao}
+                    onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value }))}
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={closeModal} className="btn-secondary flex-1 justify-center">
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={createMutation.isPending || updateMutation.isPending}
+                    className="btn-primary flex-1 justify-center"
+                  >
+                    {createMutation.isPending || updateMutation.isPending ? 'Salvando…' : 'Salvar'}
+                  </button>
+                </div>
+              </form>
+
+              {/* ── Collaborators section (edit modal, owner only) ── */}
+              {isOwnerEdit && (
+                <div className="mt-6 border-t border-gray-100 pt-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Users size={16} className="text-blue-600" />
+                    <h3 className="text-sm font-semibold text-gray-800">Colaboradores</h3>
+                    {shares.length > 0 && (
+                      <span className="ml-auto text-xs text-gray-400">{shares.length} com acesso</span>
+                    )}
+                  </div>
+
+                  {/* Active shares */}
+                  {shares.length > 0 && (
+                    <div className="space-y-1.5 mb-3">
+                      {shares.map((s) => (
+                        <div key={s.id} className="flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-800 truncate">{s.nome}</p>
+                            <p className="text-xs text-gray-400 truncate">{s.email}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeShareMutation.mutate(s.id)}
+                            disabled={removeShareMutation.isPending}
+                            className="ml-3 flex-shrink-0 flex items-center gap-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-2 py-1 transition-colors"
+                          >
+                            <UserMinus size={13} /> Remover
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* User search + add */}
+                  <div className="relative mb-2">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      className="input pl-8 text-sm"
+                      placeholder="Buscar usuário por nome ou e-mail…"
+                      value={shareSearch}
+                      onChange={(e) => setShareSearch(e.target.value)}
+                    />
+                  </div>
+
+                  {shareSearch.trim() && (
+                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                      {allUsers
+                        .filter(
+                          (u) =>
+                            !sharedIds.has(u.id) &&
+                            (u.nome.toLowerCase().includes(shareSearch.toLowerCase()) ||
+                              u.email.toLowerCase().includes(shareSearch.toLowerCase())),
+                        )
+                        .map((u) => (
+                          <div key={u.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">{u.nome}</p>
+                              <p className="text-xs text-gray-400 truncate">{u.email}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { addShareMutation.mutate(u.id); setShareSearch('') }}
+                              disabled={addShareMutation.isPending}
+                              className="ml-3 flex-shrink-0 flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded px-2 py-1 transition-colors"
+                            >
+                              <UserPlus size={13} /> Adicionar
+                            </button>
+                          </div>
+                        ))}
+                      {allUsers.filter(
+                        (u) =>
+                          !sharedIds.has(u.id) &&
+                          (u.nome.toLowerCase().includes(shareSearch.toLowerCase()) ||
+                            u.email.toLowerCase().includes(shareSearch.toLowerCase())),
+                      ).length === 0 && (
+                        <p className="text-xs text-gray-400 text-center py-3">Nenhum usuário encontrado.</p>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-gray-400 mt-3">
+                    Colaboradores têm acesso completo de edição ao projeto.
+                  </p>
+                </div>
               )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-                <textarea
-                  className="input resize-none"
-                  rows={3}
-                  placeholder="Detalhes da obra, localização, extensão…"
-                  value={form.descricao}
-                  onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value }))}
-                />
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={closeModal} className="btn-secondary flex-1 justify-center">
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  className="btn-primary flex-1 justify-center"
-                >
-                  {createMutation.isPending || updateMutation.isPending ? 'Salvando…' : 'Salvar'}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
