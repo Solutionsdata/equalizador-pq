@@ -178,7 +178,7 @@ export default function PQEditor() {
     const toastId = toast.loading('Gerando modelo…')
     try {
       const res = await pqAPI.downloadTemplate(pid)
-      downloadBlob(res.data, `modelo_pq_${project?.nome ?? pid}.xlsx`)
+      downloadBlob(res.data, `modelo_pq_${project?.nome ?? pid}.csv`)
       toast.success('Modelo baixado!', { id: toastId })
     } catch {
       toast.error('Erro ao gerar modelo', { id: toastId })
@@ -191,7 +191,7 @@ export default function PQEditor() {
     const toastId = toast.loading('Exportando planilha…')
     try {
       const res = await pqAPI.exportExcel(pid)
-      downloadBlob(res.data, `pq_${project?.nome ?? pid}.xlsx`)
+      downloadBlob(res.data, `pq_${project?.nome ?? pid}.csv`)
       toast.success('Exportado!', { id: toastId })
     } catch {
       toast.error('Erro ao exportar', { id: toastId })
@@ -204,21 +204,27 @@ export default function PQEditor() {
     if (!file) return
     e.target.value = '' // permite reimportar o mesmo arquivo
 
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      toast.error('Selecione um arquivo Excel (.xlsx ou .xls)')
+    if (!file.name.endsWith('.csv')) {
+      toast.error('Selecione um arquivo CSV (.csv)')
       return
     }
 
     setImporting(true)
-    const toastId = toast.loading('Importando planilha…')
+    const toastId = toast.loading('Lendo e processando arquivo…')
     try {
       await pqAPI.importExcel(pid, file, currentRevisionId ?? undefined)
       await qc.invalidateQueries({ queryKey: ['pq', pid] })
       toast.success('Planilha importada com sucesso!', { id: toastId })
       setDirty(false)
     } catch (err: any) {
-      const detail = err?.response?.data?.detail ?? 'Erro ao importar o arquivo'
-      toast.error(detail, { id: toastId })
+      // parseExcelFile throws plain Error (no .response); axios errors have .response
+      const raw = err?.response?.data?.detail
+      const detail = typeof raw === 'string'
+        ? raw
+        : err?.message && !err?.response
+          ? err.message   // erro do parser local (ex: "Cabeçalhos não encontrados")
+          : 'Erro ao salvar no servidor. Tente novamente.'
+      toast.error(detail, { id: toastId, duration: 8000 })
     } finally {
       setImporting(false)
       setExcelMenu(false)
@@ -273,7 +279,7 @@ export default function PQEditor() {
               className="btn-secondary text-sm flex items-center gap-1.5"
             >
               <FileSpreadsheet size={15} className="text-green-600" />
-              Excel
+              CSV
               <ChevronDown size={13} />
             </button>
             {excelMenu && (
@@ -301,7 +307,7 @@ export default function PQEditor() {
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 text-left"
                   >
                     <FileUp size={15} className="text-orange-500" />
-                    Importar Excel
+                    Importar CSV
                     <span className="ml-auto text-xs text-gray-400">substitui tudo</span>
                   </button>
                 </div>
@@ -313,7 +319,7 @@ export default function PQEditor() {
           <input
             ref={importRef}
             type="file"
-            accept=".xlsx,.xls"
+            accept=".csv"
             className="hidden"
             onChange={handleImportFile}
           />

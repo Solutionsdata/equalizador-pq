@@ -13,7 +13,7 @@ from app.models.pq_item import PQItem
 from app.models.proposal_item import ProposalItem
 from app.models.project_share import ProjectShare
 from app.schemas.pq_item import PQItemCreate, PQItemUpdate, PQItemResponse, PQItemBulkSave
-from app.services.excel import gerar_modelo_pq, importar_pq_excel
+from app.services.excel import gerar_pq_csv
 
 router = APIRouter()
 
@@ -162,13 +162,13 @@ def download_pq_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Baixa o modelo Excel vazio da PQ (50 linhas em branco)."""
+    """Baixa o modelo CSV vazio da PQ."""
     project = _check_project(db, project_id, current_user.id)
-    buf = gerar_modelo_pq(project.nome, pq_items=None)
-    filename = f"modelo_pq_{project_id}.xlsx"
+    buf = gerar_pq_csv(project.nome, pq_items=None)
+    filename = f"modelo_pq_{project_id}.csv"
     return StreamingResponse(
         buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
@@ -179,7 +179,7 @@ def export_pq(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Exporta a PQ com os dados atuais."""
+    """Exporta a PQ atual como CSV."""
     project = _check_project(db, project_id, current_user.id)
     items = (
         db.query(PQItem)
@@ -187,11 +187,11 @@ def export_pq(
         .order_by(PQItem.ordem, PQItem.numero_item)
         .all()
     )
-    buf = gerar_modelo_pq(project.nome, pq_items=items)
-    filename = f"pq_{project_id}.xlsx"
+    buf = gerar_pq_csv(project.nome, pq_items=items)
+    filename = f"pq_{project_id}.csv"
     return StreamingResponse(
         buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

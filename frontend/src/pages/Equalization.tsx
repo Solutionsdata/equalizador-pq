@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { analyticsAPI, proposalsAPI, projectsAPI, revisionsAPI, downloadBlob } from '../services/api'
+import { analyticsAPI, proposalsAPI, pqAPI, projectsAPI, revisionsAPI, downloadBlob } from '../services/api'
+import { parseProposalCsvFile } from '../utils/parseCsv'
 import type { EqualizationResponse, ProjectRevision } from '../types'
 import { PROPOSAL_STATUS_LABELS, formatBRL, formatNumber } from '../types'
 import toast from 'react-hot-toast'
@@ -518,12 +519,12 @@ export default function Equalization() {
     onError: (err: any) => toast.error(err?.response?.data?.detail ?? 'Erro ao vincular proponente'),
   })
 
-  // ── Excel handlers ────────────────────────────────────────────────────────────
+  // ── CSV handlers ─────────────────────────────────────────────────────────────
   async function handleDownloadTemplate(proposalId: number, empresa: string) {
     const toastId = toast.loading('Gerando template…')
     try {
       const res = await proposalsAPI.downloadTemplate(proposalId)
-      downloadBlob(res.data, `template_${empresa}.xlsx`)
+      downloadBlob(res.data, `template_${empresa}.csv`)
       toast.success('Template baixado!', { id: toastId })
     } catch {
       toast.error('Erro ao gerar template', { id: toastId })
@@ -542,21 +543,25 @@ export default function Equalization() {
     e.target.value = ''
     pendingImportId.current = null
 
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      toast.error('Selecione um arquivo Excel (.xlsx ou .xls)')
+    if (!file.name.endsWith('.csv')) {
+      toast.error('Selecione um arquivo CSV (.csv)')
       return
     }
 
     setImportingId(proposalId)
     const toastId = toast.loading('Importando preços…')
     try {
-      await proposalsAPI.importExcel(proposalId, file)
-      // Invalidate all revision equalization queries for this project
+      const proposal = await proposalsAPI.getWithItems(proposalId).then((r) => r.data)
+      const pqItemsRes = await pqAPI.list(pid, proposal.revision_id ?? undefined).then((r) => r.data)
+      const numToId = new Map<string, number>(pqItemsRes.map((pq: any) => [String(pq.numero_item).trim(), Number(pq.id)]))
+      const rows = await parseProposalCsvFile(file, numToId)
+      await proposalsAPI.updateItems(proposalId, rows)
       await qc.invalidateQueries({ queryKey: ['equalization', pid] })
       await qc.invalidateQueries({ queryKey: ['all-proposals', pid] })
-      toast.success('Preços importados com sucesso!', { id: toastId })
+      toast.success(`Preços importados! (${rows.length} itens)`, { id: toastId })
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail ?? 'Erro ao importar o arquivo', { id: toastId })
+      const detail = err?.response?.data?.detail ?? err?.message ?? 'Erro ao importar o CSV'
+      toast.error(detail, { id: toastId, duration: 8000 })
     } finally {
       setImportingId(null)
     }
@@ -619,7 +624,7 @@ export default function Equalization() {
       <input
         ref={importRef}
         type="file"
-        accept=".xlsx,.xls"
+        accept=".csv"
         className="hidden"
         onChange={handleImportFile}
       />

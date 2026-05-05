@@ -37,10 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false)
 
     // Warm up Render free-tier backend (sleeps after 15 min inactivity)
-    const ping = () => fetch('/api/health').catch(() => {})
+    const backendBase = import.meta.env.VITE_API_URL || '/api'
+    const ping = () => fetch(`${backendBase}/health`).catch(() => {})
     ping()
-    // Keep alive: ping every 14 minutes to prevent Render from sleeping
-    const keepAlive = setInterval(ping, 14 * 60 * 1000)
+    // Keep alive: ping every 10 minutes to prevent Render from sleeping
+    const keepAlive = setInterval(ping, 10 * 60 * 1000)
     return () => clearInterval(keepAlive)
   }, [])
 

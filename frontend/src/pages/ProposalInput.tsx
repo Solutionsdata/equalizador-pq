@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { proposalsAPI, pqAPI, projectsAPI, downloadBlob } from '../services/api'
+import { parseProposalCsvFile } from '../utils/parseCsv'
 import type { ProposalWithItems, PQItem } from '../types'
 import { formatBRL, formatNumber } from '../types'
 import toast from 'react-hot-toast'
@@ -92,47 +93,52 @@ export default function ProposalInput() {
     setDirty(true)
   }
 
-  // ── Excel: baixar template da proposta ────────────────────────────────────────
+  // ── CSV: baixar template da proposta ──────────────────────────────────────────
   async function handleDownloadTemplate() {
     setExcelMenu(false)
     const toastId = toast.loading('Gerando template…')
     try {
       const res = await proposalsAPI.downloadTemplate(rid)
-      downloadBlob(res.data, `template_${proposal?.empresa ?? rid}.xlsx`)
+      downloadBlob(res.data, `template_${proposal?.empresa ?? rid}.csv`)
       toast.success('Template baixado!', { id: toastId })
     } catch {
       toast.error('Erro ao gerar template', { id: toastId })
     }
   }
 
-  // ── Excel: exportar proposta com preços ───────────────────────────────────────
+  // ── CSV: exportar proposta com preços ─────────────────────────────────────────
   async function handleExport() {
     setExcelMenu(false)
     const toastId = toast.loading('Exportando proposta…')
     try {
-      const res = await proposalsAPI.exportExcel(rid)
-      downloadBlob(res.data, `proposta_${proposal?.empresa ?? rid}.xlsx`)
+      const res = await proposalsAPI.exportCsv(rid)
+      downloadBlob(res.data, `proposta_${proposal?.empresa ?? rid}.csv`)
       toast.success('Exportado!', { id: toastId })
     } catch {
       toast.error('Erro ao exportar', { id: toastId })
     }
   }
 
-  // ── Excel: importar proposta preenchida ───────────────────────────────────────
+  // ── CSV: importar proposta preenchida (parsing no browser, sem upload) ─────────
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
 
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      toast.error('Selecione um arquivo Excel (.xlsx ou .xls)')
+    if (!file.name.endsWith('.csv')) {
+      toast.error('Selecione um arquivo CSV (.csv)')
       return
     }
 
     setImporting(true)
     const toastId = toast.loading('Importando preços…')
     try {
-      const res = await proposalsAPI.importExcel(rid, file)
+      const numToId = new Map(pqItems.map((pq) => [String(pq.numero_item).trim(), pq.id]))
+      const rows = await parseProposalCsvFile(file, numToId)
+
+      await proposalsAPI.updateItems(rid, rows)
+
+      const res = await proposalsAPI.getWithItems(rid)
       const newMap: PriceMap = {}
       res.data.items.forEach((item: any) => {
         newMap[item.pq_item_id] = {
@@ -144,11 +150,11 @@ export default function ProposalInput() {
       })
       setPrices(newMap)
       await qc.invalidateQueries({ queryKey: ['proposal-items', rid] })
-      toast.success('Preços importados com sucesso!', { id: toastId })
+      toast.success(`Preços importados! (${rows.length} itens)`, { id: toastId })
       setDirty(false)
     } catch (err: any) {
-      const detail = err?.response?.data?.detail ?? 'Erro ao importar o arquivo'
-      toast.error(detail, { id: toastId })
+      const detail = err?.response?.data?.detail ?? err?.message ?? 'Erro ao importar o CSV'
+      toast.error(detail, { id: toastId, duration: 8000 })
     } finally {
       setImporting(false)
       setExcelMenu(false)
@@ -229,7 +235,7 @@ export default function ProposalInput() {
               className="btn-secondary text-sm flex items-center gap-1.5"
             >
               <FileSpreadsheet size={15} className="text-green-600" />
-              Excel
+              CSV
               <ChevronDown size={13} />
             </button>
             {excelMenu && (
@@ -273,7 +279,7 @@ export default function ProposalInput() {
           <input
             ref={importRef}
             type="file"
-            accept=".xlsx,.xls"
+            accept=".csv"
             className="hidden"
             onChange={handleImportFile}
           />
@@ -313,7 +319,7 @@ export default function ProposalInput() {
 
       {/* Tabela de preços */}
       {importing ? (
-        <div className="text-center py-20 text-gray-400">Importando preços do Excel…</div>
+        <div className="text-center py-20 text-gray-400">Importando preços do CSV…</div>
       ) : (
         <div className="card overflow-auto flex-1 min-h-0">
           <table className="w-full text-sm border-collapse">

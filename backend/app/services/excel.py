@@ -1114,6 +1114,87 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
     return _save(wb)
 
 
+# ── Geração CSV: PQ ──────────────────────────────────────────────────────────
+
+def gerar_pq_csv(project_name: str, pq_items=None) -> io.BytesIO:
+    """Gera CSV da Planilha de Quantitativos (11 colunas, UTF-8 com BOM)."""
+    import csv as _csv
+    output = io.StringIO()
+    writer = _csv.writer(output, lineterminator='\r\n')
+    writer.writerow([
+        'Item', 'Localidade', 'Disciplina', 'Categoria', 'Codigo',
+        'Descricao', 'Unidade Medida', 'Quantidade', 'Referencia',
+        'Preco Unit. RF', 'Observacao',
+    ])
+    for item in (pq_items or []):
+        writer.writerow([
+            item.numero_item,
+            item.localidade or '',
+            item.disciplina or '',
+            item.categoria or '',
+            item.codigo or '',
+            item.descricao,
+            item.unidade,
+            float(item.quantidade) if item.quantidade is not None else 0,
+            item.referencia_codigo or '',
+            float(item.preco_referencia) if item.preco_referencia is not None else '',
+            item.observacao or '',
+        ])
+    return io.BytesIO(output.getvalue().encode('utf-8-sig'))
+
+
+# ── Geração CSV: Proposta ─────────────────────────────────────────────────────
+
+def gerar_proposta_csv(
+    project_name: str,
+    pq_items,
+    empresa: str = '',
+    bdi_global: float = 0.0,
+    proposal_items=None,
+) -> io.BytesIO:
+    """Gera CSV de Proposta Comercial (12 colunas PQ + 4 colunas de preço, UTF-8 com BOM)."""
+    import csv as _csv
+    output = io.StringIO()
+    writer = _csv.writer(output, lineterminator='\r\n')
+    writer.writerow([
+        'Item', 'Localidade', 'Disciplina', 'Categoria', 'Codigo',
+        'Descricao', 'Unidade Medida', 'Quantidade', 'Referencia',
+        'Preco Unit. RF', 'Preco Total RF', 'Observacao',
+        'Custo Unit. Direto SEM REIDI',
+        'BDI SEM REIDI (fracao)',
+        'Custo Unit. Direto COM REIDI',
+        'BDI COM REIDI (fracao)',
+    ])
+    price_map: dict = {}
+    if proposal_items:
+        for pi in proposal_items:
+            price_map[pi.pq_item_id] = pi
+    for item in pq_items:
+        pi = price_map.get(item.id)
+        qty = float(item.quantidade or 0)
+        ref_pu = float(item.preco_referencia) if item.preco_referencia else None
+        ref_total = qty * ref_pu if ref_pu else ''
+        writer.writerow([
+            item.numero_item,
+            item.localidade or '',
+            item.disciplina or '',
+            item.categoria or '',
+            item.codigo or '',
+            item.descricao,
+            item.unidade,
+            qty,
+            item.referencia_codigo or '',
+            ref_pu if ref_pu is not None else '',
+            ref_total,
+            item.observacao or '',
+            float(pi.preco_unitario) if pi and pi.preco_unitario else '',
+            float(pi.bdi) if pi and pi.bdi else '',
+            float(pi.custo_unit_com_reidi) if pi and pi.custo_unit_com_reidi else '',
+            float(pi.bdi_com_reidi) if pi and pi.bdi_com_reidi else '',
+        ])
+    return io.BytesIO(output.getvalue().encode('utf-8-sig'))
+
+
 def _save(wb: Workbook) -> io.BytesIO:
     buf = io.BytesIO()
     wb.save(buf)

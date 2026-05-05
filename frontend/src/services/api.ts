@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { parseCsvFile } from '../utils/parseCsv'
 
 const BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -86,13 +87,16 @@ export const pqAPI = {
     api.get(`/pq/project/${projectId}/template`, { responseType: 'blob' }),
   exportExcel: (projectId: number) =>
     api.get(`/pq/project/${projectId}/export`, { responseType: 'blob' }),
-  importExcel: (projectId: number, file: File, revisionId?: number) => {
-    const form = new FormData()
-    form.append('file', file)
-    return api.post(`/pq/project/${projectId}/import`, form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      params: revisionId ? { revision_id: revisionId } : {},
-    })
+  importExcel: async (projectId: number, file: File, revisionId?: number) => {
+    const items = await parseCsvFile(file)
+    return api.post(
+      `/pq/project/${projectId}/import-fast`,
+      { items },
+      {
+        params: revisionId != null ? { revision_id: revisionId } : {},
+        timeout: 300_000,
+      },
+    )
   },
 }
 
@@ -110,15 +114,8 @@ export const proposalsAPI = {
   unsetWinner: (id: number) => api.patch(`/proposals/${id}/unset-winner`),
   downloadTemplate: (proposalId: number) =>
     api.get(`/proposals/${proposalId}/template`, { responseType: 'blob' }),
-  exportExcel: (proposalId: number) =>
+  exportCsv: (proposalId: number) =>
     api.get(`/proposals/${proposalId}/export`, { responseType: 'blob' }),
-  importExcel: (proposalId: number, file: File) => {
-    const form = new FormData()
-    form.append('file', file)
-    return api.post(`/proposals/${proposalId}/import`, form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-  },
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────────

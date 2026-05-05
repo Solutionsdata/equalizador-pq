@@ -1,5 +1,5 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -15,7 +15,7 @@ from app.schemas.proposal import (
     ProposalCreate, ProposalUpdate, ProposalResponse,
     ProposalWithItems, ProposalItemsBulkUpdate,
 )
-from app.services.excel import gerar_modelo_proposta, importar_proposta_excel
+from app.services.excel import gerar_proposta_csv
 
 router = APIRouter()
 
@@ -252,7 +252,7 @@ def download_proposal_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Baixa o modelo Excel da proposta com os itens da PQ e colunas de preço em branco."""
+    """Baixa o modelo CSV da proposta com os itens da PQ e colunas de preço em branco."""
     proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposta não encontrada")
@@ -268,17 +268,17 @@ def download_proposal_template(
         .all()
     )
     project = db.query(Project).filter(Project.id == proposal.project_id).first()
-    buf = gerar_modelo_proposta(
+    buf = gerar_proposta_csv(
         project_name=project.nome,
         pq_items=pq_items,
         empresa=proposal.empresa,
         bdi_global=float(proposal.bdi_global or 0),
         proposal_items=None,
     )
-    filename = f"proposta_{proposal_id}_template.xlsx"
+    filename = f"proposta_{proposal_id}_template.csv"
     return StreamingResponse(
         buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
@@ -289,7 +289,7 @@ def export_proposal(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Exporta a proposta preenchida com preços."""
+    """Exporta a proposta preenchida com preços em CSV."""
     proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposta não encontrada")
@@ -305,99 +305,18 @@ def export_proposal(
         .all()
     )
     project = db.query(Project).filter(Project.id == proposal.project_id).first()
-    buf = gerar_modelo_proposta(
+    buf = gerar_proposta_csv(
         project_name=project.nome,
         pq_items=pq_items,
         empresa=proposal.empresa,
         bdi_global=float(proposal.bdi_global or 0),
         proposal_items=proposal.items,
     )
-    filename = f"proposta_{proposal_id}.xlsx"
+    filename = f"proposta_{proposal_id}.csv"
     return StreamingResponse(
         buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@router.post("/{proposal_id}/import", response_model=ProposalWithItems)
-async def import_proposal(
-    proposal_id: int,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Importa preços de uma proposta a partir de Excel preenchido."""
-    proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
-    if not proposal:
-        raise HTTPException(status_code=404, detail="Proposta não encontrada")
-    _check_project(db, proposal.project_id, current_user.id)
-
-    pq_items = (
-        db.query(PQItem)
-        .filter(
-            PQItem.project_id == proposal.project_id,
-            PQItem.revision_id == proposal.revision_id,
-        )
-        .order_by(PQItem.ordem, PQItem.numero_item)
-        .all()
-    )
-
-    file_bytes = await file.read()
-    try:
-        rows = importar_proposta_excel(file_bytes, pq_items)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    pq_map = {pi.id: pi for pi in pq_items}
-
-    for row in rows:
-        pi = (
-            db.query(ProposalItem)
-            .filter(
-                ProposalItem.proposal_id == proposal_id,
-                ProposalItem.pq_item_id == row["pq_item_id"],
-            )
-            .first()
-        )
-        if not pi:
-            pi = ProposalItem(proposal_id=proposal_id, pq_item_id=row["pq_item_id"])
-            db.add(pi)
-
-        pi.preco_unitario = row["preco_unitario"]
-        pi.bdi = row["bdi"]
-        pi.custo_unit_com_reidi = row.get("custo_unit_com_reidi")
-        pi.bdi_com_reidi = row.get("bdi_com_reidi")
-        # Scope capture: only set if values differ from PQ
-        if row.get("descricao_proposta"):
-            pi.descricao_proposta = row["descricao_proposta"]
-        if row.get("unidade_proposta"):
-            pi.unidade_proposta = row["unidade_proposta"]
-        if row.get("quantidade_proposta") is not None:
-            pi.quantidade_proposta = row["quantidade_proposta"]
-
-        # Calcula total COM REIDI; fallback p/ sem REIDI para dados legados
-        com_price = pi.custo_unit_com_reidi or pi.preco_unitario
-        com_bdi   = pi.bdi_com_reidi if pi.custo_unit_com_reidi else pi.bdi
-        if com_price and row["pq_item_id"] in pq_map:
-            pq_item = pq_map[row["pq_item_id"]]
-            # Individual BDI stored as fraction (0.43 = 43%); global BDI stored as percentage (43 = 43%)
-            if com_bdi is not None:
-                bdi_factor = 1 + float(com_bdi)
-            else:
-                bdi_factor = 1 + float(proposal.bdi_global or 0) / 100
-            pi.preco_total = Decimal(str(
-                float(pq_item.quantidade) * float(com_price) * bdi_factor
-            ))
-        else:
-            pi.preco_total = None
-
-    db.commit()
-    db.refresh(proposal)
-    return ProposalWithItems(
-        **{k: v for k, v in proposal.__dict__.items() if not k.startswith("_")},
-        valor_total=_proposal_total(proposal),
-        items=proposal.items,
     )
 
 
