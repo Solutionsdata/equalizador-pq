@@ -94,7 +94,7 @@ export const pqAPI = {
     onProgress?: (done: number, total: number) => void,
   ) => {
     const items = await parseCsvFile(file)
-    const CHUNK = 500
+    const CHUNK = 200
     for (let i = 0; i < items.length; i += CHUNK) {
       const chunk = items.slice(i, i + CHUNK)
       const params: Record<string, unknown> = { clear: i === 0 }
