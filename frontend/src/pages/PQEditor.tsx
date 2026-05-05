@@ -210,9 +210,14 @@ export default function PQEditor() {
     }
 
     setImporting(true)
-    const toastId = toast.loading('Lendo e processando arquivo…')
+    const toastId = toast.loading('Lendo arquivo CSV…')
     try {
-      await pqAPI.importExcel(pid, file, currentRevisionId ?? undefined)
+      await pqAPI.importExcel(pid, file, currentRevisionId ?? undefined, (done, total) => {
+        toast.loading(
+          `Importando ${done.toLocaleString('pt-BR')} / ${total.toLocaleString('pt-BR')} itens…`,
+          { id: toastId },
+        )
+      })
       await qc.invalidateQueries({ queryKey: ['pq', pid] })
       toast.success('Planilha importada com sucesso!', { id: toastId })
       setDirty(false)

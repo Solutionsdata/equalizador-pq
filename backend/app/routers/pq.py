@@ -363,10 +363,13 @@ def import_pq_fast(
     project_id: int,
     payload: ImportJsonPayload,
     revision_id: Optional[int] = Query(default=None),
+    clear: bool = Query(default=True),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Importa PQ com alto volume (10 mil+ itens): 3 queries SQL, sem loop ORM, sem payload de retorno."""
+    """Importa PQ em lotes (chunks). clear=True no primeiro lote apaga os dados antigos;
+    clear=False nos lotes seguintes apenas acrescenta. Cada lote é pequeno o suficiente
+    para não ultrapassar o timeout de 30s do Render free tier."""
     _check_project(db, project_id, current_user.id)
 
     ALLOWED_FIELDS = {
@@ -388,19 +391,19 @@ def import_pq_fast(
     if not rows:
         raise HTTPException(status_code=400, detail="Nenhum item válido encontrado.")
 
-    # Apaga proposal_items que referenciam os pq_items a serem substituídos (subquery — 1 query)
-    subq = sa_select(PQItem.id).where(PQItem.project_id == project_id)
-    if revision_id is not None:
-        subq = subq.where(PQItem.revision_id == revision_id)
-    db.execute(sa_delete(ProposalItem).where(ProposalItem.pq_item_id.in_(subq)))
+    if clear:
+        # Primeiro lote: apaga tudo o que existia antes
+        subq = sa_select(PQItem.id).where(PQItem.project_id == project_id)
+        if revision_id is not None:
+            subq = subq.where(PQItem.revision_id == revision_id)
+        db.execute(sa_delete(ProposalItem).where(ProposalItem.pq_item_id.in_(subq)))
 
-    # Apaga os pq_items antigos (1 query)
-    del_stmt = sa_delete(PQItem).where(PQItem.project_id == project_id)
-    if revision_id is not None:
-        del_stmt = del_stmt.where(PQItem.revision_id == revision_id)
-    db.execute(del_stmt)
+        del_stmt = sa_delete(PQItem).where(PQItem.project_id == project_id)
+        if revision_id is not None:
+            del_stmt = del_stmt.where(PQItem.revision_id == revision_id)
+        db.execute(del_stmt)
 
-    # Insere todos de uma vez (1 query)
+    # Insere o lote atual (1 query)
     records = [{**row, "project_id": project_id, "revision_id": revision_id} for row in rows]
     db.execute(sa_insert(PQItem), records)
     db.commit()
