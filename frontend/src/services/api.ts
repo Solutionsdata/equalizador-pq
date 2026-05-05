@@ -95,15 +95,34 @@ export const pqAPI = {
   ) => {
     const items = await parseCsvFile(file)
     const CHUNK = 200
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
     for (let i = 0; i < items.length; i += CHUNK) {
+      // Delay entre lotes para o banco (Neon serverless) não pausar a conexão
+      if (i > 0) await sleep(1200)
+
       const chunk = items.slice(i, i + CHUNK)
       const params: Record<string, unknown> = { clear: i === 0 }
       if (revisionId != null) params.revision_id = revisionId
-      await api.post(
-        `/pq/project/${projectId}/import-fast`,
-        { items: chunk },
-        { params, timeout: 60_000 },
-      )
+
+      // Retry automático: até 4 tentativas com backoff exponencial
+      let lastErr: unknown
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          if (attempt > 0) await sleep(3000 * attempt) // 3s, 6s, 9s
+          await api.post(
+            `/pq/project/${projectId}/import-fast`,
+            { items: chunk },
+            { params, timeout: 60_000 },
+          )
+          lastErr = undefined
+          break
+        } catch (err) {
+          lastErr = err
+        }
+      }
+      if (lastErr !== undefined) throw lastErr
+
       onProgress?.(Math.min(i + CHUNK, items.length), items.length)
     }
     return { data: { imported: items.length } }
