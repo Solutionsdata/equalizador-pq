@@ -36,7 +36,20 @@ function norm(text: unknown): string {
 
 function toFloat(v: unknown): number | null {
   if (v == null || v === '') return null
-  const n = parseFloat(String(v).replace(',', '.').replace('R$', '').trim())
+  // Handles both "1.500,50" (BR) and "1500.50" (EN) formats
+  const s = String(v).replace('R$', '').trim()
+  // If both . and , exist, the last one is the decimal separator
+  const hasDot = s.includes('.')
+  const hasComma = s.includes(',')
+  let normalized: string
+  if (hasDot && hasComma) {
+    // e.g. "1.500,50" → remove dots (thousands), replace comma with dot
+    normalized = s.replace(/\./g, '').replace(',', '.')
+  } else {
+    // Single separator: treat comma as decimal (BR) or dot as decimal (EN)
+    normalized = s.replace(',', '.')
+  }
+  const n = parseFloat(normalized)
   return isFinite(n) ? n : null
 }
 
@@ -45,7 +58,14 @@ function toStr(v: unknown): string | null {
   return s || null
 }
 
-function splitLine(line: string): string[] {
+/** Detects whether the first non-empty line uses ; or , as delimiter. */
+function detectDelimiter(firstLine: string): string {
+  const semis = (firstLine.match(/;/g) || []).length
+  const commas = (firstLine.match(/,/g) || []).length
+  return semis >= commas ? ';' : ','
+}
+
+function splitLine(line: string, sep: string): string[] {
   const cells: string[] = []
   let i = 0
   while (i <= line.length) {
@@ -58,9 +78,9 @@ function splitLine(line: string): string[] {
         else { cell += line[i++] }
       }
       cells.push(cell)
-      if (line[i] === ',') i++
+      if (line[i] === sep) i++
     } else {
-      const end = line.indexOf(',', i)
+      const end = line.indexOf(sep, i)
       if (end === -1) { cells.push(line.slice(i).trim()); break }
       cells.push(line.slice(i, end).trim())
       i = end + 1
@@ -71,10 +91,10 @@ function splitLine(line: string): string[] {
 
 function parseCsvText(text: string): string[][] {
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
-  return text
-    .split(/\r?\n/)
-    .map((l) => splitLine(l))
-    .filter((r) => r.length > 1 || (r.length === 1 && r[0] !== ''))
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '')
+  if (lines.length === 0) return []
+  const sep = detectDelimiter(lines[0])
+  return lines.map((l) => splitLine(l, sep))
 }
 
 export async function parseCsvFile(file: File): Promise<object[]> {

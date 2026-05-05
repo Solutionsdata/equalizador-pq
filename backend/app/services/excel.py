@@ -1117,10 +1117,10 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
 # ── Geração CSV: PQ ──────────────────────────────────────────────────────────
 
 def gerar_pq_csv(project_name: str, pq_items=None) -> io.BytesIO:
-    """Gera CSV da Planilha de Quantitativos (11 colunas, UTF-8 com BOM)."""
+    """Gera CSV da Planilha de Quantitativos (11 colunas, UTF-8 com BOM, separador ponto-e-vírgula)."""
     import csv as _csv
     output = io.StringIO()
-    writer = _csv.writer(output, lineterminator='\r\n')
+    writer = _csv.writer(output, delimiter=';', lineterminator='\r\n')
     writer.writerow([
         'Item', 'Localidade', 'Disciplina', 'Categoria', 'Codigo',
         'Descricao', 'Unidade Medida', 'Quantidade', 'Referencia',
@@ -1152,10 +1152,10 @@ def gerar_proposta_csv(
     bdi_global: float = 0.0,
     proposal_items=None,
 ) -> io.BytesIO:
-    """Gera CSV de Proposta Comercial (12 colunas PQ + 4 colunas de preço, UTF-8 com BOM)."""
+    """Gera CSV de Proposta Comercial (12 colunas PQ + 4 colunas de preço, UTF-8 com BOM, separador ;)."""
     import csv as _csv
     output = io.StringIO()
-    writer = _csv.writer(output, lineterminator='\r\n')
+    writer = _csv.writer(output, delimiter=';', lineterminator='\r\n')
     writer.writerow([
         'Item', 'Localidade', 'Disciplina', 'Categoria', 'Codigo',
         'Descricao', 'Unidade Medida', 'Quantidade', 'Referencia',
