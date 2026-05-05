@@ -87,46 +87,68 @@ export const pqAPI = {
     api.get(`/pq/project/${projectId}/template`, { responseType: 'blob' }),
   exportExcel: (projectId: number) =>
     api.get(`/pq/project/${projectId}/export`, { responseType: 'blob' }),
-  importExcel: async (
+  importExcel: (
     projectId: number,
     file: File,
     revisionId?: number,
     onProgress?: (done: number, total: number) => void,
-  ) => {
-    const items = await parseCsvFile(file)
-    const CHUNK = 200
-    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+  ): Promise<{ data: { imported: number } }> =>
+    parseCsvFile(file).then(
+      (items) =>
+        new Promise((resolve, reject) => {
+          const CHUNK = 1000
+          const token = localStorage.getItem('access_token') || ''
 
-    for (let i = 0; i < items.length; i += CHUNK) {
-      // Delay entre lotes para o banco (Neon serverless) não pausar a conexão
-      if (i > 0) await sleep(1200)
+          // Constrói URL WebSocket a partir da URL base HTTP(S)
+          const wsBase = BASE.startsWith('http')
+            ? BASE.replace(/^http/, 'ws')
+            : (window.location.protocol === 'https:' ? 'wss:' : 'ws:') +
+              '//' + window.location.host + BASE
+          const params = new URLSearchParams({ token })
+          if (revisionId != null) params.set('revision_id', String(revisionId))
+          const url = `${wsBase}/pq/project/${projectId}/import-ws?${params}`
 
-      const chunk = items.slice(i, i + CHUNK)
-      const params: Record<string, unknown> = { clear: i === 0 }
-      if (revisionId != null) params.revision_id = revisionId
+          const ws = new WebSocket(url)
+          let chunkIdx = 0
+          let settled = false
 
-      // Retry automático: até 4 tentativas com backoff exponencial
-      let lastErr: unknown
-      for (let attempt = 0; attempt < 4; attempt++) {
-        try {
-          if (attempt > 0) await sleep(3000 * attempt) // 3s, 6s, 9s
-          await api.post(
-            `/pq/project/${projectId}/import-fast`,
-            { items: chunk },
-            { params, timeout: 60_000 },
-          )
-          lastErr = undefined
-          break
-        } catch (err) {
-          lastErr = err
-        }
-      }
-      if (lastErr !== undefined) throw lastErr
+          const ok = (v: { data: { imported: number } }) => {
+            if (!settled) { settled = true; resolve(v) }
+          }
+          const fail = (msg: string) => {
+            if (!settled) { settled = true; reject(new Error(msg)) }
+          }
 
-      onProgress?.(Math.min(i + CHUNK, items.length), items.length)
-    }
-    return { data: { imported: items.length } }
-  },
+          const sendChunk = () => {
+            const chunk = items.slice(chunkIdx * CHUNK, (chunkIdx + 1) * CHUNK)
+            ws.send(JSON.stringify({ type: 'chunk', rows: chunk }))
+          }
+
+          ws.onopen = () => sendChunk()
+
+          ws.onmessage = (ev) => {
+            const msg = JSON.parse(ev.data as string)
+            if (msg.type === 'ack') {
+              onProgress?.(msg.imported as number, items.length)
+              chunkIdx++
+              if (chunkIdx * CHUNK < items.length) {
+                sendChunk()
+              } else {
+                ws.send(JSON.stringify({ type: 'done' }))
+              }
+            } else if (msg.type === 'complete') {
+              ws.close()
+              ok({ data: { imported: msg.total as number } })
+            } else if (msg.type === 'error') {
+              ws.close()
+              fail(msg.message || 'Erro no servidor durante importação')
+            }
+          }
+
+          ws.onerror = () => fail('Falha na conexão com o servidor. Verifique sua internet e tente novamente.')
+          ws.onclose = (ev) => { if (!ev.wasClean && !settled) fail(`Conexão encerrada inesperadamente (${ev.code})`) }
+        }),
+    ),
 }
 
 // ── Proposals ────────────────────────────────────────────────────────────────

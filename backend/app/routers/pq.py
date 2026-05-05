@@ -1,10 +1,12 @@
 import base64
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status, UploadFile, File
 from fastapi.responses import StreamingResponse
+from jose import JWTError, jwt as jose_jwt
 from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, insert as sa_insert, select as sa_select
 from sqlalchemy.orm import Session
 from typing import Optional
+from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
@@ -455,6 +457,106 @@ async def import_pq_csv_raw(
     db.commit()
 
     return {"imported": len(rows)}
+
+
+_ALLOWED_PQ_FIELDS = {
+    "numero_item", "localidade", "disciplina", "categoria", "codigo",
+    "descricao", "unidade", "quantidade", "referencia_codigo",
+    "preco_referencia", "observacao", "ordem",
+}
+
+
+@router.websocket("/project/{project_id}/import-ws")
+async def import_pq_ws(
+    project_id: int,
+    websocket: WebSocket,
+    token: str = Query(...),
+    revision_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """
+    Importa PQ via WebSocket: sem timeout de 30s do Render, sem limite de requests.
+    O cliente envia lotes via { type: 'chunk', rows: [...] } e recebe ACK por lote.
+    """
+    await websocket.accept()
+
+    # Autentica via token na query (WebSocket não suporta Authorization header no browser)
+    try:
+        payload = jose_jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise ValueError()
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user or not user.is_active:
+            raise ValueError()
+    except Exception:
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+
+    try:
+        _check_project(db, project_id, user.id)
+    except HTTPException:
+        await websocket.close(code=1008, reason="Project not found")
+        return
+
+    cleared = False
+    total_imported = 0
+
+    try:
+        while True:
+            try:
+                msg = await websocket.receive_json()
+            except WebSocketDisconnect:
+                return
+
+            msg_type = msg.get("type")
+
+            if msg_type == "chunk":
+                rows = msg.get("rows", [])
+
+                if not cleared:
+                    subq = sa_select(PQItem.id).where(PQItem.project_id == project_id)
+                    if revision_id is not None:
+                        subq = subq.where(PQItem.revision_id == revision_id)
+                    db.execute(sa_delete(ProposalItem).where(ProposalItem.pq_item_id.in_(subq)))
+                    del_stmt = sa_delete(PQItem).where(PQItem.project_id == project_id)
+                    if revision_id is not None:
+                        del_stmt = del_stmt.where(PQItem.revision_id == revision_id)
+                    db.execute(del_stmt)
+                    cleared = True
+
+                clean_rows = []
+                for i, raw in enumerate(rows):
+                    num = str(raw.get("numero_item") or "").strip()
+                    desc = str(raw.get("descricao") or "").strip()
+                    if not num or not desc:
+                        continue
+                    clean = {k: v for k, v in raw.items() if k in _ALLOWED_PQ_FIELDS}
+                    clean.setdefault("ordem", total_imported + i)
+                    clean_rows.append(clean)
+
+                if clean_rows:
+                    records = [
+                        {**row, "project_id": project_id, "revision_id": revision_id}
+                        for row in clean_rows
+                    ]
+                    db.execute(sa_insert(PQItem), records)
+                    db.commit()
+                    total_imported += len(clean_rows)
+
+                await websocket.send_json({"type": "ack", "imported": total_imported})
+
+            elif msg_type == "done":
+                await websocket.send_json({"type": "complete", "total": total_imported})
+                await websocket.close()
+                return
+
+    except Exception as exc:
+        try:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+            await websocket.close()
+        except Exception:
+            pass
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
