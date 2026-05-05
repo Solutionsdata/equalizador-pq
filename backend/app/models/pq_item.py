@@ -21,7 +21,7 @@ class PQItem(Base):
     disciplina       = Column(String(100))                     # Civil | Elétrica | Mecânica…
     categoria        = Column(String(100))                     # Terraplenagem | Pavimentação…
     codigo           = Column(String(50))                      # SINAPI / SICRO / interno
-    descricao        = Column(String(500),  nullable=False)    # Descrição completa do item
+    descricao        = Column(Text,          nullable=False)    # Descrição completa do item
     unidade          = Column(String(20),   nullable=False)    # m | m² | m³ | un | kg | t
     quantidade       = Column(Numeric(18, 4), nullable=False)  # Quantidade contratada
     referencia_codigo= Column(String(50))                      # Código de referência externo

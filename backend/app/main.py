@@ -191,6 +191,10 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "CREATE INDEX IF NOT EXISTS ix_project_shares_user_id ON project_shares (user_id)"
     ))
+    # Ampliar descricao de VARCHAR(500) para TEXT (sem limite)
+    _conn.execute(text(
+        "ALTER TABLE pq_items ALTER COLUMN descricao TYPE TEXT"
+    ))
     _conn.commit()
 
 app = FastAPI(
