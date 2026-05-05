@@ -1114,6 +1114,94 @@ def gerar_baseline_excel(entries: list) -> io.BytesIO:
     return _save(wb)
 
 
+# ── Parse CSV: PQ ────────────────────────────────────────────────────────────
+
+def parse_pq_csv(text: str) -> list:
+    """
+    Parseia texto CSV da PQ (delimitador ; ou ,) e retorna lista de dicts
+    prontos para inserção no banco. Suporta 15 000+ linhas sem estouro de memória.
+    """
+    import csv as _csv
+
+    # Remove BOM caso presente
+    if text.startswith('﻿'):
+        text = text[1:]
+
+    # Detecta delimitador pela primeira linha
+    first_line = text.split('\n')[0].rstrip('\r')
+    delimiter = ';' if first_line.count(';') >= first_line.count(',') else ','
+
+    MAPA = {
+        'item': 'numero_item', 'no item': 'numero_item',
+        'n item': 'numero_item', 'numero item': 'numero_item', 'num item': 'numero_item',
+        'localidade': 'localidade', 'disciplina': 'disciplina',
+        'categoria': 'categoria', 'codigo': 'codigo', 'cod': 'codigo',
+        'descricao': 'descricao',
+        'unidade': 'unidade', 'unidade medida': 'unidade', 'un': 'unidade', 'und': 'unidade',
+        'quantidade': 'quantidade', 'qtd': 'quantidade', 'qtde': 'quantidade',
+        'referencia': 'referencia_codigo', 'referencia codigo': 'referencia_codigo',
+        'ref': 'referencia_codigo',
+        'preco unit. rf': 'preco_referencia', 'preco unitario rf': 'preco_referencia',
+        'preco referencia': 'preco_referencia', 'preco unit rf': 'preco_referencia',
+        'p.unit. rf': 'preco_referencia',
+        'observacao': 'observacao', 'obs.': 'observacao', 'obs': 'observacao',
+    }
+
+    reader = _csv.reader(io.StringIO(text), delimiter=delimiter)
+    all_rows = list(reader)
+
+    # Localiza linha de cabeçalho (primeiras 20)
+    col_map: dict = {}
+    header_row = -1
+    for ri, row in enumerate(all_rows[:20]):
+        local: dict = {}
+        for ci, cell in enumerate(row):
+            field = MAPA.get(_normalize_header(cell))
+            if field:
+                local[ci] = field
+        if 'numero_item' in local.values() and 'descricao' in local.values():
+            col_map = local
+            header_row = ri
+            break
+
+    if header_row == -1:
+        raise ValueError(
+            'Cabeçalhos obrigatórios não encontrados (Item e Descrição). '
+            'Use o template CSV gerado pelo sistema.'
+        )
+
+    items: list = []
+    for row in all_rows[header_row + 1:]:
+        if not row or all(not c.strip() for c in row):
+            continue
+        rd = {col_map[ci]: (row[ci].strip() if ci < len(row) else '') for ci in col_map}
+        num = (rd.get('numero_item') or '').strip()
+        desc = (rd.get('descricao') or '').strip()
+        if not num or not desc:
+            continue
+        items.append({
+            'numero_item': num,
+            'localidade': _str(rd.get('localidade')),
+            'disciplina': _str(rd.get('disciplina')),
+            'categoria': _str(rd.get('categoria')),
+            'codigo': _str(rd.get('codigo')),
+            'descricao': desc,
+            'unidade': _str(rd.get('unidade')) or 'un',
+            'quantidade': _float(rd.get('quantidade')) or 0,
+            'referencia_codigo': _str(rd.get('referencia_codigo')),
+            'preco_referencia': _float(rd.get('preco_referencia')),
+            'observacao': _str(rd.get('observacao')),
+            'ordem': len(items),
+        })
+
+    if not items:
+        raise ValueError(
+            'Nenhum item válido encontrado. '
+            'Verifique se o arquivo usa o template CSV gerado pelo sistema.'
+        )
+    return items
+
+
 # ── Geração CSV: PQ ──────────────────────────────────────────────────────────
 
 def gerar_pq_csv(project_name: str, pq_items=None) -> io.BytesIO:

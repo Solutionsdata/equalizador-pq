@@ -1,5 +1,5 @@
 import base64
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, insert as sa_insert, select as sa_select
@@ -13,7 +13,7 @@ from app.models.pq_item import PQItem
 from app.models.proposal_item import ProposalItem
 from app.models.project_share import ProjectShare
 from app.schemas.pq_item import PQItemCreate, PQItemUpdate, PQItemResponse, PQItemBulkSave
-from app.services.excel import gerar_pq_csv
+from app.services.excel import gerar_pq_csv, parse_pq_csv
 
 router = APIRouter()
 
@@ -395,6 +395,52 @@ def import_pq_fast(
     db.execute(sa_delete(ProposalItem).where(ProposalItem.pq_item_id.in_(subq)))
 
     # Apaga os pq_items antigos (1 query)
+    del_stmt = sa_delete(PQItem).where(PQItem.project_id == project_id)
+    if revision_id is not None:
+        del_stmt = del_stmt.where(PQItem.revision_id == revision_id)
+    db.execute(del_stmt)
+
+    # Insere todos de uma vez (1 query)
+    records = [{**row, "project_id": project_id, "revision_id": revision_id} for row in rows]
+    db.execute(sa_insert(PQItem), records)
+    db.commit()
+
+    return {"imported": len(rows)}
+
+
+@router.post("/project/{project_id}/import-csv")
+async def import_pq_csv_raw(
+    project_id: int,
+    request: Request,
+    revision_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Importa PQ via texto CSV no corpo da requisição (Content-Type: text/plain).
+    Suporta 15 000+ linhas: payload 3× menor que JSON, sem overhead de serialização.
+    """
+    _check_project(db, project_id, current_user.id)
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Corpo da requisição vazio.")
+
+    try:
+        text = body.decode('utf-8-sig')
+        rows = parse_pq_csv(text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Erro ao ler CSV: {exc}")
+
+    # Apaga proposal_items vinculados (subquery, 1 query)
+    subq = sa_select(PQItem.id).where(PQItem.project_id == project_id)
+    if revision_id is not None:
+        subq = subq.where(PQItem.revision_id == revision_id)
+    db.execute(sa_delete(ProposalItem).where(ProposalItem.pq_item_id.in_(subq)))
+
+    # Apaga pq_items antigos (1 query)
     del_stmt = sa_delete(PQItem).where(PQItem.project_id == project_id)
     if revision_id is not None:
         del_stmt = del_stmt.where(PQItem.revision_id == revision_id)

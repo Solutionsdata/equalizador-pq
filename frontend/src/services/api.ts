@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { parseCsvFile } from '../utils/parseCsv'
 
 const BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -88,11 +87,12 @@ export const pqAPI = {
   exportExcel: (projectId: number) =>
     api.get(`/pq/project/${projectId}/export`, { responseType: 'blob' }),
   importExcel: async (projectId: number, file: File, revisionId?: number) => {
-    const items = await parseCsvFile(file)
+    const text = await file.text()
     return api.post(
-      `/pq/project/${projectId}/import-fast`,
-      { items },
+      `/pq/project/${projectId}/import-csv`,
+      text,
       {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
         params: revisionId != null ? { revision_id: revisionId } : {},
         timeout: 300_000,
       },
