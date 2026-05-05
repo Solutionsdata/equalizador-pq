@@ -255,6 +255,10 @@ class ImportB64Payload(BaseModel):
     content_b64: str  # base64-encoded xlsx bytes
 
 
+class ImportJsonPayload(BaseModel):
+    items: list[dict]  # rows already parsed by the browser
+
+
 @router.post("/project/{project_id}/import-b64")
 def import_pq_b64(
     project_id: int,
@@ -306,6 +310,51 @@ def import_pq_b64(
         db.execute(sa_insert(PQItem), records)
 
     db.commit()
+    return {"imported": len(rows)}
+
+
+@router.post("/project/{project_id}/import-json")
+def import_pq_json(
+    project_id: int,
+    payload: ImportJsonPayload,
+    revision_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Importa PQ recebendo linhas já parseadas pelo browser (JSON puro, sem upload de arquivo)."""
+    _check_project(db, project_id, current_user.id)
+
+    ALLOWED_FIELDS = {
+        "numero_item", "localidade", "disciplina", "categoria", "codigo",
+        "descricao", "unidade", "quantidade", "referencia_codigo",
+        "preco_referencia", "observacao", "ordem",
+    }
+
+    # Valida e higieniza cada linha
+    rows = []
+    for i, raw in enumerate(payload.items):
+        num = str(raw.get("numero_item") or "").strip()
+        desc = str(raw.get("descricao") or "").strip()
+        if not num or not desc:
+            continue
+        clean = {k: v for k, v in raw.items() if k in ALLOWED_FIELDS}
+        clean.setdefault("ordem", i)
+        rows.append(clean)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="Nenhum item válido encontrado.")
+
+    # Bulk DELETE (1 query; FK ON DELETE CASCADE cuida das proposal_items)
+    del_stmt = sa_delete(PQItem).where(PQItem.project_id == project_id)
+    if revision_id is not None:
+        del_stmt = del_stmt.where(PQItem.revision_id == revision_id)
+    db.execute(del_stmt)
+
+    # Bulk INSERT (1 query com todos os registros)
+    records = [{**row, "project_id": project_id, "revision_id": revision_id} for row in rows]
+    db.execute(sa_insert(PQItem), records)
+    db.commit()
+
     return {"imported": len(rows)}
 
 
