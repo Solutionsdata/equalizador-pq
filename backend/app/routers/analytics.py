@@ -453,14 +453,15 @@ def export_baseline_excel(
 @router.get("/export/{project_id}")
 def export_analytics_excel(
     project_id: int,
+    revision_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Exporta relatório completo de equalização em Excel (5 abas)."""
+    """Exporta relatório completo de equalização em Excel para a revisão selecionada."""
     project = _check_project_access(db, project_id, current_user.id)
 
-    eq_data = AnalyticsService.get_equalization(db, project_id)
-    pareto_data = AnalyticsService.get_pareto(db, project_id, "referencia")
+    eq_data = AnalyticsService.get_equalization(db, project_id, revision_id)
+    pareto_data = AnalyticsService.get_pareto(db, project_id, "referencia", revision_id)
 
     # Converte para dict serializável
     def _to_dict(obj):
@@ -476,10 +477,15 @@ def export_analytics_excel(
         _to_dict(pareto_data),
     )
     safe_name = "".join(c for c in project.nome if c.isalnum() or c in " _-")[:40]
+    rev_suffix = ""
+    if revision_id:
+        rev = db.query(ProjectRevision).filter(ProjectRevision.id == revision_id).first()
+        if rev:
+            rev_suffix = f"_rev{rev.numero}"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f'attachment; filename="equalizacao_{safe_name}.xlsx"'
+            "Content-Disposition": f'attachment; filename="equalizacao_{safe_name}{rev_suffix}.xlsx"'
         },
     )
