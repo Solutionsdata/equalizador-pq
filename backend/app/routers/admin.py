@@ -87,7 +87,7 @@ def reset_password(
     return user
 
 
-_SUPER_ADMIN_EMAIL = "solutionsdata"
+_SUPER_ADMIN_EMAIL = "grupoepr"
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
