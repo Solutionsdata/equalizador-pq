@@ -248,141 +248,154 @@ function HFilterBar({
     }`
 
   return (
-    <div className="flex items-center gap-2 flex-wrap mb-4 bg-white border border-gray-200 rounded-xl px-4 py-2.5">
-      {/* Source toggle */}
-      {showSource && source && setSource && (
-        <>
-          <div className="flex gap-0.5 bg-gray-100 p-0.5 rounded-lg flex-shrink-0">
-            {(['referencia', 'propostas'] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setSource(s)}
-                className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-                style={source === s ? { backgroundColor: '#1A3A6B', color: '#fff' } : { color: '#6b7280' }}
-              >
-                {s === 'referencia' ? 'Preço Ref.' : 'Média Propostas'}
-              </button>
-            ))}
-          </div>
-          <div className="w-px h-4 bg-gray-200 flex-shrink-0" />
-        </>
-      )}
+    <div className="mb-4 bg-white border border-gray-200 rounded-xl px-4 py-3">
+      <div className="flex items-stretch gap-0 flex-wrap">
 
-      {/* Filter label + badge */}
-      <div className="flex items-center gap-1 text-xs text-gray-400 font-medium flex-shrink-0">
-        <Filter size={12} style={activeCount > 0 ? { color: '#1A3A6B' } : {}} />
-        {activeCount > 0 && (
-          <span
-            className="w-4 h-4 rounded-full text-white text-[9px] flex items-center justify-center font-bold"
-            style={{ backgroundColor: '#1A3A6B' }}
-          >
-            {activeCount}
-          </span>
-        )}
-      </div>
-
-      {/* Localidade */}
-      {localidades.length > 0 && (
-        <select
-          value={filters.localidade}
-          onChange={(e) => setFilters((f) => ({ ...f, localidade: e.target.value }))}
-          className={selectCls(!!filters.localidade)}
-          style={filters.localidade ? { borderColor: '#1A3A6B' } : {}}
-        >
-          <option value="">Localidade</option>
-          {localidades.map((l) => <option key={l} value={l}>{l}</option>)}
-        </select>
-      )}
-
-      {/* Categoria */}
-      {categorias.length > 0 && (
-        <select
-          value={filters.categoria}
-          onChange={(e) => setFilters((f) => ({ ...f, categoria: e.target.value }))}
-          className={selectCls(!!filters.categoria)}
-          style={filters.categoria ? { borderColor: '#1A3A6B' } : {}}
-        >
-          <option value="">Categoria</option>
-          {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-      )}
-
-      {/* Disciplina */}
-      {disciplinas.length > 0 && (
-        <select
-          value={filters.disciplina}
-          onChange={(e) => setFilters((f) => ({ ...f, disciplina: e.target.value }))}
-          className={selectCls(!!filters.disciplina)}
-          style={filters.disciplina ? { borderColor: '#1A3A6B' } : {}}
-        >
-          <option value="">Disciplina</option>
-          {disciplinas.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
-      )}
-
-      {/* Fornecedores popover */}
-      {proposals.length > 0 && (
-        <div ref={fornRef} className="relative flex-shrink-0">
-          <button
-            onClick={() => setFornOpen((v) => !v)}
-            className={`flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 border transition-colors ${
-              filters.fornecedores.length > 0
-                ? 'border-2 text-gray-800 font-medium'
-                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-            }`}
-            style={filters.fornecedores.length > 0 ? { borderColor: '#1A3A6B', backgroundColor: '#E8EDF6' } : {}}
-          >
-            <Users size={11} />
-            {allChecked ? 'Fornecedores' : `${selectedFornCount} / ${proposals.length}`}
-            <ChevronDown size={10} className={`transition-transform ${fornOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {fornOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 p-3 min-w-[200px] max-h-60 overflow-y-auto">
-              <div className="space-y-1.5">
-                {proposals.map((p) => {
-                  const checked = filters.fornecedores.length === 0 || filters.fornecedores.includes(String(p.id))
-                  return (
-                    <label key={p.id} className="flex items-center gap-2 cursor-pointer group">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {
-                          setFilters((f) => {
-                            if (f.fornecedores.length === 0) {
-                              return { ...f, fornecedores: proposals.filter((x) => x.id !== p.id).map((x) => String(x.id)) }
-                            }
-                            if (checked) {
-                              const next = f.fornecedores.filter((x) => x !== String(p.id))
-                              return { ...f, fornecedores: next.length === 0 ? [] : next }
-                            } else {
-                              const next = [...f.fornecedores, String(p.id)]
-                              return { ...f, fornecedores: next.length === proposals.length ? [] : next }
-                            }
-                          })
-                        }}
-                        className="rounded"
-                        style={{ accentColor: '#1A3A6B' }}
-                      />
-                      <span className="text-xs text-gray-600 truncate group-hover:text-gray-900">{p.empresa}</span>
-                      {p.is_winner && <span className="text-[9px] text-amber-600 font-bold ml-auto flex-shrink-0">★</span>}
-                    </label>
-                  )
-                })}
+        {/* ── Segmentação de Preços ─────────────────────────────────────── */}
+        {showSource && source && setSource && (
+          <>
+            <div className="flex flex-col gap-1.5 pr-4 flex-shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#1A3A6B' }}>
+                Segmentação de Preços
+              </span>
+              <div className="flex gap-0.5 bg-gray-100 p-0.5 rounded-lg">
+                {(['referencia', 'propostas'] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSource(s)}
+                    className="px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
+                    style={source === s ? { backgroundColor: '#1A3A6B', color: '#fff' } : { color: '#6b7280' }}
+                  >
+                    {s === 'referencia' ? 'Preço Ref.' : 'Média Propostas'}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
-        </div>
-      )}
+            <div className="w-px bg-gray-200 mx-3 flex-shrink-0 self-stretch" />
+          </>
+        )}
 
-      {/* Clear */}
-      {hasActive && (
-        <button
-          onClick={() => setFilters({ categoria: '', disciplina: '', localidade: '', fornecedores: [] })}
-          className="ml-auto flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0"
-        >
-          <X size={11} /> Limpar
-        </button>
-      )}
+        {/* ── Filtros ───────────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <Filter size={11} style={activeCount > 0 ? { color: '#1A3A6B' } : { color: '#9CA3AF' }} />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Filtros</span>
+            {activeCount > 0 && (
+              <span
+                className="w-4 h-4 rounded-full text-white text-[9px] flex items-center justify-center font-bold"
+                style={{ backgroundColor: '#1A3A6B' }}
+              >
+                {activeCount}
+              </span>
+            )}
+            {hasActive && (
+              <button
+                onClick={() => setFilters({ categoria: '', disciplina: '', localidade: '', fornecedores: [] })}
+                className="ml-auto flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0"
+              >
+                <X size={10} /> Limpar
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+
+            {/* Localidade */}
+            {localidades.length > 0 && (
+              <select
+                value={filters.localidade}
+                onChange={(e) => setFilters((f) => ({ ...f, localidade: e.target.value }))}
+                className={selectCls(!!filters.localidade)}
+                style={filters.localidade ? { borderColor: '#1A3A6B' } : {}}
+              >
+                <option value="">Localidade</option>
+                {localidades.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            )}
+
+            {/* Categoria */}
+            {categorias.length > 0 && (
+              <select
+                value={filters.categoria}
+                onChange={(e) => setFilters((f) => ({ ...f, categoria: e.target.value }))}
+                className={selectCls(!!filters.categoria)}
+                style={filters.categoria ? { borderColor: '#1A3A6B' } : {}}
+              >
+                <option value="">Categoria</option>
+                {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+
+            {/* Disciplina */}
+            {disciplinas.length > 0 && (
+              <select
+                value={filters.disciplina}
+                onChange={(e) => setFilters((f) => ({ ...f, disciplina: e.target.value }))}
+                className={selectCls(!!filters.disciplina)}
+                style={filters.disciplina ? { borderColor: '#1A3A6B' } : {}}
+              >
+                <option value="">Disciplina</option>
+                {disciplinas.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            )}
+
+            {/* Fornecedores popover */}
+            {proposals.length > 0 && (
+              <div ref={fornRef} className="relative flex-shrink-0">
+                <button
+                  onClick={() => setFornOpen((v) => !v)}
+                  className={`flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 border transition-colors ${
+                    filters.fornecedores.length > 0
+                      ? 'border-2 text-gray-800 font-medium'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                  }`}
+                  style={filters.fornecedores.length > 0 ? { borderColor: '#1A3A6B', backgroundColor: '#E8EDF6' } : {}}
+                >
+                  <Users size={11} />
+                  {allChecked ? 'Fornecedores' : `${selectedFornCount} / ${proposals.length}`}
+                  <ChevronDown size={10} className={`transition-transform ${fornOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {fornOpen && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 p-3 min-w-[200px] max-h-60 overflow-y-auto">
+                    <div className="space-y-1.5">
+                      {proposals.map((p) => {
+                        const checked = filters.fornecedores.length === 0 || filters.fornecedores.includes(String(p.id))
+                        return (
+                          <label key={p.id} className="flex items-center gap-2 cursor-pointer group">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setFilters((f) => {
+                                  if (f.fornecedores.length === 0) {
+                                    return { ...f, fornecedores: proposals.filter((x) => x.id !== p.id).map((x) => String(x.id)) }
+                                  }
+                                  if (checked) {
+                                    const next = f.fornecedores.filter((x) => x !== String(p.id))
+                                    return { ...f, fornecedores: next.length === 0 ? [] : next }
+                                  } else {
+                                    const next = [...f.fornecedores, String(p.id)]
+                                    return { ...f, fornecedores: next.length === proposals.length ? [] : next }
+                                  }
+                                })
+                              }}
+                              className="rounded"
+                              style={{ accentColor: '#1A3A6B' }}
+                            />
+                            <span className="text-xs text-gray-600 truncate group-hover:text-gray-900">{p.empresa}</span>
+                            {p.is_winner && <span className="text-[9px] text-amber-600 font-bold ml-auto flex-shrink-0">★</span>}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        </div>
+
+      </div>
     </div>
   )
 }
