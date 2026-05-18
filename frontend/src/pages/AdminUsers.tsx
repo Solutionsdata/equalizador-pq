@@ -32,11 +32,11 @@ function assinaturaBadge(date?: string | null) {
   const s = assinaturaStatus(date)
   if (s === 'none') return { label: 'Sem vencimento', color: 'bg-gray-100 text-gray-500' }
   const d = new Date(date!)
-  if (s === 'expired') return { label: `Vencida em ${d.toLocaleDateString('pt-BR')}`, color: 'bg-red-100 text-red-700' }
+  if (s === 'expired') return { label: `Vencida em ${d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`, color: 'bg-red-100 text-red-700' }
   const days = Math.ceil((d.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
   return {
-    label: days <= 30 ? `Vence em ${days}d (${d.toLocaleDateString('pt-BR')})` : `Válida até ${d.toLocaleDateString('pt-BR')}`,
-    color: days <= 30 ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
+    label: days <= 30 ? `Vence em ${days}d (${d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })})` : `Válida até ${d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
+    color: days <= 30 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700',
   }
 }
 
@@ -342,7 +342,7 @@ export default function AdminUsers() {
                       {u.cargo ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400">
-                      Solicitado em {new Date(u.created_at).toLocaleDateString('pt-BR')}
+                      Solicitado em {new Date(u.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                     </td>
                     <td className="px-4 py-3">
                       <ApproveRow
@@ -430,7 +430,7 @@ export default function AdminUsers() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                      {new Date(u.created_at).toLocaleDateString('pt-BR')}
+                      {new Date(u.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">

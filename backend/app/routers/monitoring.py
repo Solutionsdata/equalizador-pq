@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, date as date_type
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, text
@@ -20,7 +20,8 @@ def get_overview(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ):
-    hoje = datetime.utcnow().date()
+    brasilia = timezone(timedelta(hours=-3))
+    hoje = datetime.now(brasilia).date()
     inicio_hoje = datetime(hoje.year, hoje.month, hoje.day)
 
     total_users     = db.query(func.count(User.id)).scalar()

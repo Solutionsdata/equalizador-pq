@@ -13,10 +13,11 @@ interface Props {
   title: string
 }
 
+// Paleta EPR: Verde, Azul, Amarelo, Cinza + variações
 const PALETTES: Record<string, string[]> = {
-  disciplina: ['#2563eb', '#7c3aed', '#db2777', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', '#4f46e5', '#be185d', '#b45309'],
-  categoria:  ['#0891b2', '#16a34a', '#ca8a04', '#ea580c', '#db2777', '#7c3aed', '#2563eb', '#4f46e5', '#be185d', '#b45309'],
-  localidade: ['#0d9488', '#0369a1', '#7c3aed', '#b45309', '#15803d', '#be185d', '#4338ca', '#c2410c', '#0891b2', '#ca8a04'],
+  disciplina: ['#1A3A6B', '#1B7C3E', '#F5A623', '#6B7280', '#145C2E', '#0E2650', '#D4891A', '#4B5563', '#2D5A1B', '#1E4DB3'],
+  categoria:  ['#1B7C3E', '#1A3A6B', '#F5A623', '#6B7280', '#145C2E', '#0E2650', '#D4891A', '#4B5563', '#2D5A1B', '#374151'],
+  localidade: ['#1A3A6B', '#1B7C3E', '#F5A623', '#9CA3AF', '#0E2650', '#145C2E', '#D4891A', '#6B7280', '#2D5A1B', '#374151'],
 }
 
 const CustomTooltip = ({ active, payload, nameKey }: any) => {
@@ -33,7 +34,7 @@ const CustomTooltip = ({ active, payload, nameKey }: any) => {
       </div>
       <div className="flex justify-between gap-4">
         <span className="text-gray-500">Participação</span>
-        <strong className="text-blue-700">{d.percentual?.toFixed(1)}%</strong>
+        <strong style={{ color: '#1A3A6B' }}>{d.percentual?.toFixed(1)}%</strong>
       </div>
       <div className="flex justify-between gap-4">
         <span className="text-gray-500">Itens</span>

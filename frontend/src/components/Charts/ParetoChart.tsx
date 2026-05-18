@@ -10,9 +10,9 @@ interface Props {
 }
 
 const CLASS_COLORS: Record<string, string> = {
-  A: '#2563eb',
-  B: '#f59e0b',
-  C: '#10b981',
+  A: '#1B7C3E',
+  B: '#F5A623',
+  C: '#6B7280',
 }
 
 const CustomTooltip = ({ active, payload }: any) => {
@@ -26,7 +26,7 @@ const CustomTooltip = ({ active, payload }: any) => {
         <p className="flex justify-between gap-6"><span className="text-gray-500">Participação:</span><strong>{d?.percentual?.toFixed(2)}%</strong></p>
         <p className="flex justify-between gap-6"><span className="text-gray-500">Acumulado:</span><strong>{d?.percentual_acumulado?.toFixed(2)}%</strong></p>
         <p className="flex justify-between gap-6"><span className="text-gray-500">Classe:</span>
-          <strong className={d?.classe === 'A' ? 'text-blue-600' : d?.classe === 'B' ? 'text-amber-600' : 'text-green-600'}>{d?.classe}</strong>
+          <strong style={{ color: d?.classe === 'A' ? '#1B7C3E' : d?.classe === 'B' ? '#F5A623' : '#6B7280' }}>{d?.classe}</strong>
         </p>
       </div>
     </div>
@@ -87,8 +87,8 @@ export default function ParetoChart({ items }: Props) {
             width={42}
           />
           <Tooltip content={<CustomTooltip />} />
-          <ReferenceLine yAxisId="pct" y={80} stroke="#2563eb" strokeDasharray="4 3" strokeOpacity={0.5} />
-          <ReferenceLine yAxisId="pct" y={95} stroke="#f59e0b" strokeDasharray="4 3" strokeOpacity={0.5} />
+          <ReferenceLine yAxisId="pct" y={80} stroke="#1B7C3E" strokeDasharray="4 3" strokeOpacity={0.6} />
+          <ReferenceLine yAxisId="pct" y={95} stroke="#F5A623" strokeDasharray="4 3" strokeOpacity={0.6} />
           <Bar yAxisId="valor" dataKey="valor_total" name="Valor do Item" radius={[2, 2, 0, 0]} maxBarSize={16}>
             {items.map((entry) => (
               <Cell key={entry.pq_item_id} fill={CLASS_COLORS[entry.classe]} fillOpacity={0.85} />

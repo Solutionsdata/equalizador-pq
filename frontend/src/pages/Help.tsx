@@ -53,13 +53,18 @@ function Callout({ children, type = 'info' }: { children: React.ReactNode; type?
   )
 }
 
+// EPR Brand
+const EPR_AZUL = '#1A3A6B'
+const EPR_VERDE = '#1B7C3E'
+const EPR_AMARELO = '#F5A623'
+
 // ── ABC Bar visual ────────────────────────────────────────────────────────────
 function AbcBar({ pct, cls }: { pct: number; cls: 'A' | 'B' | 'C' }) {
-  const colors = { A: 'bg-blue-600', B: 'bg-indigo-400', C: 'bg-gray-300' }
-  const text   = { A: 'text-blue-700 bg-blue-50 border-blue-200', B: 'text-indigo-600 bg-indigo-50 border-indigo-200', C: 'text-gray-500 bg-gray-50 border-gray-200' }
+  const colors = { A: 'bg-[#1B7C3E]', B: 'bg-[#F5A623]', C: 'bg-gray-300' }
+  const text   = { A: 'text-[#1B7C3E] bg-green-50 border-green-200', B: 'text-[#D4891A] bg-amber-50 border-amber-200', C: 'text-gray-500 bg-gray-50 border-gray-200' }
   return (
     <div className="flex items-center gap-2 text-[11px]">
-      <span className={`font-black w-4 text-center`} style={{ color: cls === 'A' ? '#1d4ed8' : cls === 'B' ? '#4338ca' : '#9ca3af' }}>{cls}</span>
+      <span className={`font-black w-4 text-center`} style={{ color: cls === 'A' ? '#1B7C3E' : cls === 'B' ? '#D4891A' : '#9ca3af' }}>{cls}</span>
       <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${colors[cls]} transition-all duration-700`} style={{ width: `${pct}%` }} />
       </div>
@@ -102,7 +107,7 @@ const PAGES: Page[] = [
   // ────────────────────────────────────────────────────────────────────────────
   {
     icon: LayoutDashboard, title: 'O Sistema', sub: 'Por que existe e o que resolve',
-    accent: '#3b82f6', grad: 'from-blue-600 via-blue-700 to-indigo-800',
+    accent: EPR_AZUL, grad: 'from-[#1A3A6B] via-[#0E2650] to-[#1A3A6B]',
     bullets: ['O problema que resolve', 'Os 6 módulos', 'Como ler o Dashboard'],
     right: (
       <div className="grid grid-cols-3 gap-3 h-full content-start">
@@ -188,7 +193,7 @@ const PAGES: Page[] = [
   // ────────────────────────────────────────────────────────────────────────────
   {
     icon: PieChart, title: 'Curva ABC & Pareto', sub: 'Onde está o dinheiro — e onde focar',
-    accent: '#10b981', grad: 'from-emerald-600 via-green-700 to-teal-800',
+    accent: EPR_VERDE, grad: 'from-[#1B7C3E] via-[#145C2E] to-[#0D3D20]',
     bullets: ['O que é a Curva ABC', 'Como ler o Pareto', 'Estratégia de negociação'],
     right: (
       <div className="grid grid-cols-3 gap-3 h-full content-start">
@@ -206,13 +211,13 @@ const PAGES: Page[] = [
               <AbcBar pct={10} cls="C" />
             </div>
             <div className="flex flex-col gap-1.5">
-              <div className="p-2 rounded-xl bg-blue-50 border border-blue-100">
-                <p className="text-[10px] font-black text-blue-700 uppercase tracking-wide">Classe A — Críticos</p>
-                <p className="text-[11px] text-blue-600 mt-0.5">Representam 70% do valor total. Geralmente apenas 10–20% dos itens. São os que definem o jogo.</p>
+              <div className="p-2 rounded-xl bg-green-50 border border-green-100">
+                <p className="text-[10px] font-black uppercase tracking-wide" style={{ color: '#1B7C3E' }}>Classe A — Críticos</p>
+                <p className="text-[11px] mt-0.5" style={{ color: '#145C2E' }}>Representam 70% do valor total. Geralmente apenas 10–20% dos itens. São os que definem o jogo.</p>
               </div>
-              <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-100">
-                <p className="text-[10px] font-black text-indigo-700 uppercase tracking-wide">Classe B — Importantes</p>
-                <p className="text-[11px] text-indigo-600 mt-0.5">Os próximos 20% do valor. Merecem atenção, mas com menor urgência.</p>
+              <div className="p-2 rounded-xl bg-amber-50 border border-amber-100">
+                <p className="text-[10px] font-black uppercase tracking-wide" style={{ color: '#D4891A' }}>Classe B — Importantes</p>
+                <p className="text-[11px] mt-0.5 text-amber-700">Os próximos 20% do valor. Merecem atenção, mas com menor urgência.</p>
               </div>
               <div className="p-2 rounded-xl bg-gray-50 border border-gray-200">
                 <p className="text-[10px] font-black text-gray-500 uppercase tracking-wide">Classe C — Residuais</p>
@@ -255,7 +260,7 @@ const PAGES: Page[] = [
                     <td className="px-2 py-1.5 text-right font-semibold text-gray-800">{v}</td>
                     <td className="px-2 py-1.5 text-center text-gray-500">{p}</td>
                     <td className="px-2 py-1.5 text-center">
-                      <span className={`font-black text-[10px] px-1.5 py-0.5 rounded-full ${c === 'A' ? 'bg-blue-600 text-white' : c === 'B' ? 'bg-indigo-200 text-indigo-800' : 'bg-gray-100 text-gray-500'}`}>{c}</span>
+                      <span className={`font-black text-[10px] px-1.5 py-0.5 rounded-full ${c === 'A' ? 'text-white' : c === 'B' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'}`} style={c === 'A' ? { backgroundColor: '#1B7C3E' } : {}}>{c}</span>
                     </td>
                   </tr>
                 ))}
@@ -269,10 +274,10 @@ const PAGES: Page[] = [
           <Lbl>Como usar na prática</Lbl>
           <Card>
             <div className="flex flex-col gap-2.5">
-              <Step n={1} title="Abra a aba Análises" sub="Menu → Análises do projeto atual" color="bg-emerald-600" />
-              <Step n={2} title="Selecione a fonte" sub="'Referência PQ' para análise de custo, ou 'Propostas' para análise de preços" color="bg-emerald-600" />
-              <Step n={3} title="Leia os badges A/B/C" sub="O total por classe aparece no cabeçalho" color="bg-emerald-600" />
-              <Step n={4} title="Exporte para Excel" sub="Relatório completo com Pareto, disciplinas e categorias" color="bg-emerald-600" />
+              <Step n={1} title="Abra a aba Análises" sub="Menu → Análises do projeto atual" color="bg-[#1B7C3E]" />
+              <Step n={2} title="Selecione a fonte" sub="'Referência PQ' para análise de custo, ou 'Propostas' para análise de preços" color="bg-[#1B7C3E]" />
+              <Step n={3} title="Leia os badges A/B/C" sub="O total por classe aparece no cabeçalho" color="bg-[#1B7C3E]" />
+              <Step n={4} title="Exporte para Excel" sub="Relatório completo com Pareto, disciplinas e categorias" color="bg-[#1B7C3E]" />
             </div>
           </Card>
           <Callout type="tip">
@@ -292,7 +297,7 @@ const PAGES: Page[] = [
   // ────────────────────────────────────────────────────────────────────────────
   {
     icon: Layers, title: 'Disciplinas & Composição', sub: 'Entenda como o escopo se distribui',
-    accent: '#8b5cf6', grad: 'from-violet-600 via-purple-700 to-fuchsia-800',
+    accent: '#6d28d9', grad: 'from-[#1A3A6B] via-[#3730a3] to-[#6d28d9]',
     bullets: ['Análise por disciplina', 'Análise por categoria', 'Análise por localidade'],
     right: (
       <div className="grid grid-cols-3 gap-3 h-full content-start">
@@ -367,7 +372,7 @@ const PAGES: Page[] = [
   // ────────────────────────────────────────────────────────────────────────────
   {
     icon: GitBranch, title: 'Revisões & Baseline', sub: 'Rastreabilidade e histórico de premiações',
-    accent: '#f59e0b', grad: 'from-amber-500 via-orange-600 to-orange-700',
+    accent: EPR_AMARELO, grad: 'from-[#D4891A] via-[#F5A623] to-[#B8762F]',
     bullets: ['O que são revisões', 'Comparativo entre revisões', 'Baseline e KPIs do Dashboard'],
     right: (
       <div className="grid grid-cols-3 gap-3 h-full content-start">
@@ -470,7 +475,7 @@ const PAGES: Page[] = [
   // ────────────────────────────────────────────────────────────────────────────
   {
     icon: FolderPlus, title: 'Projetos & Planilha PQ', sub: 'Como criar do zero — passo a passo',
-    accent: '#06b6d4', grad: 'from-cyan-600 via-sky-700 to-blue-800',
+    accent: EPR_VERDE, grad: 'from-[#145C2E] via-[#1B7C3E] to-[#1A5C32]',
     bullets: ['Criar um projeto com SPE', 'Estrutura das 12 colunas PQ', 'Importar via Excel'],
     right: (
       <div className="grid grid-cols-3 gap-3 h-full content-start">
@@ -584,7 +589,7 @@ const PAGES: Page[] = [
   // ────────────────────────────────────────────────────────────────────────────
   {
     icon: Building2, title: 'Propostas & Equalização', sub: 'Cadastrar fornecedores e decidir',
-    accent: '#f43f5e', grad: 'from-rose-600 via-pink-700 to-red-800',
+    accent: EPR_AZUL, grad: 'from-[#0E2650] via-[#1A3A6B] to-[#0a1e3e]',
     bullets: ['Criar uma proposta + Excel', 'Ler a tabela de equalização', 'Fluxo completo + checklist'],
     right: (
       <div className="grid grid-cols-3 gap-3 h-full content-start">
@@ -724,7 +729,7 @@ export default function Help() {
   return (
     <>
       <style>{ANIM}</style>
-      <div className="flex h-screen overflow-hidden bg-gray-50">
+      <div className="flex h-full overflow-hidden bg-gray-50">
 
         {/* ── Hero panel ─────────────────────────────────────────────────────── */}
         <div
@@ -826,12 +831,12 @@ export default function Help() {
                 <button
                   onClick={next}
                   className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-lg transition-all hover:opacity-90 shadow-sm"
-                  style={{ background: page.accent }}
+                  style={{ background: EPR_AZUL }}
                 >
                   {PAGES[active + 1].title} <ChevronRight size={13} />
                 </button>
               ) : (
-                <div className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-green-600 rounded-lg shadow-sm">
+                <div className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-lg shadow-sm" style={{ backgroundColor: EPR_VERDE }}>
                   <CheckCircle2 size={13} /> Guia concluído!
                 </div>
               )}

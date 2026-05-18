@@ -15,11 +15,11 @@ import {
 } from 'recharts'
 
 // ── Paleta ────────────────────────────────────────────────────────────────────
-const COLORS = ['#2563eb', '#16a34a', '#d97706', '#9333ea', '#e11d48', '#0891b2', '#c2410c']
+const COLORS = ['#1A3A6B', '#1B7C3E', '#F5A623', '#6B7280', '#0E2650', '#145C2E', '#D4891A']
 const TIPO_COLORS: Record<string, string> = {
-  INFRAESTRUTURA: '#2563eb',
-  EDIFICACAO: '#16a34a',
-  OBRA_DE_ARTE: '#9333ea',
+  INFRAESTRUTURA: '#1A3A6B',
+  EDIFICACAO: '#1B7C3E',
+  OBRA_DE_ARTE: '#F5A623',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

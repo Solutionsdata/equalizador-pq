@@ -31,9 +31,9 @@ const CustomTooltip = ({ active, payload }: any) => {
 
 export default function ABCCurveChart({ data }: Props) {
   const pieData = [
-    { name: `Classe A — ${data.count_a} itens`, value: Number(data.valor_a), color: '#2563eb' },
-    { name: `Classe B — ${data.count_b} itens`, value: Number(data.valor_b), color: '#f59e0b' },
-    { name: `Classe C — ${data.count_c} itens`, value: Number(data.valor_c), color: '#10b981' },
+    { name: `Classe A — ${data.count_a} itens`, value: Number(data.valor_a), color: '#1B7C3E' },
+    { name: `Classe B — ${data.count_b} itens`, value: Number(data.valor_b), color: '#F5A623' },
+    { name: `Classe C — ${data.count_c} itens`, value: Number(data.valor_c), color: '#6B7280' },
   ].filter((d) => d.value > 0)
 
   return (

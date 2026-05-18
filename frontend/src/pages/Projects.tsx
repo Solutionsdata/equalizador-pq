@@ -74,12 +74,22 @@ export default function Projects() {
     setSelectedCollaboratorIds(new Set(shares.map((s) => s.id)))
   }, [shares])
 
+  // ── Filters ──────────────────────────────────────────────────────────────────
+  const [filterTR, setFilterTR] = useState('')
+  const [filterSPE, setFilterSPE] = useState('')
+
   // ── Projects list ────────────────────────────────────────────────────────────
   const { data: _raw, isLoading } = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: () => projectsAPI.list().then((r) => r.data),
   })
   const projects: Project[] = Array.isArray(_raw) ? _raw : []
+
+  const filteredProjects = projects.filter((p) => {
+    if (filterTR.trim() && !(p.numero_licitacao ?? '').toLowerCase().includes(filterTR.trim().toLowerCase())) return false
+    if (filterSPE && p.spe_unidade !== filterSPE) return false
+    return true
+  })
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   function openCreate() {
@@ -211,6 +221,39 @@ export default function Projects() {
         </button>
       </div>
 
+      {/* Filter bar */}
+      {projects.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap mb-5 bg-white border border-gray-200 rounded-xl px-4 py-2.5">
+          <Search size={13} className="text-gray-400 flex-shrink-0" />
+          <input
+            type="text"
+            placeholder="Termo de Referência…"
+            value={filterTR}
+            onChange={(e) => setFilterTR(e.target.value)}
+            className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-700 bg-white focus:outline-none focus:border-gray-400 min-w-[180px]"
+          />
+          <select
+            value={filterSPE}
+            onChange={(e) => setFilterSPE(e.target.value)}
+            className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-700 bg-white focus:outline-none focus:border-gray-400"
+          >
+            <option value="">Todas as SPEs</option>
+            {SPE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          {(filterTR || filterSPE) && (
+            <button
+              onClick={() => { setFilterTR(''); setFilterSPE('') }}
+              className="ml-auto flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              <X size={11} /> Limpar
+            </button>
+          )}
+          {(filterTR || filterSPE) && (
+            <span className="text-xs text-gray-400">{filteredProjects.length} de {projects.length}</span>
+          )}
+        </div>
+      )}
+
       {/* Project grid */}
       {isLoading ? (
         <div className="text-center py-20 text-gray-400">Carregando…</div>
@@ -222,9 +265,14 @@ export default function Projects() {
             <Plus size={16} /> Criar primeiro projeto
           </button>
         </div>
+      ) : filteredProjects.length === 0 ? (
+        <div className="card py-12 text-center">
+          <Search size={40} className="mx-auto text-gray-200 mb-3" />
+          <p className="text-gray-400 text-sm">Nenhum projeto encontrado com os filtros aplicados.</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {projects.map((project) => (
+          {filteredProjects.map((project) => (
             <div key={project.id} className="card p-5 flex flex-col gap-3">
               {/* Card header */}
               <div className="flex items-start justify-between gap-2">

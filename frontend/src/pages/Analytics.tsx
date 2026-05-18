@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react'
+import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -6,6 +6,7 @@ import { analyticsAPI, revisionsAPI, projectsAPI, downloadBlob } from '../servic
 import type {
   ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary, LocalidadeSummary,
   EqualizationProposal, ScopeValidationResponse, RevisionCompareResponse, ProjectRevision,
+  ABCItem,
 } from '../types'
 import { formatBRL, formatPercent, formatNumber } from '../types'
 import ParetoChart from '../components/Charts/ParetoChart'
@@ -15,7 +16,7 @@ import {
   ArrowLeft, BarChart3, TrendingUp, GitCompare,
   Sparkles, Users, Download, Filter, X,
   ChevronUp, ChevronDown, Trophy, AlertTriangle, CheckCircle,
-  PieChart, ShieldCheck, GitBranch, MapPin,
+  PieChart, ShieldCheck, GitBranch,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -40,24 +41,146 @@ function deviationClass(pct: number | null): string {
   if (pct === null) return ''
   if (pct > 20) return 'text-red-600 font-semibold'
   if (pct > 5) return 'text-amber-600'
-  if (pct < -10) return 'text-blue-600'
+  if (pct < -10) return 'text-[#1A3A6B]'
   return 'text-green-700'
 }
 
 function pctBadge(pct: number | null) {
   if (pct === null) return <span className="text-gray-300">—</span>
+  if (pct < -10) {
+    return (
+      <span
+        className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+        style={{ backgroundColor: '#E8EDF6', color: '#1A3A6B', border: '1px solid #A3B4D4' }}
+      >
+        {pct.toFixed(1)}%
+      </span>
+    )
+  }
   const cls = pct > 20
     ? 'bg-red-50 text-red-600 border border-red-200'
     : pct > 5
       ? 'bg-amber-50 text-amber-600 border border-amber-200'
-      : pct < -10
-        ? 'bg-blue-50 text-blue-600 border border-blue-200'
-        : 'bg-green-50 text-green-700 border border-green-200'
+      : 'bg-green-50 text-green-700 border border-green-200'
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${cls}`}>
       {pct > 0 ? '+' : ''}{pct.toFixed(1)}%
     </span>
   )
+}
+
+// ── Helpers de cálculo local ──────────────────────────────────────────────────
+
+function computeFilteredPareto(
+  paretoData: ParetoData | undefined,
+  equalization: EqualizationResponse | undefined,
+  filters: Filters,
+  source: 'referencia' | 'propostas',
+): ParetoData | undefined {
+  if (!paretoData) return undefined
+
+  const hasFilter = filters.localidade || filters.categoria || filters.disciplina || filters.fornecedores.length > 0
+  if (!hasFilter) return paretoData
+
+  // Filtrar itens por localidade/categoria/disciplina
+  let items: ABCItem[] = paretoData.items.filter((item) => {
+    if (filters.localidade && item.localidade !== filters.localidade) return false
+    if (filters.categoria && item.categoria !== filters.categoria) return false
+    if (filters.disciplina && item.disciplina !== filters.disciplina) return false
+    return true
+  })
+
+  // Para source='propostas' com filtro de fornecedor, recalcular preco_medio
+  if (source === 'propostas' && filters.fornecedores.length > 0 && equalization) {
+    items = items.map((item) => {
+      const eqItem = equalization.items.find((i) => i.pq_item_id === item.pq_item_id)
+      if (!eqItem) return item
+      const prices = filters.fornecedores
+        .map((fid) => eqItem.precos[fid])
+        .filter((p): p is number => p != null)
+      const preco_medio = prices.length > 0
+        ? prices.reduce((a, b) => a + b, 0) / prices.length
+        : item.preco_medio
+      return { ...item, preco_medio, valor_total: preco_medio * item.quantidade }
+    })
+  }
+
+  // Recalcular posição, percentual, percentual_acumulado e classe
+  const sorted = [...items].sort((a, b) => b.valor_total - a.valor_total)
+  const total_valor = sorted.reduce((s, i) => s + i.valor_total, 0)
+  let acum = 0
+  const newItems: ABCItem[] = sorted.map((item, idx) => {
+    const percentual = total_valor > 0 ? (item.valor_total / total_valor) * 100 : 0
+    acum += percentual
+    const percentual_acumulado = acum
+    const classe = percentual_acumulado <= 80 ? 'A' : percentual_acumulado <= 95 ? 'B' : 'C'
+    return { ...item, posicao: idx + 1, percentual, percentual_acumulado, classe } as ABCItem
+  })
+
+  return {
+    items: newItems,
+    total_valor,
+    count_a: newItems.filter((i) => i.classe === 'A').length,
+    count_b: newItems.filter((i) => i.classe === 'B').length,
+    count_c: newItems.filter((i) => i.classe === 'C').length,
+    valor_a: newItems.filter((i) => i.classe === 'A').reduce((s, i) => s + i.valor_total, 0),
+    valor_b: newItems.filter((i) => i.classe === 'B').reduce((s, i) => s + i.valor_total, 0),
+    valor_c: newItems.filter((i) => i.classe === 'C').reduce((s, i) => s + i.valor_total, 0),
+  }
+}
+
+function computeDistFromEq(
+  equalization: EqualizationResponse | undefined,
+  filters: Filters,
+): { disciplines: DisciplineSummary[]; categorias: CategoriaSummary[]; localidades: LocalidadeSummary[] } | null {
+  if (!equalization || equalization.items.length === 0) return null
+
+  const filteredProps = equalization.proposals.filter(
+    (p) => filters.fornecedores.length === 0 || filters.fornecedores.includes(String(p.id))
+  )
+
+  const filteredItems = equalization.items.filter((item) => {
+    if (filters.localidade && item.localidade !== filters.localidade) return false
+    if (filters.categoria && item.categoria !== filters.categoria) return false
+    if (filters.disciplina && item.disciplina !== filters.disciplina) return false
+    return true
+  })
+
+  // Para cada item, calcula o valor com base na média das propostas filtradas
+  const enriched = filteredItems.map((item) => {
+    const prices = filteredProps
+      .map((p) => item.precos[String(p.id)])
+      .filter((p): p is number => p != null)
+    const preco_medio = prices.length > 0
+      ? prices.reduce((a, b) => a + b, 0) / prices.length
+      : (item.preco_referencia ?? 0)
+    return { ...item, valor_computed: preco_medio * item.quantidade }
+  })
+
+  function buildSummary(keyFn: (i: typeof enriched[0]) => string | undefined) {
+    const map: Record<string, { valor: number; count: number }> = {}
+    for (const item of enriched) {
+      const name = keyFn(item) ?? ''
+      if (!name) continue
+      map[name] ??= { valor: 0, count: 0 }
+      map[name].valor += item.valor_computed
+      map[name].count++
+    }
+    const total = Object.values(map).reduce((s, v) => s + v.valor, 0)
+    return Object.entries(map)
+      .map(([name, { valor, count }]) => ({ name, valor_total: valor, count_items: count, percentual: total > 0 ? (valor / total) * 100 : 0 }))
+      .sort((a, b) => b.valor_total - a.valor_total)
+  }
+
+  const disciplineRaw = buildSummary((i) => i.disciplina)
+  const categoriaRaw = buildSummary((i) => i.categoria)
+  const localidadeRaw = buildSummary((i) => i.localidade)
+
+  return {
+    disciplines: disciplineRaw.map((d) => ({ disciplina: d.name, valor_total: d.valor_total, count_items: d.count_items, percentual: d.percentual })),
+    categorias: categoriaRaw.map((d) => ({ categoria: d.name, valor_total: d.valor_total, count_items: d.count_items, percentual: d.percentual })),
+    localidades: localidadeRaw.map((d) => ({ localidade: d.name, valor_total: d.valor_total, count_items: d.count_items, percentual: d.percentual })),
+  }
 }
 
 // ── Sub-componentes ───────────────────────────────────────────────────────────
@@ -75,10 +198,13 @@ function Loading() {
   return <div className="py-20 text-center text-gray-400 text-sm">Calculando…</div>
 }
 
-// ── Filtros laterais ──────────────────────────────────────────────────────────
 
-function FilterBar({
+
+// ── Filtros horizontais ───────────────────────────────────────────────────────
+
+function HFilterBar({
   filters, setFilters, proposals, categorias, disciplinas, localidades,
+  source, setSource, showSource,
 }: {
   filters: Filters
   setFilters: React.Dispatch<React.SetStateAction<Filters>>
@@ -86,110 +212,169 @@ function FilterBar({
   categorias: string[]
   disciplinas: string[]
   localidades: string[]
+  source?: 'referencia' | 'propostas'
+  setSource?: React.Dispatch<React.SetStateAction<'referencia' | 'propostas'>>
+  showSource?: boolean
 }) {
-  const hasActive = filters.categoria || filters.disciplina || filters.localidade || filters.fornecedores.length > 0
+  const [fornOpen, setFornOpen] = useState(false)
+  const fornRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (fornRef.current && !fornRef.current.contains(e.target as Node)) setFornOpen(false)
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [])
+
+  const hasActive = !!(filters.categoria || filters.disciplina || filters.localidade || filters.fornecedores.length > 0)
   const activeCount = [filters.categoria, filters.disciplina, filters.localidade].filter(Boolean).length
     + (filters.fornecedores.length > 0 ? 1 : 0)
+  const allChecked = filters.fornecedores.length === 0
+  const selectedFornCount = allChecked ? proposals.length : filters.fornecedores.length
+
+  const selectCls = (active: boolean) =>
+    `text-xs rounded-lg px-2.5 py-1.5 bg-white focus:outline-none transition-colors ${
+      active
+        ? 'border-2 text-gray-800 font-medium'
+        : 'border border-gray-200 text-gray-600 hover:border-gray-300'
+    }`
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4 sticky top-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <Filter size={14} /> Filtros
-          {activeCount > 0 && (
-            <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">
-              {activeCount}
-            </span>
-          )}
-        </div>
-        {hasActive && (
-          <button
-            onClick={() => setFilters({ categoria: '', disciplina: '', localidade: '', fornecedores: [] })}
-            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+    <div className="flex items-center gap-2 flex-wrap mb-4 bg-white border border-gray-200 rounded-xl px-4 py-2.5">
+      {/* Source toggle */}
+      {showSource && source && setSource && (
+        <>
+          <div className="flex gap-0.5 bg-gray-100 p-0.5 rounded-lg flex-shrink-0">
+            {(['referencia', 'propostas'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setSource(s)}
+                className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
+                style={source === s ? { backgroundColor: '#1A3A6B', color: '#fff' } : { color: '#6b7280' }}
+              >
+                {s === 'referencia' ? 'Preço Ref.' : 'Média Propostas'}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-gray-200 flex-shrink-0" />
+        </>
+      )}
+
+      {/* Filter label + badge */}
+      <div className="flex items-center gap-1 text-xs text-gray-400 font-medium flex-shrink-0">
+        <Filter size={12} style={activeCount > 0 ? { color: '#1A3A6B' } : {}} />
+        {activeCount > 0 && (
+          <span
+            className="w-4 h-4 rounded-full text-white text-[9px] flex items-center justify-center font-bold"
+            style={{ backgroundColor: '#1A3A6B' }}
           >
-            <X size={11} /> Limpar
-          </button>
+            {activeCount}
+          </span>
         )}
       </div>
 
       {/* Localidade */}
       {localidades.length > 0 && (
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-            <MapPin size={10} /> Localidade
-          </label>
-          <select
-            value={filters.localidade}
-            onChange={(e) => setFilters((f) => ({ ...f, localidade: e.target.value }))}
-            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-          >
-            <option value="">Todas</option>
-            {localidades.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-        </div>
+        <select
+          value={filters.localidade}
+          onChange={(e) => setFilters((f) => ({ ...f, localidade: e.target.value }))}
+          className={selectCls(!!filters.localidade)}
+          style={filters.localidade ? { borderColor: '#1A3A6B' } : {}}
+        >
+          <option value="">Localidade</option>
+          {localidades.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
       )}
 
       {/* Categoria */}
-      <div>
-        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Categoria</label>
+      {categorias.length > 0 && (
         <select
           value={filters.categoria}
           onChange={(e) => setFilters((f) => ({ ...f, categoria: e.target.value }))}
-          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={selectCls(!!filters.categoria)}
+          style={filters.categoria ? { borderColor: '#1A3A6B' } : {}}
         >
-          <option value="">Todas</option>
+          <option value="">Categoria</option>
           {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-      </div>
+      )}
 
       {/* Disciplina */}
-      <div>
-        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Disciplina</label>
+      {disciplinas.length > 0 && (
         <select
           value={filters.disciplina}
           onChange={(e) => setFilters((f) => ({ ...f, disciplina: e.target.value }))}
-          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={selectCls(!!filters.disciplina)}
+          style={filters.disciplina ? { borderColor: '#1A3A6B' } : {}}
         >
-          <option value="">Todas</option>
+          <option value="">Disciplina</option>
           {disciplinas.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-      </div>
+      )}
 
-      {/* Fornecedores */}
+      {/* Fornecedores popover */}
       {proposals.length > 0 && (
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Fornecedores</label>
-          <div className="space-y-1.5">
-            {proposals.map((p) => {
-              const checked = filters.fornecedores.length === 0 || filters.fornecedores.includes(String(p.id))
-              return (
-                <label key={p.id} className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => {
-                      setFilters((f) => {
-                        if (f.fornecedores.length === 0) {
-                          return { ...f, fornecedores: proposals.filter((x) => x.id !== p.id).map((x) => String(x.id)) }
-                        }
-                        if (checked) {
-                          const next = f.fornecedores.filter((x) => x !== String(p.id))
-                          return { ...f, fornecedores: next.length === 0 ? [] : next }
-                        } else {
-                          const next = [...f.fornecedores, String(p.id)]
-                          return { ...f, fornecedores: next.length === proposals.length ? [] : next }
-                        }
-                      })
-                    }}
-                    className="rounded text-blue-600"
-                  />
-                  <span className="text-xs text-gray-600 truncate group-hover:text-gray-900">{p.empresa}</span>
-                  {p.is_winner && <span className="text-[9px] text-amber-600 font-bold ml-auto flex-shrink-0">★</span>}
-                </label>
-              )
-            })}
-          </div>
+        <div ref={fornRef} className="relative flex-shrink-0">
+          <button
+            onClick={() => setFornOpen((v) => !v)}
+            className={`flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 border transition-colors ${
+              filters.fornecedores.length > 0
+                ? 'border-2 text-gray-800 font-medium'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+            }`}
+            style={filters.fornecedores.length > 0 ? { borderColor: '#1A3A6B', backgroundColor: '#E8EDF6' } : {}}
+          >
+            <Users size={11} />
+            {allChecked ? 'Fornecedores' : `${selectedFornCount} / ${proposals.length}`}
+            <ChevronDown size={10} className={`transition-transform ${fornOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {fornOpen && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 p-3 min-w-[200px] max-h-60 overflow-y-auto">
+              <div className="space-y-1.5">
+                {proposals.map((p) => {
+                  const checked = filters.fornecedores.length === 0 || filters.fornecedores.includes(String(p.id))
+                  return (
+                    <label key={p.id} className="flex items-center gap-2 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setFilters((f) => {
+                            if (f.fornecedores.length === 0) {
+                              return { ...f, fornecedores: proposals.filter((x) => x.id !== p.id).map((x) => String(x.id)) }
+                            }
+                            if (checked) {
+                              const next = f.fornecedores.filter((x) => x !== String(p.id))
+                              return { ...f, fornecedores: next.length === 0 ? [] : next }
+                            } else {
+                              const next = [...f.fornecedores, String(p.id)]
+                              return { ...f, fornecedores: next.length === proposals.length ? [] : next }
+                            }
+                          })
+                        }}
+                        className="rounded"
+                        style={{ accentColor: '#1A3A6B' }}
+                      />
+                      <span className="text-xs text-gray-600 truncate group-hover:text-gray-900">{p.empresa}</span>
+                      {p.is_winner && <span className="text-[9px] text-amber-600 font-bold ml-auto flex-shrink-0">★</span>}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Clear */}
+      {hasActive && (
+        <button
+          onClick={() => setFilters({ categoria: '', disciplina: '', localidade: '', fornecedores: [] })}
+          className="ml-auto flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0"
+        >
+          <X size={11} /> Limpar
+        </button>
       )}
     </div>
   )
@@ -198,10 +383,11 @@ function FilterBar({
 // ── Painel: Comparativo de Preços ─────────────────────────────────────────────
 
 function PanelComparativo({
-  equalization, filters,
+  equalization, filters, source,
 }: {
   equalization: EqualizationResponse
   filters: Filters
+  source: 'referencia' | 'propostas'
 }) {
   const [sortCol, setSortCol] = useState<string>('numero_item')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -237,7 +423,7 @@ function PanelComparativo({
 
   function SortIcon({ col }: { col: string }) {
     if (sortCol !== col) return <ChevronUp size={10} className="text-gray-300" />
-    return sortDir === 'asc' ? <ChevronUp size={10} className="text-blue-600" /> : <ChevronDown size={10} className="text-blue-600" />
+    return sortDir === 'asc' ? <ChevronUp size={10} style={{ color: '#1A3A6B' }} /> : <ChevronDown size={10} style={{ color: '#1A3A6B' }} />
   }
 
   if (!equalization.proposals.length || !equalization.items.length) {
@@ -257,8 +443,8 @@ function PanelComparativo({
           {rankSorted.map((p, i) => (
             <div key={p.id} className="flex items-center gap-3">
               <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                i === 0 ? 'bg-green-500 text-white' : i === 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-              }`}>{i + 1}</span>
+                i === 0 ? 'text-white' : i === 1 ? 'bg-gray-100 text-gray-600' : 'bg-gray-50 text-gray-400'
+              }`} style={i === 0 ? { backgroundColor: '#1B7C3E' } : {}}>{i + 1}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm font-medium text-gray-700 truncate">{p.empresa}</span>
@@ -266,8 +452,8 @@ function PanelComparativo({
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${i === 0 ? 'bg-green-500' : 'bg-blue-400'}`}
-                    style={{ width: `${(p.valor_total / maxTotal) * 100}%` }}
+                    className="h-full rounded-full"
+                    style={{ backgroundColor: i === 0 ? '#1B7C3E' : '#1A3A6B', width: `${(p.valor_total / maxTotal) * 100}%` }}
                   />
                 </div>
               </div>
@@ -284,7 +470,9 @@ function PanelComparativo({
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
             Preços Unitários — {sorted.length} itens
           </h3>
-          <span className="text-xs text-gray-400">Verde = abaixo ref · Vermelho = acima ref +20%</span>
+          <span className="text-xs text-gray-400">
+            {source === 'referencia' ? 'Desvio vs Preço Ref. · Verde = abaixo · Vermelho = acima +20%' : 'Desvio vs Média Propostas · Verde = abaixo · Vermelho = acima +20%'}
+          </span>
         </div>
         <div className="overflow-auto rounded-xl border border-gray-200">
           <table className="w-full text-xs border-collapse min-w-max">
@@ -305,16 +493,22 @@ function PanelComparativo({
                 <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Un</th>
                 <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Qtd</th>
                 <th
-                  className="px-3 py-2.5 text-right font-semibold text-gray-600 cursor-pointer whitespace-nowrap bg-blue-50"
+                  className="px-3 py-2.5 text-right font-semibold cursor-pointer whitespace-nowrap"
+                  style={{ backgroundColor: '#E8EDF6', color: source === 'referencia' ? '#1A3A6B' : '#6B7280' }}
                   onClick={() => toggleSort('ref')}
                 >
-                  <div className="flex items-center justify-end gap-1">P. Ref. <SortIcon col="ref" /></div>
+                  <div className="flex items-center justify-end gap-1">
+                    {source === 'referencia' ? '★ P. Ref.' : 'P. Ref.'} <SortIcon col="ref" />
+                  </div>
                 </th>
                 <th
-                  className="px-3 py-2.5 text-right font-semibold text-gray-600 cursor-pointer whitespace-nowrap"
+                  className="px-3 py-2.5 text-right font-semibold cursor-pointer whitespace-nowrap"
+                  style={{ backgroundColor: source === 'propostas' ? '#E8EDF6' : undefined, color: source === 'propostas' ? '#1A3A6B' : '#4B5563' }}
                   onClick={() => toggleSort('media')}
                 >
-                  <div className="flex items-center justify-end gap-1">Média <SortIcon col="media" /></div>
+                  <div className="flex items-center justify-end gap-1">
+                    {source === 'propostas' ? '★ Média' : 'Média'} <SortIcon col="media" />
+                  </div>
                 </th>
                 <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Mín</th>
                 <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Máx</th>
@@ -332,8 +526,10 @@ function PanelComparativo({
               </tr>
             </thead>
             <tbody>
-              {sorted.map((item, idx) => (
-                <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-blue-50/30`}>
+              {sorted.map((item, idx) => {
+                const refBase = source === 'referencia' ? item.preco_referencia : item.preco_medio
+                return (
+                <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-slate-50`}>
                   <td className="px-3 py-2 font-mono text-gray-500 sticky left-0 bg-inherit">{item.numero_item}</td>
                   <td className="px-3 py-2 text-gray-700 max-w-[200px]">
                     <div className="truncate" title={item.descricao}>{item.descricao}</div>
@@ -345,16 +541,18 @@ function PanelComparativo({
                   </td>
                   <td className="px-3 py-2 text-right text-gray-500">{item.unidade}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{formatNumber(item.quantidade, 0)}</td>
-                  <td className="px-3 py-2 text-right font-medium text-blue-700 bg-blue-50/50">
+                  <td className="px-3 py-2 text-right font-medium" style={{ color: '#1A3A6B', backgroundColor: source === 'referencia' ? '#E8EDF6' : undefined }}>
                     {formatBRL(item.preco_referencia)}
                   </td>
-                  <td className="px-3 py-2 text-right text-gray-700">{formatBRL(item.preco_medio)}</td>
+                  <td className="px-3 py-2 text-right font-medium" style={{ color: '#1A3A6B', backgroundColor: source === 'propostas' ? '#E8EDF6' : undefined }}>
+                    {formatBRL(item.preco_medio)}
+                  </td>
                   <td className="px-3 py-2 text-right text-green-700">{formatBRL(item.preco_minimo)}</td>
                   <td className="px-3 py-2 text-right text-red-600">{formatBRL(item.preco_maximo)}</td>
                   <td className="px-3 py-2 text-right text-gray-500">{item.desvio_padrao != null ? formatNumber(item.desvio_padrao) : '—'}</td>
                   {visibleProposals.map((p) => {
                     const price = item.precos[String(p.id)]
-                    const pct = price != null ? pctDiff(price, item.preco_referencia) : null
+                    const pct = price != null ? pctDiff(price, refBase ?? undefined) : null
                     const isMin = price != null && price === item.preco_minimo
                     return (
                       <td
@@ -376,7 +574,8 @@ function PanelComparativo({
                     )
                   })}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -388,10 +587,11 @@ function PanelComparativo({
 // ── Painel: Cherry Picking ────────────────────────────────────────────────────
 
 function PanelCherryPicking({
-  equalization, filters,
+  equalization, filters, source,
 }: {
   equalization: EqualizationResponse
   filters: Filters
+  source: 'referencia' | 'propostas'
 }) {
   const proposals = equalization.proposals
 
@@ -419,7 +619,8 @@ function PanelCherryPicking({
 
     const qty = item.quantidade ?? 0
     const cherryTotal = minPrice != null ? minPrice * qty : null
-    const refTotal = item.preco_referencia != null ? item.preco_referencia * qty : null
+    const basePrice = source === 'referencia' ? item.preco_referencia : item.preco_medio
+    const refTotal = basePrice != null ? basePrice * qty : null
     const savings = cherryTotal != null && refTotal != null ? refTotal - cherryTotal : null
     const savingsPct = savings != null && refTotal ? (savings / refTotal) * 100 : null
 
@@ -462,9 +663,9 @@ function PanelCherryPicking({
           <p className="text-xs text-gray-400 mt-0.5">melhor preço por item</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-400 mb-1">Total referência</p>
+          <p className="text-xs text-gray-400 mb-1">{source === 'referencia' ? 'Total referência (PQ)' : 'Total média propostas'}</p>
           <p className="text-xl font-bold text-gray-900">{formatBRL(grandRefTotal)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">preço de referência (PQ)</p>
+          <p className="text-xs text-gray-400 mt-0.5">{source === 'referencia' ? 'preço de referência (PQ)' : 'média de todas as propostas'}</p>
         </div>
         <div className="bg-green-50 border border-green-200 rounded-xl p-4">
           <p className="text-xs text-green-600 mb-1">Economia vs referência</p>
@@ -473,10 +674,10 @@ function PanelCherryPicking({
             {grandRefTotal ? formatPercent((grandSavings / grandRefTotal) * 100) : '—'} de redução
           </p>
         </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <p className="text-xs text-blue-600 mb-1">Economia vs menor proposta</p>
-          <p className="text-xl font-bold text-blue-700">{formatBRL(additionalSavings)}</p>
-          <p className="text-xs text-blue-500 mt-0.5">
+        <div className="rounded-xl p-4" style={{ backgroundColor: '#E8EDF6', border: '1px solid #1A3A6B' }}>
+          <p className="text-xs mb-1" style={{ color: '#1A3A6B' }}>Economia vs menor proposta</p>
+          <p className="text-xl font-bold" style={{ color: '#1A3A6B' }}>{formatBRL(additionalSavings)}</p>
+          <p className="text-xs mt-0.5" style={{ color: '#2D4E8A' }}>
             vs {proposalTotals[0]?.empresa ?? '—'}
           </p>
         </div>
@@ -493,7 +694,7 @@ function PanelCherryPicking({
                 <Trophy size={13} className="text-amber-500" />
                 <span className="text-sm font-semibold text-gray-800">{name}</span>
                 <span className="text-xs text-gray-400">{stats.count} itens</span>
-                <span className="text-xs font-medium text-blue-700">{formatBRL(stats.total)}</span>
+                <span className="text-xs font-medium" style={{ color: '#1A3A6B' }}>{formatBRL(stats.total)}</span>
               </div>
             ))}
         </div>
@@ -507,8 +708,8 @@ function PanelCherryPicking({
               <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Item</th>
               <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Descrição</th>
               <th className="px-3 py-2.5 text-right font-semibold text-gray-600">Qtd</th>
-              <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-blue-50">P. Ref.</th>
-              <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-blue-50">Total Ref.</th>
+              <th className="px-3 py-2.5 text-right font-semibold" style={{ backgroundColor: '#E8EDF6', color: '#1A3A6B' }}>{source === 'referencia' ? 'P. Ref.' : 'Média'}</th>
+              <th className="px-3 py-2.5 text-right font-semibold" style={{ backgroundColor: '#E8EDF6', color: '#1A3A6B' }}>{source === 'referencia' ? 'Total Ref.' : 'Total Média'}</th>
               <th className="px-3 py-2.5 text-left font-semibold text-gray-600 bg-green-50">Melhor Fornecedor</th>
               <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-green-50">Melhor Preço</th>
               <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-green-50">Total Cherry</th>
@@ -518,14 +719,14 @@ function PanelCherryPicking({
           </thead>
           <tbody>
             {cherryRows.map(({ item, minPrice, minSupplier, cherryTotal, refTotal, savings, savingsPct }, idx) => (
-              <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-blue-50/20`}>
+              <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-slate-50`}>
                 <td className="px-3 py-2 font-mono text-gray-500">{item.numero_item}</td>
                 <td className="px-3 py-2 text-gray-700 max-w-[200px]">
                   <div className="truncate" title={item.descricao}>{item.descricao}</div>
                 </td>
                 <td className="px-3 py-2 text-right text-gray-600">{formatNumber(item.quantidade, 0)}</td>
-                <td className="px-3 py-2 text-right text-blue-700 bg-blue-50/40">{formatBRL(item.preco_referencia)}</td>
-                <td className="px-3 py-2 text-right text-blue-700 bg-blue-50/40">{formatBRL(refTotal)}</td>
+                <td className="px-3 py-2 text-right" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6' }}>{formatBRL(item.preco_referencia)}</td>
+                <td className="px-3 py-2 text-right" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6' }}>{formatBRL(refTotal)}</td>
                 <td className="px-3 py-2 text-green-700 font-medium bg-green-50/40">
                   {minSupplier ?? <span className="text-gray-300">—</span>}
                 </td>
@@ -545,7 +746,7 @@ function PanelCherryPicking({
           <tfoot>
             <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
               <td colSpan={4} className="px-3 py-2.5 text-sm text-gray-700">Total</td>
-              <td className="px-3 py-2.5 text-right text-blue-700">{formatBRL(grandRefTotal)}</td>
+              <td className="px-3 py-2.5 text-right" style={{ color: '#1A3A6B' }}>{formatBRL(grandRefTotal)}</td>
               <td colSpan={2} />
               <td className="px-3 py-2.5 text-right text-green-700">{formatBRL(grandCherryTotal)}</td>
               <td className="px-3 py-2.5 text-right text-green-700">{formatBRL(grandSavings)}</td>
@@ -563,10 +764,11 @@ function PanelCherryPicking({
 // ── Painel: Por Fornecedor ────────────────────────────────────────────────────
 
 function PanelFornecedores({
-  equalization, filters,
+  equalization, filters, source,
 }: {
   equalization: EqualizationResponse
   filters: Filters
+  source: 'referencia' | 'propostas'
 }) {
   const proposals = equalization.proposals.filter(
     (p) => filters.fornecedores.length === 0 || filters.fornecedores.includes(String(p.id))
@@ -581,8 +783,11 @@ function PanelFornecedores({
 
   const totalItems = filteredItems.length
 
-  // Médias das propostas por item (referência)
-  const mediaTotal = filteredItems.reduce((acc, item) => acc + (Number(item.preco_medio) || 0) * item.quantidade, 0)
+  // Base de comparação: média das propostas ou preço de referência
+  const baseTotal = filteredItems.reduce((acc, item) => {
+    const base = source === 'referencia' ? (item.preco_referencia ?? item.preco_medio ?? 0) : (item.preco_medio ?? 0)
+    return acc + base * item.quantidade
+  }, 0)
 
   // cherry pick wins per supplier
   const cherryWins: Record<string, number> = {}
@@ -611,7 +816,8 @@ function PanelFornecedores({
       const price = item.precos[String(p.id)]
       if (price == null) { itemsFaltando++; continue }
       itemsPreenchidos++
-      const pct = pctDiff(price, item.preco_medio ?? undefined)
+      const refBase = source === 'referencia' ? (item.preco_referencia ?? item.preco_medio ?? undefined) : (item.preco_medio ?? undefined)
+      const pct = pctDiff(price, refBase)
       if (pct !== null) {
         somaDesvios += pct
         countDesvios++
@@ -624,7 +830,7 @@ function PanelFornecedores({
     const coveragePercent = totalItems > 0 ? (itemsPreenchidos / totalItems) * 100 : 0
     const itemsMinPreco = cherryWins[String(p.id)] ?? 0
     const propTotal = p.valor_total
-    const diffVsMedia = mediaTotal > 0 ? ((propTotal - mediaTotal) / mediaTotal) * 100 : null
+    const diffVsMedia = baseTotal > 0 ? ((propTotal - baseTotal) / baseTotal) * 100 : null
 
     return {
       proposal: p, itemsPreenchidos, itemsFaltando, itemsAcimaDaMedia, itemsAbaixoMedia,
@@ -644,16 +850,17 @@ function PanelFornecedores({
   return (
     <div className="space-y-6">
       {/* Texto explicativo */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 text-sm text-blue-800 space-y-1.5">
-        <p className="font-semibold text-blue-900">Análise Comparativa por Fornecedor</p>
+      <div className="rounded-xl px-5 py-4 text-sm space-y-1.5" style={{ backgroundColor: '#E8EDF6', border: '1px solid #A3B4D4', color: '#1A3A6B' }}>
+        <p className="font-semibold" style={{ color: '#0E2650' }}>Análise Comparativa por Fornecedor</p>
         <p>
-          O desvio é calculado em relação à <strong>média das propostas</strong> para cada item —
-          não ao preço de referência da PQ. Isso permite identificar quais fornecedores estão sistematicamente
-          acima ou abaixo do mercado nesta concorrência.
+          {source === 'referencia'
+            ? <>O desvio é calculado em relação ao <strong>preço de referência (PQ)</strong> para cada item — permite identificar quais fornecedores estão sistematicamente acima ou abaixo da referência.</>
+            : <>O desvio é calculado em relação à <strong>média das propostas</strong> para cada item — permite identificar quais fornecedores estão sistematicamente acima ou abaixo do mercado nesta concorrência.</>
+          }
         </p>
-        <p className="text-xs text-blue-600">
+        <p className="text-xs" style={{ color: '#1A3A6B' }}>
           {proposals.length} proponente{proposals.length !== 1 ? 's' : ''} · {totalItems} itens analisados ·
-          Média total das propostas: <strong>{formatBRL(mediaTotal)}</strong> ·
+          {source === 'referencia' ? ' Base: preço de referência (PQ)' : ` Média total das propostas: ${formatBRL(baseTotal)}`} ·
           Menor proposta: <strong>{formatBRL(melhorTotal)}</strong>
         </p>
       </div>
@@ -665,17 +872,20 @@ function PanelFornecedores({
             {/* Cabeçalho do card */}
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-gray-50/60">
               <div className="flex items-center gap-3">
-                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
-                  i === 0 ? 'bg-green-500 text-white' : i === 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-                }`}>{i + 1}</span>
+                <span
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                    i === 0 ? 'text-white' : i === 1 ? 'bg-gray-100 text-gray-600' : 'bg-gray-50 text-gray-400'
+                  }`}
+                  style={i === 0 ? { backgroundColor: '#1B7C3E' } : {}}
+                >{i + 1}</span>
                 <div>
                   <p className="text-sm font-bold text-gray-900">{s.proposal.empresa}</p>
                   <p className="text-[10px] text-gray-400">BDI global: {s.proposal.bdi_global.toFixed(1)}%</p>
                 </div>
               </div>
               <div className="flex gap-2 items-center">
-                {i === 0 && <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 rounded px-2 py-0.5">Menor desvio</span>}
-                {s.proposal.valor_total === melhorTotal && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-0.5">Menor total</span>}
+                {i === 0 && <span className="text-[10px] font-bold rounded px-2 py-0.5" style={{ color: '#1B7C3E', background: '#E8F5EE', border: '1px solid #1B7C3E' }}>Menor desvio</span>}
+                {s.proposal.valor_total === melhorTotal && <span className="text-[10px] font-bold rounded px-2 py-0.5" style={{ color: '#1A3A6B', background: '#E8EDF6', border: '1px solid #1A3A6B' }}>Menor total</span>}
               </div>
             </div>
 
@@ -704,8 +914,7 @@ function PanelFornecedores({
                   <span className="text-xs font-semibold text-gray-700">{s.itemsPreenchidos}/{totalItems} ({s.coveragePercent.toFixed(0)}%)</span>
                 </div>
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full ${s.coveragePercent === 100 ? 'bg-green-500' : s.coveragePercent > 80 ? 'bg-blue-500' : 'bg-amber-400'}`}
-                    style={{ width: `${s.coveragePercent}%` }} />
+                  <div className="h-full rounded-full" style={{ backgroundColor: s.coveragePercent === 100 ? '#1B7C3E' : s.coveragePercent > 80 ? '#1A3A6B' : '#F5A623', width: `${s.coveragePercent}%` }} />
                 </div>
               </div>
 
@@ -763,7 +972,7 @@ function PanelFornecedores({
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Item</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Descrição</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-blue-50">Ref. PQ</th>
+                <th className="px-3 py-2.5 text-right font-semibold text-gray-600" style={{ backgroundColor: '#E8EDF6' }}>Ref. PQ</th>
                 <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-purple-50">Média</th>
                 {proposals.map((p) => (
                   <th key={p.id} className="px-3 py-2.5 text-right font-semibold text-gray-600 max-w-[110px]">
@@ -779,7 +988,7 @@ function PanelFornecedores({
                   <td className="px-3 py-1.5 text-gray-700 max-w-[180px]">
                     <div className="truncate" title={item.descricao}>{item.descricao}</div>
                   </td>
-                  <td className="px-3 py-1.5 text-right text-blue-700 bg-blue-50/40 whitespace-nowrap">{formatBRL(item.preco_referencia)}</td>
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6' }}>{formatBRL(item.preco_referencia)}</td>
                   <td className="px-3 py-1.5 text-right text-purple-700 bg-purple-50/40 font-medium whitespace-nowrap">{formatBRL(item.preco_medio)}</td>
                   {proposals.map((p) => {
                     const price = item.precos[String(p.id)]
@@ -813,11 +1022,14 @@ function PanelFornecedores({
 // ── Painel: Distribuição ──────────────────────────────────────────────────────
 
 function PanelDistribuicao({
-  disciplines, categorias, localidades,
+  disciplines, categorias, localidades, hasFilters, filteredCount, totalCount,
 }: {
   disciplines: DisciplineSummary[]
   categorias: CategoriaSummary[]
   localidades: LocalidadeSummary[]
+  hasFilters?: boolean
+  filteredCount?: number
+  totalCount?: number
 }) {
   if (disciplines.length === 0 && categorias.length === 0 && localidades.length === 0) {
     return <EmptyState message="Preencha disciplina, categoria ou localidade nos itens da Planilha PQ para ver a distribuição." />
@@ -837,10 +1049,22 @@ function PanelDistribuicao({
 
   return (
     <div className="space-y-8">
+      {/* Indicador de filtros */}
+      {hasFilters && (
+        <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2" style={{ background: '#FEF3DC', border: '1px solid #F5A623', color: '#8B5E0A' }}>
+          <Filter size={12} style={{ color: '#F5A623', flexShrink: 0 }} />
+          <span>
+            Média calculada com base nos{' '}
+            <strong>{filteredCount ?? 0}</strong> fornecedor{filteredCount !== 1 ? 'es' : ''} selecionado{filteredCount !== 1 ? 's' : ''}
+            {totalCount && totalCount > 0 ? ` de ${totalCount}` : ''} — os valores refletem apenas as propostas filtradas
+          </span>
+        </div>
+      )}
+
       {/* Card de resumo */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="bg-blue-600 text-white rounded-xl px-5 py-4">
-          <p className="text-xs font-medium opacity-75 mb-1">Valor Total (PQ)</p>
+        <div className="text-white rounded-xl px-5 py-4" style={{ background: '#1A3A6B' }}>
+          <p className="text-xs font-medium opacity-75 mb-1">{hasFilters ? 'Valor Total (filtrado)' : 'Valor Total (PQ)'}</p>
           <p className="text-2xl font-bold">{formatBRL(totalValor)}</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl px-5 py-4">
@@ -848,10 +1072,12 @@ function PanelDistribuicao({
           <p className="text-2xl font-bold text-gray-900">{totalItens}</p>
           <p className="text-xs text-gray-400 mt-0.5">{base.length} grupos</p>
         </div>
-        <div className="bg-white border border-purple-200 rounded-xl px-5 py-4">
-          <p className="text-xs text-purple-500 font-medium mb-1">Preço Médio por Item</p>
-          <p className="text-2xl font-bold text-purple-700">{formatBRL(precoMedio)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">referência interna</p>
+        <div className="rounded-xl px-5 py-4" style={{ background: '#E8F5EE', border: '1px solid #1B7C3E' }}>
+          <p className="text-xs font-medium mb-1" style={{ color: '#1B7C3E' }}>
+            {hasFilters ? 'Média por Item (filtrada)' : 'Preço Médio por Item'}
+          </p>
+          <p className="text-2xl font-bold" style={{ color: '#145C2E' }}>{formatBRL(precoMedio)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{hasFilters ? 'média dos fornecedores filtrados' : 'referência interna'}</p>
         </div>
       </div>
 
@@ -928,29 +1154,47 @@ export default function Analytics() {
   })
   const localidades: LocalidadeSummary[] = Array.isArray(_rawLocalidades) ? _rawLocalidades : []
 
-  // Build filter options from data
+  // Build filter options: merge equalization, paretoData e dados do backend para cobrir todos os tabs
   const categoriasOpts = useMemo(() => {
     const s = new Set<string>()
     equalization?.items.forEach((i) => { if (i.categoria) s.add(i.categoria) })
+    paretoData?.items.forEach((i) => { if (i.categoria) s.add(i.categoria) })
+    categorias.forEach((c) => s.add(c.categoria))
     return [...s].sort()
-  }, [equalization])
+  }, [equalization, paretoData, categorias])
 
   const disciplinasOpts = useMemo(() => {
     const s = new Set<string>()
     equalization?.items.forEach((i) => { if (i.disciplina) s.add(i.disciplina) })
+    paretoData?.items.forEach((i) => { if (i.disciplina) s.add(i.disciplina) })
+    disciplines.forEach((d) => s.add(d.disciplina))
     return [...s].sort()
-  }, [equalization])
+  }, [equalization, paretoData, disciplines])
 
   const localidadesOpts = useMemo(() => {
     const s = new Set<string>()
     equalization?.items.forEach((i) => { if (i.localidade) s.add(i.localidade) })
+    paretoData?.items.forEach((i) => { if (i.localidade) s.add(i.localidade) })
+    localidades.forEach((l) => s.add(l.localidade))
     return [...s].sort()
-  }, [equalization])
+  }, [equalization, paretoData, localidades])
+
+  // Pareto filtrado localmente conforme filtros ativos
+  const filteredParetoData = useMemo(
+    () => computeFilteredPareto(paretoData, equalization, filters, source),
+    [paretoData, equalization, filters, source]
+  )
+
+  // Distribuição calculada a partir de equalization + filtros (média por fornecedor filtrado)
+  const distData = useMemo(
+    () => computeDistFromEq(equalization, filters),
+    [equalization, filters]
+  )
 
   async function handleExport() {
     setExporting(true)
     try {
-      const res = await analyticsAPI.exportExcel(pid)
+      const res = await analyticsAPI.exportExcel(pid, selectedRevisionId)
       downloadBlob(res.data, `equalizacao_${project?.nome ?? pid}.xlsx`)
       toast.success('Relatório exportado com sucesso')
     } catch {
@@ -990,7 +1234,7 @@ export default function Analytics() {
     { id: 'revisoes', label: 'Revisões', icon: GitBranch },
   ]
 
-  const showFilterPanel = ['comparativo', 'cherry', 'fornecedores'].includes(tab)
+  const showFilterPanel = ['comparativo', 'cherry', 'fornecedores', 'pareto', 'distribuicao'].includes(tab)
 
   return (
     <div className="page">
@@ -1020,7 +1264,7 @@ export default function Analytics() {
         {revisionsList.length > 1 && (
           <div className="flex items-center gap-3 mb-5 flex-wrap">
             <span className="text-sm font-medium text-gray-600 flex items-center gap-1.5">
-              <GitBranch size={14} className="text-blue-600" />
+              <GitBranch size={14} style={{ color: '#1A3A6B' }} />
               Revisão analisada:
             </span>
             <div className="flex gap-1 bg-white border border-gray-200 p-0.5 rounded-xl">
@@ -1030,9 +1274,10 @@ export default function Analytics() {
                   onClick={() => { setSelectedRevisionId(rev.id); setFilters({ categoria: '', disciplina: '', localidade: '', fornecedores: [] }) }}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                     selectedRevisionId === rev.id
-                      ? 'bg-blue-600 text-white shadow-sm'
+                      ? 'text-white shadow-sm'
                       : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
                   }`}
+                  style={selectedRevisionId === rev.id ? { backgroundColor: '#1A3A6B' } : {}}
                 >
                   Rev. {rev.numero}{rev.descricao ? ` — ${rev.descricao}` : ''}
                 </button>
@@ -1048,8 +1293,9 @@ export default function Analytics() {
               key={id}
               onClick={() => setTab(id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                tab === id ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                tab === id ? 'text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
+              style={tab === id ? { backgroundColor: '#1A3A6B' } : {}}
             >
               <Icon size={14} />
               {label}
@@ -1057,74 +1303,65 @@ export default function Analytics() {
           ))}
         </div>
 
-        {/* Source toggle (ABC/Pareto only) */}
-        {tab === 'pareto' && (
-          <div className="flex items-center gap-3 mb-5">
-            <span className="text-sm text-gray-600 font-medium">Base de preços:</span>
-            <div className="flex gap-1 bg-white border border-gray-200 p-0.5 rounded-lg">
-              {(['referencia', 'propostas'] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setSource(s)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    source === s ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {s === 'referencia' ? 'Preço de Referência' : 'Média das Propostas'}
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Horizontal filter bar (for tabs with filters) */}
+        {showFilterPanel && (
+          <HFilterBar
+            filters={filters}
+            setFilters={setFilters}
+            proposals={equalization?.proposals ?? []}
+            categorias={categoriasOpts}
+            disciplinas={disciplinasOpts}
+            localidades={localidadesOpts}
+            source={source}
+            setSource={setSource}
+            showSource={showFilterPanel}
+          />
         )}
 
-        {/* Main content */}
-        <div className={`${showFilterPanel ? 'flex gap-6 items-start' : ''}`}>
-
-          {/* Filter panel */}
-          {showFilterPanel && (
-            <div className="w-52 flex-shrink-0">
-              <FilterBar
-                filters={filters}
-                setFilters={setFilters}
-                proposals={equalization?.proposals ?? []}
-                categorias={categoriasOpts}
-                disciplinas={disciplinasOpts}
-                localidades={localidadesOpts}
-              />
-            </div>
-          )}
-
-          {/* Tab content */}
-          <div className="flex-1 min-w-0 bg-white border border-gray-200 rounded-xl p-6">
+        {/* Tab content */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
 
             {/* ── PARETO / ABC ── */}
             {tab === 'pareto' && (
               <div className="space-y-6">
                 {loadingPareto ? <Loading /> : !paretoData?.items.length ? (
                   <EmptyState message="Cadastre preços de referência na Planilha PQ para visualizar o Pareto." />
+                ) : !filteredParetoData?.items.length ? (
+                  <EmptyState message="Nenhum item encontrado com os filtros aplicados. Ajuste os filtros para ver resultados." />
                 ) : (
                   <>
+                    {/* Indicador de filtros ativos */}
+                    {(filters.localidade || filters.categoria || filters.disciplina || filters.fornecedores.length > 0) && (
+                      <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2" style={{ background: '#FEF3DC', border: '1px solid #F5A623' }}>
+                        <Filter size={12} className="flex-shrink-0" style={{ color: '#F5A623' }} />
+                        <span style={{ color: '#8B5E0A' }}>
+                          Curva ABC recalculada com base nos filtros aplicados
+                          {source === 'propostas' && filters.fornecedores.length > 0 && ' — média somente dos fornecedores selecionados'}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Cards + Pizza lado a lado */}
                     <div className="flex gap-6 items-stretch">
                       {/* Cards de classe */}
                       <div className="flex flex-col gap-3 flex-shrink-0">
-                        <div className="border-2 border-blue-300 bg-blue-600 text-white rounded-xl px-5 py-3 shadow-sm">
+                        <div className="border-2 rounded-xl px-5 py-3 shadow-sm text-white" style={{ background: '#1A3A6B', borderColor: '#1A3A6B' }}>
                           <div className="flex items-baseline gap-2">
                             <span className="text-lg font-bold">Total Geral</span>
-                            <span className="text-sm font-medium opacity-80">{(paretoData.count_a + paretoData.count_b + paretoData.count_c)} itens</span>
+                            <span className="text-sm font-medium opacity-80">{(filteredParetoData.count_a + filteredParetoData.count_b + filteredParetoData.count_c)} itens</span>
                           </div>
-                          <p className="text-xl font-bold mt-0.5 opacity-95">{formatBRL(Number(paretoData.total_valor))}</p>
+                          <p className="text-xl font-bold mt-0.5 opacity-95">{formatBRL(Number(filteredParetoData.total_valor))}</p>
                         </div>
                         {(['A', 'B', 'C'] as const).map((cls) => {
-                          const count = cls === 'A' ? paretoData.count_a : cls === 'B' ? paretoData.count_b : paretoData.count_c
-                          const valor = cls === 'A' ? paretoData.valor_a : cls === 'B' ? paretoData.valor_b : paretoData.valor_c
+                          const count = cls === 'A' ? filteredParetoData.count_a : cls === 'B' ? filteredParetoData.count_b : filteredParetoData.count_c
+                          const valor = cls === 'A' ? filteredParetoData.valor_a : cls === 'B' ? filteredParetoData.valor_b : filteredParetoData.valor_c
                           const styles = {
-                            A: { border: 'border-blue-200', bg: 'bg-blue-50', text: 'text-blue-800', accent: '#2563eb', pct: '~80%' },
-                            B: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-800', accent: '#f59e0b', pct: '~15%' },
-                            C: { border: 'border-gray-200', bg: 'bg-gray-50', text: 'text-gray-700', accent: '#10b981', pct: '~5%' },
+                            A: { border: 'border-green-200', bg: 'bg-green-50', text: 'text-green-900', accent: '#1B7C3E', label: '~80% do valor' },
+                            B: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-900', accent: '#F5A623', label: '~15% do valor' },
+                            C: { border: 'border-gray-200', bg: 'bg-gray-50', text: 'text-gray-700', accent: '#6B7280', label: '~5% do valor' },
                           }[cls]
-                          const pct = Number(paretoData.total_valor) > 0
-                            ? ((Number(valor) / Number(paretoData.total_valor)) * 100).toFixed(0)
+                          const pct = Number(filteredParetoData.total_valor) > 0
+                            ? ((Number(valor) / Number(filteredParetoData.total_valor)) * 100).toFixed(0)
                             : 0
                           return (
                             <div key={cls} className={`border-l-4 rounded-xl px-4 py-3 ${styles.border} ${styles.bg} ${styles.text}`} style={{ borderLeftColor: styles.accent }}>
@@ -1133,20 +1370,20 @@ export default function Analytics() {
                                 <span className="text-sm font-medium">{count} itens</span>
                               </div>
                               <p className="text-sm font-semibold mt-0.5">{formatBRL(Number(valor))}</p>
-                              <p className="text-xs opacity-60 mt-0.5">{pct}% do total</p>
+                              <p className="text-xs opacity-60 mt-0.5">{pct}% do total · {styles.label}</p>
                             </div>
                           )
                         })}
                       </div>
                       {/* Gráfico de pizza */}
                       <div className="flex-1 bg-white border border-gray-100 rounded-xl flex items-center justify-center py-2">
-                        <ABCCurveChart data={paretoData} />
+                        <ABCCurveChart data={filteredParetoData} />
                       </div>
                     </div>
 
                     {/* Gráfico de Pareto */}
                     <div className="bg-white border border-gray-100 rounded-xl p-4">
-                      <ParetoChart items={paretoData.items} />
+                      <ParetoChart items={filteredParetoData.items} />
                     </div>
 
                     {/* ABC Table */}
@@ -1169,7 +1406,7 @@ export default function Analytics() {
                           </tr>
                         </thead>
                         <tbody>
-                          {paretoData.items.map((item, idx) => (
+                          {filteredParetoData.items.map((item, idx) => (
                             <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                               <td className="px-3 py-2 text-gray-400">{item.posicao}</td>
                               <td className="px-3 py-2 font-mono text-gray-500">{item.numero_item}</td>
@@ -1200,27 +1437,34 @@ export default function Analytics() {
             {/* ── COMPARATIVO ── */}
             {tab === 'comparativo' && (
               loadingEq ? <Loading /> :
-              equalization ? <PanelComparativo equalization={equalization} filters={filters} /> :
+              equalization ? <PanelComparativo equalization={equalization} filters={filters} source={source} /> :
               <EmptyState message="Adicione propostas para visualizar o comparativo." />
             )}
 
             {/* ── CHERRY PICKING ── */}
             {tab === 'cherry' && (
               loadingEq ? <Loading /> :
-              equalization ? <PanelCherryPicking equalization={equalization} filters={filters} /> :
+              equalization ? <PanelCherryPicking equalization={equalization} filters={filters} source={source} /> :
               <EmptyState message="Adicione propostas para ver o cherry picking." />
             )}
 
             {/* ── POR FORNECEDOR ── */}
             {tab === 'fornecedores' && (
               loadingEq ? <Loading /> :
-              equalization ? <PanelFornecedores equalization={equalization} filters={filters} /> :
+              equalization ? <PanelFornecedores equalization={equalization} filters={filters} source={source} /> :
               <EmptyState message="Adicione propostas para ver a análise por fornecedor." />
             )}
 
             {/* ── DISTRIBUIÇÃO ── */}
             {tab === 'distribuicao' && (
-              <PanelDistribuicao disciplines={disciplines} categorias={categorias} localidades={localidades} />
+              <PanelDistribuicao
+                disciplines={distData?.disciplines ?? disciplines}
+                categorias={distData?.categorias ?? categorias}
+                localidades={distData?.localidades ?? localidades}
+                hasFilters={!!(filters.fornecedores.length > 0 || filters.localidade || filters.categoria || filters.disciplina)}
+                filteredCount={equalization?.proposals.filter(p => filters.fornecedores.length === 0 || filters.fornecedores.includes(String(p.id))).length ?? 0}
+                totalCount={equalization?.proposals.length ?? 0}
+              />
             )}
 
             {/* ── VALIDAÇÃO DE ESCOPO ── */}
@@ -1252,7 +1496,7 @@ export default function Analytics() {
                   <div className="space-y-6">
                     {/* Cards de resumo */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="bg-blue-600 text-white rounded-xl px-4 py-4">
+                      <div className="text-white rounded-xl px-4 py-4" style={{ backgroundColor: '#1A3A6B' }}>
                         <p className="text-xs font-medium opacity-75">Propostas analisadas</p>
                         <p className="text-3xl font-bold mt-1">{allProposals.length}</p>
                         <p className="text-xs opacity-60 mt-0.5">Rev. {scopeData.revision_numero}</p>
@@ -1324,7 +1568,7 @@ export default function Analytics() {
                                       <tr className="bg-white border-b border-gray-100">
                                         <th className="px-3 py-2 text-left font-semibold text-gray-500">Proponente</th>
                                         <th className="px-3 py-2 text-left font-semibold text-gray-500">Campo</th>
-                                        <th className="px-3 py-2 text-left font-semibold text-blue-600">PQ (original)</th>
+                                        <th className="px-3 py-2 text-left font-semibold" style={{ color: '#1A3A6B' }}>PQ (original)</th>
                                         <th className="px-3 py-2 text-left font-semibold text-amber-600">Proposta (alterado)</th>
                                       </tr>
                                     </thead>
@@ -1340,7 +1584,7 @@ export default function Analytics() {
                                             <td className="px-3 py-2 text-gray-500 capitalize">
                                               {field === 'descricao' ? 'Descrição' : field === 'unidade' ? 'Unidade' : 'Quantidade'}
                                             </td>
-                                            <td className="px-3 py-2 text-blue-700 font-medium max-w-[220px]">
+                                            <td className="px-3 py-2 font-medium max-w-[220px]" style={{ color: '#1A3A6B' }}>
                                               <div className="truncate" title={field === 'descricao' ? change.descricao_pq : undefined}>
                                                 {field === 'descricao' ? change.descricao_pq
                                                   : field === 'unidade' ? change.unidade_pq
@@ -1381,7 +1625,7 @@ export default function Analytics() {
                     <select
                       value={revA}
                       onChange={(e) => { setRevA(e.target.value === '' ? '' : Number(e.target.value)); setCompareTriggered(false) }}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
                     >
                       <option value="">Selecione…</option>
                       {(revisions ?? []).map((r) => (
@@ -1394,7 +1638,7 @@ export default function Analytics() {
                     <select
                       value={revB}
                       onChange={(e) => { setRevB(e.target.value === '' ? '' : Number(e.target.value)); setCompareTriggered(false) }}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
                     >
                       <option value="">Selecione…</option>
                       {(revisions ?? []).map((r) => (
@@ -1405,7 +1649,8 @@ export default function Analytics() {
                   <button
                     onClick={() => setCompareTriggered(true)}
                     disabled={revA === '' || revB === '' || revA === revB}
-                    className="bg-blue-600 text-white rounded-xl px-5 py-2 text-sm font-semibold hover:bg-blue-700 disabled:opacity-40"
+                    className="text-white rounded-xl px-5 py-2 text-sm font-semibold disabled:opacity-40 hover:opacity-90"
+                    style={{ backgroundColor: '#1A3A6B' }}
                   >
                     Comparar
                   </button>
@@ -1428,8 +1673,8 @@ export default function Analytics() {
                           {[
                             { label: `Linhas Rev. ${compareData.rev_a}`, value: compareData.pq_stats.count_a.toLocaleString('pt-BR'), color: 'text-gray-800' },
                             { label: `Linhas Rev. ${compareData.rev_b}`, value: compareData.pq_stats.count_b.toLocaleString('pt-BR'), color: 'text-gray-800' },
-                            { label: `Soma Qtd Rev. ${compareData.rev_a}`, value: Number(compareData.pq_stats.sum_qty_a).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), color: 'text-blue-700' },
-                            { label: `Soma Qtd Rev. ${compareData.rev_b}`, value: Number(compareData.pq_stats.sum_qty_b).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), color: 'text-blue-700' },
+                            { label: `Soma Qtd Rev. ${compareData.rev_a}`, value: Number(compareData.pq_stats.sum_qty_a).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), color: 'text-[#1A3A6B]' },
+                            { label: `Soma Qtd Rev. ${compareData.rev_b}`, value: Number(compareData.pq_stats.sum_qty_b).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), color: 'text-[#1A3A6B]' },
                           ].map((m) => (
                             <div key={m.label} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{m.label}</p>
@@ -1447,7 +1692,7 @@ export default function Analytics() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {([
                             { label: `Rev. ${compareData.rev_a}`, proposals: compareData.proposals_a ?? [], cls: 'border-slate-300' },
-                            { label: `Rev. ${compareData.rev_b}`, proposals: compareData.proposals_b ?? [], cls: 'border-blue-300' },
+                            { label: `Rev. ${compareData.rev_b}`, proposals: compareData.proposals_b ?? [], cls: 'border-[#7A99C4]' },
                           ] as { label: string; proposals: any[]; cls: string }[]).map((side) => (
                             <div key={side.label} className={`border ${side.cls} rounded-xl overflow-hidden`}>
                               <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 border-b border-gray-200">
@@ -1464,9 +1709,9 @@ export default function Analytics() {
                                         <td className="px-3 py-2 text-right font-semibold text-gray-800">{formatBRL(p.valor_total)}</td>
                                       </tr>
                                     ))}
-                                    <tr className="bg-blue-50 border-t-2 border-blue-200">
-                                      <td className="px-3 py-2 text-blue-700 font-semibold text-xs">Total</td>
-                                      <td className="px-3 py-2 text-right font-bold text-blue-700">
+                                    <tr style={{ backgroundColor: '#E8EDF6', borderTop: '2px solid #A3B4D4' }}>
+                                      <td className="px-3 py-2 font-semibold text-xs" style={{ color: '#1A3A6B' }}>Total</td>
+                                      <td className="px-3 py-2 text-right font-bold" style={{ color: '#1A3A6B' }}>
                                         {formatBRL(side.proposals.reduce((s: number, p: any) => s + p.valor_total, 0))}
                                       </td>
                                     </tr>
@@ -1725,7 +1970,6 @@ export default function Analytics() {
               </div>
             )}
           </div>
-        </div>
     </div>
   )
 }

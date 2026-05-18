@@ -2,19 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── EPR Brand Colors ────────────────────────────────────────────────────────── */
+:root {
+  --epr-azul:        #1A3A6B;
+  --epr-azul-light:  #E8EDF6;
+  --epr-verde:       #1B7C3E;
+  --epr-verde-light: #E8F5EE;
+  --epr-amarelo:     #F5A623;
+  --epr-amarelo-light: #FEF3DC;
+  --epr-cinza:       #F0F2F5;
+}
+
 @layer base {
-  html { font-family: system-ui, -apple-system, sans-serif; font-size: 14px; }
-  body { @apply bg-gray-50 text-gray-900; }
+  html {
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    height: 100%;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900;
+    height: 100%;
+    overflow: hidden;
+  }
+  #root {
+    height: 100%;
+  }
   * { @apply antialiased; }
 }
 
 @layer components {
-  /* ── Buttons ──────────────────────────────────────────────────────────── */
+  /* ── Buttons — EPR colors ─────────────────────────────────────────────── */
   .btn-primary {
-    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 text-white
-           font-medium text-sm hover:bg-blue-700 active:bg-blue-800 transition-colors
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-white
+           font-medium text-sm transition-colors
            disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--epr-azul);
   }
+  .btn-primary:hover  { background-color: #0E2650; }
+  .btn-primary:active { background-color: #0a1e3e; }
+
+  .btn-green {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-white
+           font-medium text-sm transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--epr-verde);
+  }
+  .btn-green:hover { background-color: #145C2E; }
+
   .btn-secondary {
     @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-300
            bg-white text-gray-700 font-medium text-sm hover:bg-gray-50 active:bg-gray-100
@@ -28,17 +62,19 @@
   /* ── Inputs ───────────────────────────────────────────────────────────── */
   .input {
     @apply w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none
-           focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white;
+           focus:border-transparent transition bg-white;
+    focus-ring-color: var(--epr-azul);
   }
+  .input:focus { box-shadow: 0 0 0 2px rgba(26,58,107,.25); border-color: var(--epr-azul); }
 
   /* ── Card ─────────────────────────────────────────────────────────────── */
   .card {
     @apply bg-white rounded-xl border border-gray-200;
   }
 
-  /* ── Page wrapper — padding padrão de todas as páginas ───────────────── */
+  /* ── Page wrapper — preenchimento padrão, sem rolar a página inteira ──── */
   .page {
-    @apply px-6 py-6 space-y-5 max-w-[1600px] mx-auto;
+    @apply px-6 py-5 max-w-[1600px] mx-auto;
   }
 
   /* ── Chart card ───────────────────────────────────────────────────────── */
@@ -55,10 +91,16 @@
     @apply text-xs text-gray-400 mt-0.5;
   }
 
-  /* ── Badges ABC ───────────────────────────────────────────────────────── */
-  .badge-a { @apply inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700; }
+  /* ── Badges ABC — cores EPR ───────────────────────────────────────────── */
+  .badge-a { @apply inline-block px-1.5 py-0.5 rounded text-[10px] font-bold; background: #E8EDF6; color: #1A3A6B; }
   .badge-b { @apply inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700; }
-  .badge-c { @apply inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700; }
+  .badge-c { @apply inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-500; }
+
+  /* ── Tab ativo — EPR azul ─────────────────────────────────────────────── */
+  .tab-active {
+    color: white !important;
+  }
+  .tab-active { background-color: var(--epr-azul) !important; }
 }
 
 /* ── Sticky columns em tabelas de equalização ─────────────────────────────── */
@@ -70,8 +112,8 @@
   background: inherit;
 }
 
-/* ── Scrollbar fina e discreta ─────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+/* ── Scrollbar — mais larga e com cor EPR ─────────────────────────────────── */
+::-webkit-scrollbar         { width: 8px; height: 8px; }
+::-webkit-scrollbar-track   { background: #F0F2F5; border-radius: 99px; }
+::-webkit-scrollbar-thumb   { background: #94a3b8; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--epr-azul); }

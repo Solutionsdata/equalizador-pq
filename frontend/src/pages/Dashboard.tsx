@@ -55,7 +55,7 @@ type Period = 'mes' | 'ano'
 function getPeriodKey(iso: string, period: Period): string {
   const d = new Date(iso)
   if (period === 'ano') return String(d.getFullYear())
-  return d.toLocaleString('pt-BR', { month: 'short', year: '2-digit' }).replace('. ', '/')
+  return d.toLocaleString('pt-BR', { month: 'short', year: '2-digit', timeZone: 'America/Sao_Paulo' }).replace('. ', '/')
 }
 
 // ── Saving ao longo do tempo ──────────────────────────────────────────────────
@@ -169,10 +169,10 @@ function SavingTimelineChart({
           type="monotone"
           dataKey="saving_negociacao"
           name="Saving Negociação (%)"
-          stroke="#2563eb"
+          stroke="#1A3A6B"
           strokeWidth={2.5}
           strokeDasharray="6 3"
-          dot={{ fill: '#2563eb', r: 4 }}
+          dot={{ fill: '#1A3A6B', r: 4 }}
           activeDot={{ r: 6 }}
           connectNulls
         />
@@ -181,9 +181,9 @@ function SavingTimelineChart({
           type="monotone"
           dataKey="sla_medio"
           name="SLA médio (dias)"
-          stroke="#f59e0b"
+          stroke="#F5A623"
           strokeWidth={2}
-          dot={{ fill: '#f59e0b', r: 3 }}
+          dot={{ fill: '#F5A623', r: 3 }}
           activeDot={{ r: 5 }}
           connectNulls
         />
@@ -261,8 +261,8 @@ function SavingByProjectChart({ entries }: { entries: BaselineEntry[] }) {
           wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
           formatter={(value) => <span style={{ color: '#6b7280' }}>{value}</span>}
         />
-        <Bar dataKey="saving_orcamento" name="Saving Orçamento (%)" fill="#16a34a" radius={[0, 4, 4, 0]} barSize={10} />
-        <Bar dataKey="saving_negociacao" name="Saving Negociação (%)" fill="#2563eb" radius={[0, 4, 4, 0]} barSize={10} />
+        <Bar dataKey="saving_orcamento" name="Saving Orçamento (%)" fill="#1B7C3E" radius={[0, 4, 4, 0]} barSize={10} />
+        <Bar dataKey="saving_negociacao" name="Saving Negociação (%)" fill="#1A3A6B" radius={[0, 4, 4, 0]} barSize={10} />
       </BarChart>
     </ResponsiveContainer>
   )
@@ -316,7 +316,7 @@ function SLABarChart({ entries }: { entries: BaselineEntry[] }) {
         )}
         <Bar dataKey="sla" name="SLA (dias)" radius={[0, 4, 4, 0]} barSize={14}>
           {data.map((d, i) => (
-            <Cell key={i} fill={avgSla != null && d.sla > avgSla ? '#f59e0b' : '#10b981'} />
+            <Cell key={i} fill={avgSla != null && d.sla > avgSla ? '#F5A623' : '#1B7C3E'} />
           ))}
         </Bar>
       </BarChart>
@@ -441,12 +441,12 @@ function ProjectKpiTable({ entries, completedIds }: { entries: BaselineEntry[]; 
           {rows.map(({ e, savOrc, econOrc, savNeg, econNeg }, idx) => (
             <tr
               key={e.proposal_id}
-              className={`border-t border-gray-100 hover:bg-blue-50/30 transition-colors ${idx % 2 === 0 ? '' : 'bg-gray-50/40'}`}
+              className={`border-t border-gray-100 hover:bg-slate-50 transition-colors ${idx % 2 === 0 ? '' : 'bg-gray-50/40'}`}
             >
               <td className="px-4 py-3">
                 <p className="font-semibold text-gray-800 text-sm truncate max-w-[180px]">{e.project_nome}</p>
                 <p className="text-[11px] text-gray-400 mt-0.5">
-                  {new Date(e.data_premiacao).toLocaleDateString('pt-BR')}
+                  {new Date(e.data_premiacao).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                 </p>
               </td>
               <td className="px-4 py-3 text-right text-sm text-gray-600">
@@ -602,7 +602,7 @@ export default function Dashboard() {
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs text-gray-400 mb-1">
-              {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' })}
             </p>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
               {greeting()}, {user?.nome?.split(' ')[0]}

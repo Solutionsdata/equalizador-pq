@@ -36,7 +36,7 @@ const STEPS: TourStep[] = [
 
   // ── 1 · Boas-vindas ────────────────────────────────────────────────────────
   {
-    badge: 'Bem-vindo', badgeColor: 'bg-blue-600',
+    badge: 'Bem-vindo', badgeColor: 'bg-[#1A3A6B]',
     title: 'Software de Equalização de Propostas',
     sub: 'A plataforma centraliza todo o processo de compras de grandes obras — do quantitativo à premiação — com rastreabilidade total e análises poderosas.',
     tip: 'Este tour leva menos de 2 minutos e mostra como tirar o máximo do sistema.',
@@ -56,9 +56,9 @@ const STEPS: TourStep[] = [
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-1.5 p-2 bg-blue-50 border border-blue-100 rounded-xl">
+        <div className="flex items-center gap-1.5 p-2 rounded-xl" style={{ backgroundColor: '#E8EDF6', border: '1px solid #A3B4D4' }}>
           {[
-            { icon: FolderPlus, l: 'Projetos',  c: 'text-blue-600' },
+            { icon: FolderPlus, l: 'Projetos',  c: 'text-[#1A3A6B]' },
             { icon: Table2,     l: 'PQ',         c: 'text-cyan-600' },
             { icon: GitBranch,  l: 'Revisões',  c: 'text-violet-600' },
             { icon: Building2,  l: 'Propostas', c: 'text-amber-600' },
@@ -88,7 +88,7 @@ const STEPS: TourStep[] = [
       <div className="flex flex-col gap-2">
         <div className="flex flex-col gap-1.5">
           {[
-            { cls: 'A', pct: 70, desc: '~15% dos itens · 70% do valor', color: 'bg-blue-600', badge: 'bg-blue-600 text-white' },
+            { cls: 'A', pct: 70, desc: '~15% dos itens · 70% do valor', color: 'bg-[#1B7C3E]', badge: 'bg-[#1B7C3E] text-white' },
             { cls: 'B', pct: 20, desc: '~25% dos itens · 20% do valor', color: 'bg-indigo-400', badge: 'bg-indigo-100 text-indigo-700' },
             { cls: 'C', pct: 10, desc: '~60% dos itens · 10% do valor', color: 'bg-gray-300', badge: 'bg-gray-100 text-gray-500' },
           ].map(({ cls, pct, desc, color, badge }) => (
@@ -110,7 +110,7 @@ const STEPS: TourStep[] = [
           ].map(({ d, v, p }) => (
             <div key={d} className="flex justify-between py-0.5 border-b border-gray-100 last:border-0">
               <span className="text-gray-600 truncate mr-2">{d}</span>
-              <span className="font-bold text-blue-700 shrink-0">{v} <span className="text-gray-400 font-normal">({p})</span></span>
+              <span className="font-bold shrink-0" style={{ color: '#1A3A6B' }}>{v} <span className="text-gray-400 font-normal">({p})</span></span>
             </div>
           ))}
         </div>
@@ -133,7 +133,7 @@ const STEPS: TourStep[] = [
               <p className="text-[10px] font-black text-gray-700">Disciplinas</p>
             </div>
             <div className="flex flex-col gap-1">
-              <MiniBar label="Civil"      pct={58} color="bg-blue-500" />
+              <MiniBar label="Civil"      pct={58} color="bg-[#1A3A6B]" />
               <MiniBar label="Drenagem"   pct={22} color="bg-cyan-400" />
               <MiniBar label="Sinaliz."   pct={12} color="bg-amber-400" />
               <MiniBar label="Ambiental"  pct={8}  color="bg-emerald-400" />
@@ -199,14 +199,14 @@ const STEPS: TourStep[] = [
           <p className="text-[9px] font-black uppercase tracking-wide text-gray-400 mb-1.5">Planilha PQ — exemplo de item</p>
           <table className="w-full text-[9px]">
             <thead>
-              <tr className="bg-blue-700 text-white">
+              <tr className="text-white" style={{ backgroundColor: '#1A3A6B' }}>
                 {['Item', 'Localidade', 'Disciplina', 'Categoria', 'Código', 'Descrição', 'Un.', 'Qtd', 'Preço RF'].map(h => (
                   <th key={h} className="px-1.5 py-1 text-left font-bold whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-gray-100 bg-blue-50/30">
+              <tr className="border-b border-gray-100" style={{ backgroundColor: '#E8EDF620' }}>
                 {['1.1', 'KM 45–80', 'Civil', 'Pavimentação', 'PAV-003', 'CBUQ 5cm rolamento', 'm²', '50.000', 'R$ 85,00'].map((v, i) => (
                   <td key={i} className="px-1.5 py-1 text-gray-700 whitespace-nowrap">{v}</td>
                 ))}
@@ -224,9 +224,9 @@ const STEPS: TourStep[] = [
             <Upload size={12} className="text-green-600 shrink-0" />
             <span className="text-[10px] font-semibold text-green-700">Importar via Excel</span>
           </div>
-          <div className="flex-1 flex items-center gap-1.5 p-2 bg-blue-50 border border-blue-100 rounded-xl">
-            <Table2 size={12} className="text-blue-600 shrink-0" />
-            <span className="text-[10px] font-semibold text-blue-700">Inserir manualmente</span>
+          <div className="flex-1 flex items-center gap-1.5 p-2 rounded-xl" style={{ backgroundColor: '#E8EDF6', border: '1px solid #A3B4D4' }}>
+            <Table2 size={12} style={{ color: '#1A3A6B' }} className="shrink-0" />
+            <span className="text-[10px] font-semibold" style={{ color: '#1A3A6B' }}>Inserir manualmente</span>
           </div>
         </div>
       </div>
@@ -248,7 +248,7 @@ const STEPS: TourStep[] = [
           </div>
           <div className="flex items-center gap-1">
             {[
-              { l: 'Rev 0', s: 'Edital', c: 'bg-blue-600' },
+              { l: 'Rev 0', s: 'Edital', c: 'bg-[#1A3A6B]' },
               { l: 'Rev 1', s: 'Addendum', c: 'bg-violet-600' },
               { l: 'Rev 2', s: 'Final', c: 'bg-indigo-600' },
             ].map((r, i, a) => (
@@ -333,7 +333,7 @@ const STEPS: TourStep[] = [
           {[
             { icon: Target,      label: 'Saving Orçamento', value: '8,4%', sub: 'vs. Ref. PQ', c: 'text-green-600 bg-green-50 border-green-100' },
             { icon: Clock,       label: 'SLA Médio',        value: '42d',  sub: 'até premiação', c: 'text-amber-600 bg-amber-50 border-amber-100' },
-            { icon: TrendingDown,label: 'Saving Negoc.',    value: '3,2%', sub: 'Rev. 0 → final', c: 'text-blue-600 bg-blue-50 border-blue-100' },
+            { icon: TrendingDown,label: 'Saving Negoc.',    value: '3,2%', sub: 'Rev. 0 → final', c: 'text-[#1A3A6B] bg-[#E8EDF6] border-[#A3B4D4]' },
             { icon: Trophy,      label: 'Volume Total',     value: 'R$ 12M', sub: 'contratos eq.', c: 'text-indigo-600 bg-indigo-50 border-indigo-100' },
           ].map(({ icon: Icon, label, value, sub, c }) => (
             <div key={label} className={`flex flex-col p-2 rounded-xl border ${c}`}>
@@ -346,10 +346,10 @@ const STEPS: TourStep[] = [
             </div>
           ))}
         </div>
-        <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl text-white text-center">
+        <div className="p-2 rounded-xl text-white text-center" style={{ background: 'linear-gradient(to right, #1A3A6B, #2D4E8A)' }}>
           <Zap size={14} className="mx-auto mb-1 text-yellow-300" />
           <p className="text-xs font-black">Você está pronto!</p>
-          <p className="text-[10px] text-blue-200 mt-0.5">O Guia completo está sempre disponível no menu lateral → Ajuda</p>
+          <p className="text-[10px] mt-0.5" style={{ color: '#A3B4D4' }}>O Guia completo está sempre disponível no menu lateral → Ajuda</p>
         </div>
       </div>
     ),
@@ -410,8 +410,8 @@ export default function GuidedTour() {
         {/* Progress bar */}
         <div className="h-1 bg-gray-100">
           <div
-            className="h-full bg-blue-600 transition-all duration-500"
-            style={{ width: `${((step + 1) / STEPS.length) * 100}%` }}
+            className="h-full transition-all duration-500"
+            style={{ backgroundColor: '#1A3A6B', width: `${((step + 1) / STEPS.length) * 100}%` }}
           />
         </div>
 
@@ -458,7 +458,7 @@ export default function GuidedTour() {
             <div
               key={i}
               className={`rounded-full transition-all duration-300 ${
-                i === step ? 'w-5 h-1.5 bg-blue-600' : i < step ? 'w-1.5 h-1.5 bg-blue-300' : 'w-1.5 h-1.5 bg-gray-200'
+                i === step ? 'w-5 h-1.5 bg-[#1A3A6B]' : i < step ? 'w-1.5 h-1.5 bg-[#7A99C4]' : 'w-1.5 h-1.5 bg-gray-200'
               }`}
             />
           ))}
@@ -478,18 +478,15 @@ export default function GuidedTour() {
             {cur.action && (
               <button
                 onClick={() => handleAction(cur.action!.route)}
-                className="text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors border border-blue-100"
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6', border: '1px solid #A3B4D4' }}
               >
                 {cur.action.label}
               </button>
             )}
             <button
               onClick={() => go('fwd')}
-              className={`flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-xl transition-all shadow-sm ${
-                isLast
-                  ? 'bg-green-600 hover:bg-green-700 text-white'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
+              className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-xl transition-all shadow-sm text-white"
+              style={{ backgroundColor: isLast ? '#1B7C3E' : '#1A3A6B' }}
             >
               {isLast ? (
                 <><CheckCircle2 size={14} /> Concluir</>
@@ -513,7 +510,7 @@ export function RestartTourButton() {
   return (
     <button
       onClick={restart}
-      className="text-xs text-gray-400 hover:text-blue-600 hover:underline transition-colors"
+      className="text-xs text-gray-400 hover:text-gray-700 hover:underline transition-colors"
     >
       Ver tour novamente
     </button>

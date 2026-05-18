@@ -13,9 +13,9 @@ interface Props {
 }
 
 const COLORS = [
-  '#2563eb', '#7c3aed', '#db2777', '#ea580c',
-  '#ca8a04', '#16a34a', '#0891b2', '#4f46e5',
-  '#be185d', '#b45309',
+  '#1A3A6B', '#1B7C3E', '#F5A623', '#6B7280',
+  '#0E2650', '#145C2E', '#D4891A', '#4B5563',
+  '#2D5A1B', '#1E4DB3',
 ]
 
 export default function PriceComparisonChart({ items, proposals, maxItems = 20 }: Props) {

@@ -66,13 +66,13 @@ export default function RevisionSelector({
   return (
     <>
       <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm">
-        <GitBranch size={14} className="text-blue-600 flex-shrink-0" />
+        <GitBranch size={14} style={{ color: '#1A3A6B' }} className="flex-shrink-0" />
 
         {/* Dropdown */}
         <div className="relative">
           <button
             onClick={() => setDropdownOpen((o) => !o)}
-            className="flex items-center gap-1.5 font-semibold text-gray-800 hover:text-blue-600 transition-colors"
+            className="flex items-center gap-1.5 font-semibold text-gray-800 hover:text-gray-600 transition-colors"
           >
             Rev. {current?.numero ?? '—'}
             {current?.descricao && (
@@ -86,9 +86,8 @@ export default function RevisionSelector({
               {revisions.map((rev) => (
                 <div
                   key={rev.id}
-                  className={`flex items-center justify-between px-3 py-2 hover:bg-gray-50 group ${
-                    rev.id === currentRevisionId ? 'text-blue-600' : 'text-gray-700'
-                  }`}
+                  className={`flex items-center justify-between px-3 py-2 hover:bg-gray-50 group`}
+                  style={{ color: rev.id === currentRevisionId ? '#1A3A6B' : '#374151' }}
                 >
                   <button
                     onClick={() => { onRevisionChange(rev); setDropdownOpen(false) }}
@@ -125,7 +124,8 @@ export default function RevisionSelector({
         {/* Nova Revisão */}
         <button
           onClick={() => { setModalOpen(true); setDropdownOpen(false) }}
-          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+          className="flex items-center gap-1 text-xs font-medium transition-colors"
+          style={{ color: '#1A3A6B' }}
         >
           <Plus size={12} /> Nova Revisão
         </button>
@@ -152,7 +152,7 @@ export default function RevisionSelector({
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                   Número
                 </label>
-                <div className="text-2xl font-bold text-blue-600">{nextNumero}</div>
+                <div className="text-2xl font-bold" style={{ color: '#1A3A6B' }}>{nextNumero}</div>
                 <p className="text-xs text-gray-400 mt-0.5">Auto-incrementado</p>
               </div>
 
@@ -165,7 +165,7 @@ export default function RevisionSelector({
                   value={descricao}
                   onChange={(e) => setDescricao(e.target.value)}
                   placeholder="Ex: Ajuste de quantitativos"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
                   onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
                   autoFocus
                 />
@@ -182,7 +182,8 @@ export default function RevisionSelector({
               <button
                 onClick={handleCreate}
                 disabled={createMutation.isPending}
-                className="flex-1 bg-blue-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
+                className="flex-1 text-white rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                style={{ backgroundColor: '#1A3A6B' }}
               >
                 {createMutation.isPending ? 'Criando…' : 'Criar'}
               </button>
