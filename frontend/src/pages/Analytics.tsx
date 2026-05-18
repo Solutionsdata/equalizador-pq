@@ -132,6 +132,7 @@ function computeFilteredPareto(
 function computeDistFromEq(
   equalization: EqualizationResponse | undefined,
   filters: Filters,
+  source: 'referencia' | 'propostas',
 ): { disciplines: DisciplineSummary[]; categorias: CategoriaSummary[]; localidades: LocalidadeSummary[] } | null {
   if (!equalization || equalization.items.length === 0) return null
 
@@ -146,15 +147,21 @@ function computeDistFromEq(
     return true
   })
 
-  // Para cada item, calcula o valor com base na média das propostas filtradas
+  // Para cada item, calcula o valor com base na fonte selecionada
   const enriched = filteredItems.map((item) => {
-    const prices = filteredProps
-      .map((p) => item.precos[String(p.id)])
-      .filter((p): p is number => p != null)
-    const preco_medio = prices.length > 0
-      ? prices.reduce((a, b) => a + b, 0) / prices.length
-      : (item.preco_referencia ?? 0)
-    return { ...item, valor_computed: preco_medio * item.quantidade }
+    let valor_computed: number
+    if (source === 'referencia') {
+      valor_computed = (item.preco_referencia ?? item.preco_medio ?? 0) * item.quantidade
+    } else {
+      const prices = filteredProps
+        .map((p) => item.precos[String(p.id)])
+        .filter((p): p is number => p != null)
+      const preco_medio = prices.length > 0
+        ? prices.reduce((a, b) => a + b, 0) / prices.length
+        : (item.preco_referencia ?? 0)
+      valor_computed = preco_medio * item.quantidade
+    }
+    return { ...item, valor_computed }
   })
 
   function buildSummary(keyFn: (i: typeof enriched[0]) => string | undefined) {
@@ -624,7 +631,7 @@ function PanelCherryPicking({
     const savings = cherryTotal != null && refTotal != null ? refTotal - cherryTotal : null
     const savingsPct = savings != null && refTotal ? (savings / refTotal) * 100 : null
 
-    return { item, minPrice, minSupplier, minPropId, cherryTotal, refTotal, savings, savingsPct }
+    return { item, minPrice, minSupplier, minPropId, cherryTotal, refTotal, savings, savingsPct, basePrice }
   })
 
   // Supplier cherry pick count & total
@@ -718,14 +725,14 @@ function PanelCherryPicking({
             </tr>
           </thead>
           <tbody>
-            {cherryRows.map(({ item, minPrice, minSupplier, cherryTotal, refTotal, savings, savingsPct }, idx) => (
+            {cherryRows.map(({ item, minPrice, minSupplier, cherryTotal, refTotal, savings, savingsPct, basePrice }, idx) => (
               <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-slate-50`}>
                 <td className="px-3 py-2 font-mono text-gray-500">{item.numero_item}</td>
                 <td className="px-3 py-2 text-gray-700 max-w-[200px]">
                   <div className="truncate" title={item.descricao}>{item.descricao}</div>
                 </td>
                 <td className="px-3 py-2 text-right text-gray-600">{formatNumber(item.quantidade, 0)}</td>
-                <td className="px-3 py-2 text-right" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6' }}>{formatBRL(item.preco_referencia)}</td>
+                <td className="px-3 py-2 text-right" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6' }}>{formatBRL(basePrice)}</td>
                 <td className="px-3 py-2 text-right" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6' }}>{formatBRL(refTotal)}</td>
                 <td className="px-3 py-2 text-green-700 font-medium bg-green-50/40">
                   {minSupplier ?? <span className="text-gray-300">—</span>}
@@ -964,7 +971,7 @@ function PanelFornecedores({
       {/* Tabela comparativa vs média */}
       <div>
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          Preço unitário × Média das Propostas (desvio em %)
+          Preço unitário × {source === 'referencia' ? 'Referência PQ' : 'Média das Propostas'} (desvio em %)
         </h3>
         <div className="overflow-auto rounded-xl border border-gray-200">
           <table className="w-full text-xs border-collapse min-w-max">
@@ -972,8 +979,18 @@ function PanelFornecedores({
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Item</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Descrição</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-gray-600" style={{ backgroundColor: '#E8EDF6' }}>Ref. PQ</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 bg-purple-50">Média</th>
+                <th
+                  className="px-3 py-2.5 text-right font-semibold whitespace-nowrap"
+                  style={source === 'referencia' ? { backgroundColor: '#E8EDF6', color: '#1A3A6B' } : { color: '#4B5563' }}
+                >
+                  {source === 'referencia' ? '★ Ref. PQ' : 'Ref. PQ'}
+                </th>
+                <th
+                  className="px-3 py-2.5 text-right font-semibold whitespace-nowrap"
+                  style={source === 'propostas' ? { backgroundColor: '#E8EDF6', color: '#1A3A6B' } : { color: '#4B5563' }}
+                >
+                  {source === 'propostas' ? '★ Média' : 'Média'}
+                </th>
                 {proposals.map((p) => (
                   <th key={p.id} className="px-3 py-2.5 text-right font-semibold text-gray-600 max-w-[110px]">
                     <div className="truncate" title={p.empresa}>{p.empresa}</div>
@@ -983,16 +1000,25 @@ function PanelFornecedores({
             </thead>
             <tbody>
               {filteredItems.slice(0, 100).map((item, idx) => (
-                <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-slate-50`}>
                   <td className="px-3 py-1.5 font-mono text-gray-500 whitespace-nowrap">{item.numero_item}</td>
                   <td className="px-3 py-1.5 text-gray-700 max-w-[180px]">
                     <div className="truncate" title={item.descricao}>{item.descricao}</div>
                   </td>
-                  <td className="px-3 py-1.5 text-right whitespace-nowrap" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6' }}>{formatBRL(item.preco_referencia)}</td>
-                  <td className="px-3 py-1.5 text-right text-purple-700 bg-purple-50/40 font-medium whitespace-nowrap">{formatBRL(item.preco_medio)}</td>
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap font-medium"
+                    style={{ color: '#1A3A6B', backgroundColor: source === 'referencia' ? '#E8EDF6' : undefined }}>
+                    {formatBRL(item.preco_referencia)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-medium whitespace-nowrap"
+                    style={{ color: '#1A3A6B', backgroundColor: source === 'propostas' ? '#E8EDF6' : undefined }}>
+                    {formatBRL(item.preco_medio)}
+                  </td>
                   {proposals.map((p) => {
                     const price = item.precos[String(p.id)]
-                    const pct = price != null ? pctDiff(price, item.preco_medio ?? undefined) : null
+                    const refBase = source === 'referencia'
+                      ? (item.preco_referencia ?? item.preco_medio ?? undefined)
+                      : (item.preco_medio ?? undefined)
+                    const pct = price != null ? pctDiff(price, refBase) : null
                     return (
                       <td key={p.id} className={`px-3 py-1.5 text-right whitespace-nowrap ${
                         price == null ? 'text-gray-200' :
@@ -1022,7 +1048,7 @@ function PanelFornecedores({
 // ── Painel: Distribuição ──────────────────────────────────────────────────────
 
 function PanelDistribuicao({
-  disciplines, categorias, localidades, hasFilters, filteredCount, totalCount,
+  disciplines, categorias, localidades, hasFilters, filteredCount, totalCount, source,
 }: {
   disciplines: DisciplineSummary[]
   categorias: CategoriaSummary[]
@@ -1030,6 +1056,7 @@ function PanelDistribuicao({
   hasFilters?: boolean
   filteredCount?: number
   totalCount?: number
+  source?: 'referencia' | 'propostas'
 }) {
   if (disciplines.length === 0 && categorias.length === 0 && localidades.length === 0) {
     return <EmptyState message="Preencha disciplina, categoria ou localidade nos itens da Planilha PQ para ver a distribuição." />
@@ -1064,7 +1091,9 @@ function PanelDistribuicao({
       {/* Card de resumo */}
       <div className="grid grid-cols-3 gap-4">
         <div className="text-white rounded-xl px-5 py-4" style={{ background: '#1A3A6B' }}>
-          <p className="text-xs font-medium opacity-75 mb-1">{hasFilters ? 'Valor Total (filtrado)' : 'Valor Total (PQ)'}</p>
+          <p className="text-xs font-medium opacity-75 mb-1">
+            {source === 'referencia' ? 'Valor Total (Preço Ref.)' : hasFilters ? 'Valor Total (filtrado)' : 'Valor Total (Média Propostas)'}
+          </p>
           <p className="text-2xl font-bold">{formatBRL(totalValor)}</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl px-5 py-4">
@@ -1074,10 +1103,12 @@ function PanelDistribuicao({
         </div>
         <div className="rounded-xl px-5 py-4" style={{ background: '#E8F5EE', border: '1px solid #1B7C3E' }}>
           <p className="text-xs font-medium mb-1" style={{ color: '#1B7C3E' }}>
-            {hasFilters ? 'Média por Item (filtrada)' : 'Preço Médio por Item'}
+            {source === 'referencia' ? 'Preço Médio Ref. por Item' : hasFilters ? 'Média por Item (filtrada)' : 'Média por Item (Propostas)'}
           </p>
           <p className="text-2xl font-bold" style={{ color: '#145C2E' }}>{formatBRL(precoMedio)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">{hasFilters ? 'média dos fornecedores filtrados' : 'referência interna'}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {source === 'referencia' ? 'base: preço de referência (PQ)' : hasFilters ? 'média dos fornecedores filtrados' : 'média de todas as propostas'}
+          </p>
         </div>
       </div>
 
@@ -1185,10 +1216,10 @@ export default function Analytics() {
     [paretoData, equalization, filters, source]
   )
 
-  // Distribuição calculada a partir de equalization + filtros (média por fornecedor filtrado)
+  // Distribuição calculada a partir de equalization + filtros (fonte selecionada)
   const distData = useMemo(
-    () => computeDistFromEq(equalization, filters),
-    [equalization, filters]
+    () => computeDistFromEq(equalization, filters, source),
+    [equalization, filters, source]
   )
 
   async function handleExport() {
@@ -1464,6 +1495,7 @@ export default function Analytics() {
                 hasFilters={!!(filters.fornecedores.length > 0 || filters.localidade || filters.categoria || filters.disciplina)}
                 filteredCount={equalization?.proposals.filter(p => filters.fornecedores.length === 0 || filters.fornecedores.includes(String(p.id))).length ?? 0}
                 totalCount={equalization?.proposals.length ?? 0}
+                source={source}
               />
             )}
 
