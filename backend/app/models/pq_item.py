@@ -17,10 +17,10 @@ class PQItem(Base):
 
     # ── 12 COLUNAS DA PLANILHA PQ ─────────────────────────────────────────
     numero_item      = Column(String(20),   nullable=False)   # 1 | 1.1 | 1.1.1
-    localidade       = Column(String(200))                     # Localidade / trecho
-    disciplina       = Column(String(100))                     # Civil | Elétrica | Mecânica…
-    categoria        = Column(String(100))                     # Terraplenagem | Pavimentação…
-    codigo           = Column(String(50))                      # SINAPI / SICRO / interno
+    localidade       = Column(String(500))                     # Localidade / trecho
+    disciplina       = Column(String(500))                     # Civil | Elétrica | Mecânica…
+    categoria        = Column(String(500))                     # Terraplenagem | Pavimentação…
+    codigo           = Column(String(500))                     # SINAPI / SICRO / interno
     descricao        = Column(Text,          nullable=False)    # Descrição completa do item
     unidade          = Column(String(20),   nullable=False)    # m | m² | m³ | un | kg | t
     quantidade       = Column(Numeric(18, 4), nullable=False)  # Quantidade contratada

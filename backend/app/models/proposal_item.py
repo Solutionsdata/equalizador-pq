@@ -19,7 +19,7 @@ class ProposalItem(Base):
     preco_total          = Column(Numeric(18, 4))  # Calculado: qtd × CUD_com × (1 + BDI_com/100)
 
     # Escopo capturado do proponente (pode diferir da PQ)
-    descricao_proposta  = Column(String(500), nullable=True)
+    descricao_proposta  = Column(String(500), nullable=True)  # já em 500 — alinhado com pq_items
     unidade_proposta    = Column(String(20),  nullable=True)
     quantidade_proposta = Column(Numeric(18, 4), nullable=True)
 

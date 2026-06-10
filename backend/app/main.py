@@ -195,6 +195,23 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE pq_items ALTER COLUMN descricao TYPE TEXT"
     ))
+    # Ampliar localidade, disciplina, categoria, codigo para VARCHAR(500)
+    _conn.execute(text(
+        "ALTER TABLE pq_items ALTER COLUMN localidade TYPE VARCHAR(500)"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE pq_items ALTER COLUMN disciplina TYPE VARCHAR(500)"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE pq_items ALTER COLUMN categoria TYPE VARCHAR(500)"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE pq_items ALTER COLUMN codigo TYPE VARCHAR(500)"
+    ))
+    # Ampliar descricao_proposta em proposal_items para VARCHAR(500) (idempotente)
+    _conn.execute(text(
+        "ALTER TABLE proposal_items ALTER COLUMN descricao_proposta TYPE VARCHAR(500)"
+    ))
     _conn.commit()
 
 app = FastAPI(
