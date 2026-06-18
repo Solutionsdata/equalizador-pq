@@ -1,6 +1,6 @@
 from collections import defaultdict
 from decimal import Decimal
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -19,6 +19,9 @@ from app.services.excel import gerar_relatorio_equalizacao, gerar_baseline_excel
 from typing import List, Optional
 
 router = APIRouter()
+
+_CACHE_5MIN = "private, max-age=300"   # browser cacheia por 5 min
+_CACHE_2MIN = "private, max-age=120"   # dados que mudam mais rápido
 
 
 def _check_project_access(db: Session, project_id: int, user_id: int) -> Project:
@@ -40,11 +43,14 @@ def get_pareto(
     project_id: int,
     source: str = Query(default="referencia", enum=["referencia", "propostas"]),
     revision_id: Optional[int] = Query(default=None),
+    response: Response = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Curva ABC / Pareto dos itens do projeto."""
     _check_project_access(db, project_id, current_user.id)
+    if response:
+        response.headers["Cache-Control"] = _CACHE_5MIN
     return AnalyticsService.get_pareto(db, project_id, source, revision_id)
 
 
@@ -52,11 +58,14 @@ def get_pareto(
 def get_equalization(
     project_id: int,
     revision_id: Optional[int] = Query(default=None),
+    response: Response = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Tabela de equalização — todas as propostas lado a lado, filtrada por revisão."""
     _check_project_access(db, project_id, current_user.id)
+    if response:
+        response.headers["Cache-Control"] = _CACHE_2MIN
     return AnalyticsService.get_equalization(db, project_id, revision_id)
 
 
@@ -64,10 +73,13 @@ def get_equalization(
 def get_disciplines(
     project_id: int,
     revision_id: Optional[int] = Query(default=None),
+    response: Response = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     _check_project_access(db, project_id, current_user.id)
+    if response:
+        response.headers["Cache-Control"] = _CACHE_5MIN
     return AnalyticsService.get_discipline_summary(db, project_id, revision_id)
 
 
@@ -75,10 +87,13 @@ def get_disciplines(
 def get_categorias(
     project_id: int,
     revision_id: Optional[int] = Query(default=None),
+    response: Response = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     _check_project_access(db, project_id, current_user.id)
+    if response:
+        response.headers["Cache-Control"] = _CACHE_5MIN
     return AnalyticsService.get_categoria_summary(db, project_id, revision_id)
 
 
@@ -86,10 +101,13 @@ def get_categorias(
 def get_localidades(
     project_id: int,
     revision_id: Optional[int] = Query(default=None),
+    response: Response = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     _check_project_access(db, project_id, current_user.id)
+    if response:
+        response.headers["Cache-Control"] = _CACHE_5MIN
     return AnalyticsService.get_localidade_summary(db, project_id, revision_id)
 
 
@@ -181,10 +199,13 @@ def scope_validation(
 
 @router.get("/baseline")
 def get_baseline(
+    response: Response = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Retorna todas as propostas vencedoras de todos os projetos acessíveis ao usuário."""
+    if response:
+        response.headers["Cache-Control"] = _CACHE_2MIN
     owned = db.query(Project).filter(Project.user_id == current_user.id).all()
     shared_ids = [
         s.project_id

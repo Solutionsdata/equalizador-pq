@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 from app.database import engine, Base
 from app.config import settings
@@ -260,6 +261,7 @@ _origins = list({
     settings.FRONTEND_URL,
 })
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)  # comprime respostas > 1KB
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,

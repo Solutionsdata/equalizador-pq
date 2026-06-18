@@ -203,15 +203,14 @@ def bulk_update_items(
         ).all()
     }
 
+    # Pre-load all existing ProposalItems in one query instead of 1 query per item
+    existing_items = {
+        pi.pq_item_id: pi
+        for pi in db.query(ProposalItem).filter(ProposalItem.proposal_id == proposal_id).all()
+    }
+
     for item_data in data.items:
-        pi = (
-            db.query(ProposalItem)
-            .filter(
-                ProposalItem.proposal_id == proposal_id,
-                ProposalItem.pq_item_id == item_data.pq_item_id,
-            )
-            .first()
-        )
+        pi = existing_items.get(item_data.pq_item_id)
         if not pi:
             pi = ProposalItem(proposal_id=proposal_id, pq_item_id=item_data.pq_item_id)
             db.add(pi)

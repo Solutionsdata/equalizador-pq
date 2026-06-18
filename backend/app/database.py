@@ -10,11 +10,11 @@ if _db_url.startswith("postgres://"):
 engine = create_engine(
     _db_url,
     pool_pre_ping=True,
-    pool_recycle=60,        # recicla conexões ociosas a cada 60s (Neon pausa antes disso)
-    pool_size=3,
-    max_overflow=2,
-    pool_timeout=25,        # falha rápido se não conseguir conexão (Render timeout = 30s)
-    connect_args={"connect_timeout": 10},  # timeout de abertura TCP com o banco
+    pool_recycle=300,       # recicla conexões a cada 5 min (Neon fecha idle após ~5 min)
+    pool_size=10,           # suporta 10 usuários simultâneos sem espera
+    max_overflow=5,         # até 15 conexões em picos
+    pool_timeout=20,
+    connect_args={"connect_timeout": 10},
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

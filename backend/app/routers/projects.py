@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.models.project import Project
+from app.models.pq_item import PQItem
+from app.models.proposal import Proposal
 from app.models.project_share import ProjectShare
 from app.models.project_revision import ProjectRevision
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse, SharedUserBrief
@@ -25,13 +28,21 @@ def _has_access(db: Session, project_id: int, user_id: int) -> Project | None:
     return project if share else None
 
 
-def _to_response(project: Project, current_user_id: int) -> ProjectResponse:
+def _to_response(
+    project: Project,
+    current_user_id: int,
+    counts: dict[int, tuple[int, int]] | None = None,
+) -> ProjectResponse:
     is_shared = project.user_id != current_user_id
     owner_nome = project.user.nome if is_shared else None
     shared_with = [
         SharedUserBrief(id=s.user.id, nome=s.user.nome, email=s.user.email)
         for s in project.shares
     ] if not is_shared else []
+    # Use pre-computed counts to avoid N+1 lazy loads
+    pq_count, prop_count = counts.get(project.id, (0, 0)) if counts else (
+        len(project.pq_items), len(project.proposals)
+    )
     return ProjectResponse(
         id=project.id,
         user_id=project.user_id,
@@ -45,8 +56,8 @@ def _to_response(project: Project, current_user_id: int) -> ProjectResponse:
         status=project.status,
         created_at=project.created_at,
         updated_at=project.updated_at,
-        total_pq_items=len(project.pq_items),
-        total_proposals=len(project.proposals),
+        total_pq_items=pq_count,
+        total_proposals=prop_count,
         is_shared=is_shared,
         owner_nome=owner_nome,
         shared_with=shared_with,
@@ -55,19 +66,48 @@ def _to_response(project: Project, current_user_id: int) -> ProjectResponse:
 
 @router.get("/", response_model=list[ProjectResponse])
 def list_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Owned projects
-    owned = db.query(Project).filter(Project.user_id == current_user.id).all()
+    # Owned projects — eager-load user + shares to avoid N+1 on _to_response
+    owned = (
+        db.query(Project)
+        .options(joinedload(Project.user), joinedload(Project.shares).joinedload(ProjectShare.user))
+        .filter(Project.user_id == current_user.id)
+        .all()
+    )
 
-    # Shared projects (via project_shares)
+    # Shared projects
     shared_ids = [
         s.project_id
         for s in db.query(ProjectShare).filter(ProjectShare.user_id == current_user.id).all()
     ]
-    shared = db.query(Project).filter(Project.id.in_(shared_ids)).all() if shared_ids else []
+    shared = (
+        db.query(Project)
+        .options(joinedload(Project.user), joinedload(Project.shares).joinedload(ProjectShare.user))
+        .filter(Project.id.in_(shared_ids))
+        .all()
+    ) if shared_ids else []
 
     all_projects = owned + shared
+    project_ids = [p.id for p in all_projects]
+
+    # Single query for all counts — eliminates N+1 (2 queries per project)
+    pq_counts = {
+        pid: cnt
+        for pid, cnt in db.query(PQItem.project_id, func.count(PQItem.id))
+        .filter(PQItem.project_id.in_(project_ids))
+        .group_by(PQItem.project_id)
+        .all()
+    }
+    prop_counts = {
+        pid: cnt
+        for pid, cnt in db.query(Proposal.project_id, func.count(Proposal.id))
+        .filter(Proposal.project_id.in_(project_ids))
+        .group_by(Proposal.project_id)
+        .all()
+    }
+    counts = {pid: (pq_counts.get(pid, 0), prop_counts.get(pid, 0)) for pid in project_ids}
+
     all_projects.sort(key=lambda p: p.created_at, reverse=True)
-    return [_to_response(p, current_user.id) for p in all_projects]
+    return [_to_response(p, current_user.id, counts) for p in all_projects]
 
 
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)

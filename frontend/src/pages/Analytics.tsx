@@ -1177,26 +1177,11 @@ export default function Analytics() {
     enabled: selectedRevisionId !== null,
   })
 
-  const { data: _rawDisciplines } = useQuery<DisciplineSummary[]>({
-    queryKey: ['disciplines', pid, selectedRevisionId],
-    queryFn: () => analyticsAPI.getDisciplines(pid, selectedRevisionId).then((r) => r.data),
-    enabled: selectedRevisionId !== null,
-  })
-  const disciplines: DisciplineSummary[] = Array.isArray(_rawDisciplines) ? _rawDisciplines : []
-
-  const { data: _rawCategorias } = useQuery<CategoriaSummary[]>({
-    queryKey: ['categorias', pid, selectedRevisionId],
-    queryFn: () => analyticsAPI.getCategorias(pid, selectedRevisionId).then((r) => r.data),
-    enabled: selectedRevisionId !== null,
-  })
-  const categorias: CategoriaSummary[] = Array.isArray(_rawCategorias) ? _rawCategorias : []
-
-  const { data: _rawLocalidades } = useQuery<LocalidadeSummary[]>({
-    queryKey: ['localidades', pid, selectedRevisionId],
-    queryFn: () => analyticsAPI.getLocalidades(pid, selectedRevisionId).then((r) => r.data),
-    enabled: selectedRevisionId !== null,
-  })
-  const localidades: LocalidadeSummary[] = Array.isArray(_rawLocalidades) ? _rawLocalidades : []
+  // disciplines/categorias/localidades são calculados client-side a partir do equalization
+  // (elimina 3 requisições desnecessárias ao backend)
+  const disciplines: DisciplineSummary[] = []
+  const categorias: CategoriaSummary[] = []
+  const localidades: LocalidadeSummary[] = []
 
   // Build filter options: merge equalization, paretoData e dados do backend para cobrir todos os tabs
   const categoriasOpts = useMemo(() => {

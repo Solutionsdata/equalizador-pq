@@ -37,7 +37,10 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 30_000,
+      staleTime: 5 * 60_000,          // dados são considerados frescos por 5 min
+      gcTime: 10 * 60_000,            // mantém no cache por 10 min após desmontar
+      refetchOnWindowFocus: false,    // não rebusca ao trocar de aba no browser
+      refetchOnReconnect: false,      // não rebusca ao reconectar rede
     },
   },
 })
