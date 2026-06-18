@@ -387,7 +387,7 @@ export default function ProposalInput() {
                     <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.codigo || '—'}</td>
                     <td className="px-2 py-1 text-xs text-gray-700 whitespace-nowrap max-w-[300px] overflow-hidden text-ellipsis" title={pq.descricao}>{pq.descricao}</td>
                     <td className="px-2 py-1 text-xs text-center text-gray-500">{pq.unidade}</td>
-                    <td className="px-2 py-1 text-right text-xs tabular-nums">{formatNumber(pq.quantidade, 4)}</td>
+                    <td className="px-2 py-1 text-right text-xs tabular-nums">{formatNumber(pq.quantidade, 2)}</td>
                     <td className="px-2 py-1 text-xs text-gray-400 whitespace-nowrap">{pq.referencia_codigo || '—'}</td>
                     <td className="px-2 py-1 text-right text-xs text-gray-500 tabular-nums whitespace-nowrap">
                       {pq.preco_referencia ? formatBRL(pq.preco_referencia) : '—'}

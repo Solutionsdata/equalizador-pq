@@ -220,6 +220,26 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "UPDATE users SET is_admin = FALSE WHERE email = 'solutionsdata@outlook.com'"
     ))
+    # ── Ajuste de tamanho das colunas da PQ ──────────────────────────────────
+    _conn.execute(text("ALTER TABLE pq_items ALTER COLUMN numero_item TYPE VARCHAR(50)"))
+    _conn.execute(text(
+        "ALTER TABLE pq_items ALTER COLUMN localidade TYPE VARCHAR(100) USING substring(localidade, 1, 100)"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE pq_items ALTER COLUMN disciplina TYPE VARCHAR(100) USING substring(disciplina, 1, 100)"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE pq_items ALTER COLUMN categoria TYPE VARCHAR(100) USING substring(categoria, 1, 100)"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE pq_items ALTER COLUMN codigo TYPE VARCHAR(50) USING substring(codigo, 1, 50)"
+    ))
+    _conn.execute(text("ALTER TABLE pq_items ALTER COLUMN unidade TYPE VARCHAR(50)"))
+    # Quantidade: reduzir de 4 para 2 casas decimais
+    _conn.execute(text("ALTER TABLE pq_items ALTER COLUMN quantidade TYPE NUMERIC(18,2)"))
+    _conn.execute(text(
+        "ALTER TABLE proposal_items ALTER COLUMN quantidade_proposta TYPE NUMERIC(18,2)"
+    ))
     _conn.commit()
 
 app = FastAPI(

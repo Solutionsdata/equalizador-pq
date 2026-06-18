@@ -1636,14 +1636,14 @@ export default function Analytics() {
                                               <div className="truncate" title={field === 'descricao' ? change.descricao_pq : undefined}>
                                                 {field === 'descricao' ? change.descricao_pq
                                                   : field === 'unidade' ? change.unidade_pq
-                                                  : formatNumber(change.quantidade_pq, 4)}
+                                                  : formatNumber(change.quantidade_pq, 2)}
                                               </div>
                                             </td>
                                             <td className="px-3 py-2 text-amber-700 font-semibold bg-amber-50 max-w-[220px]">
                                               <div className="truncate" title={field === 'descricao' ? (change.descricao_proposta ?? '—') : undefined}>
                                                 {field === 'descricao' ? (change.descricao_proposta ?? '—')
                                                   : field === 'unidade' ? (change.unidade_proposta ?? '—')
-                                                  : formatNumber(change.quantidade_proposta ?? null, 4)}
+                                                  : formatNumber(change.quantidade_proposta ?? null, 2)}
                                               </div>
                                             </td>
                                           </tr>
@@ -1933,12 +1933,12 @@ export default function Analytics() {
                                   <tr key={item.numero_item} className={`border-b border-amber-50 hover:bg-amber-50/30 ${i % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'}`}>
                                     <td className="px-3 py-2 font-mono text-amber-700">{item.numero_item}</td>
                                     <td className="px-3 py-2 text-gray-700 max-w-[200px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
-                                    <td className="px-3 py-2 text-right text-gray-500">{qtdA != null ? formatNumber(qtdA, 3) : '—'}</td>
+                                    <td className="px-3 py-2 text-right text-gray-500">{qtdA != null ? formatNumber(qtdA, 2) : '—'}</td>
                                     <td className={`px-3 py-2 text-right font-semibold ${qtdDelta !== null && qtdDelta !== 0 ? 'text-amber-700' : 'text-gray-500'}`}>
-                                      {qtdB != null ? formatNumber(qtdB, 3) : '—'}
+                                      {qtdB != null ? formatNumber(qtdB, 2) : '—'}
                                     </td>
                                     <td className={`px-3 py-2 text-right font-semibold ${qtdDelta === null ? 'text-gray-300' : qtdDelta > 0 ? 'text-red-600' : qtdDelta < 0 ? 'text-green-700' : 'text-gray-400'}`}>
-                                      {qtdDelta !== null ? `${qtdDelta > 0 ? '+' : ''}${formatNumber(qtdDelta, 3)}` : '—'}
+                                      {qtdDelta !== null ? `${qtdDelta > 0 ? '+' : ''}${formatNumber(qtdDelta, 2)}` : '—'}
                                     </td>
                                     <td className="px-3 py-2 text-right text-gray-500">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
                                     <td className="px-3 py-2 text-right text-gray-600">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>
@@ -1989,9 +1989,9 @@ export default function Analytics() {
                                   <td className="px-3 py-1.5 font-mono text-gray-500 text-[11px]">{item.numero_item}</td>
                                   <td className="px-3 py-1.5 text-gray-700 max-w-[180px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
                                   <td className="px-3 py-1.5 text-center"><span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${statusBadge}`}>{statusLabel}</span></td>
-                                  <td className="px-3 py-1.5 text-right text-gray-400">{qChange ? formatNumber(Number(qChange.valor_a), 3) : '—'}</td>
+                                  <td className="px-3 py-1.5 text-right text-gray-400">{qChange ? formatNumber(Number(qChange.valor_a), 2) : '—'}</td>
                                   <td className={`px-3 py-1.5 text-right ${qChange && qChange.valor_a !== qChange.valor_b ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>
-                                    {qChange ? formatNumber(Number(qChange.valor_b), 3) : '—'}
+                                    {qChange ? formatNumber(Number(qChange.valor_b), 2) : '—'}
                                   </td>
                                   <td className="px-3 py-1.5 text-right text-gray-500">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
                                   <td className="px-3 py-1.5 text-right text-gray-600">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>

@@ -16,14 +16,14 @@ class PQItem(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
 
     # ── 12 COLUNAS DA PLANILHA PQ ─────────────────────────────────────────
-    numero_item      = Column(String(20),   nullable=False)   # 1 | 1.1 | 1.1.1
-    localidade       = Column(String(500))                     # Localidade / trecho
-    disciplina       = Column(String(500))                     # Civil | Elétrica | Mecânica…
-    categoria        = Column(String(500))                     # Terraplenagem | Pavimentação…
-    codigo           = Column(String(500))                     # SINAPI / SICRO / interno
-    descricao        = Column(Text,          nullable=False)    # Descrição completa do item
-    unidade          = Column(String(20),   nullable=False)    # m | m² | m³ | un | kg | t
-    quantidade       = Column(Numeric(18, 4), nullable=False)  # Quantidade contratada
+    numero_item      = Column(String(50),   nullable=False)   # 1 | 1.1 | 1.1.1
+    localidade       = Column(String(100))                     # Localidade / trecho
+    disciplina       = Column(String(100))                     # Civil | Elétrica | Mecânica…
+    categoria        = Column(String(100))                     # Terraplenagem | Pavimentação…
+    codigo           = Column(String(50))                      # SINAPI / SICRO / interno
+    descricao        = Column(Text,          nullable=False)    # Descrição completa do item (max 500 chars na UI)
+    unidade          = Column(String(50),   nullable=False)    # m | m² | m³ | un | kg | t
+    quantidade       = Column(Numeric(18, 2), nullable=False)  # Quantidade contratada (2 casas decimais)
     referencia_codigo= Column(String(50))                      # Código de referência externo
     preco_referencia = Column(Numeric(18, 4))                  # Preço unitário de referência
     # Preço Total RF = quantidade × preco_referencia (calculado)

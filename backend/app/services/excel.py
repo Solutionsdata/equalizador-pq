@@ -56,18 +56,18 @@ def _align(h="left", v="center", wrap=False) -> Alignment:
 # (rótulo, campo_model, largura, formato)
 # campo "_total_rf" = coluna calculada (qtd × preco_referencia)
 PQ_COLS = [
-    ("Item",             "numero_item",        8,  "text"),
-    ("Localidade",       "localidade",        20,  "text"),
-    ("Disciplina",       "disciplina",        16,  "text"),
-    ("Categoria",        "categoria",         20,  "text"),
-    ("Código",           "codigo",            13,  "text"),
-    ("Descrição",        "descricao",         52,  "text"),
-    ("Unidade Medida",   "unidade",           14,  "text"),
-    ("Quantidade",       "quantidade",        13,  "num4"),
-    ("Referência",       "referencia_codigo", 13,  "text"),
-    ("Preço Unit. RF",   "preco_referencia",  16,  "brl4"),
-    ("Preço Total RF",   "_total_rf",         16,  "brl2"),
-    ("Observação",       "observacao",        30,  "text"),
+    ("Item",             "numero_item",        15,  "text"),
+    ("Localidade",       "localidade",         30,  "text"),
+    ("Disciplina",       "disciplina",         25,  "text"),
+    ("Categoria",        "categoria",          25,  "text"),
+    ("Código",           "codigo",             20,  "text"),
+    ("Descrição",        "descricao",          60,  "text"),
+    ("Unidade Medida",   "unidade",            18,  "text"),
+    ("Quantidade",       "quantidade",         15,  "num2"),
+    ("Referência",       "referencia_codigo",  13,  "text"),
+    ("Preço Unit. RF",   "preco_referencia",   16,  "brl4"),
+    ("Preço Total RF",   "_total_rf",          16,  "brl2"),
+    ("Observação",       "observacao",         30,  "text"),
 ]
 
 # Posições fixas das colunas-chave na PQ (1-based)
@@ -83,6 +83,7 @@ TOTAL_PROP_COLS = PQ_NCOLS + 8  # 20
 
 FMT = {
     "text":  "@",
+    "num2":  "#,##0.00",
     "num4":  "#,##0.0000",
     "brl4":  'R$ #,##0.0000',
     "brl2":  'R$ #,##0.00',
