@@ -16,58 +16,45 @@ def _dec(v: float) -> Decimal:
     return Decimal(str(round(v, 4)))
 
 
-class AnalyticsService:
+def _bdi_factor(pi: ProposalItem, proposal: Proposal | None) -> float:
+    """BDI individual (fração) tem precedência; global (percentual) como fallback."""
+    com_price = pi.custo_unit_com_reidi
+    bdi_val = pi.bdi_com_reidi if com_price else pi.bdi
+    if bdi_val is not None:
+        return 1 + float(bdi_val)
+    return 1 + float(proposal.bdi_global or 0) / 100 if proposal else 1.0
 
-    @staticmethod
-    def _dedup_pq_items(items: list, db: Session) -> list:
-        """Deduplicate PQ items by content key, preferring items linked to proposal prices."""
-        item_ids = [item.id for item in items]
-        items_with_prices: set = set()
-        if item_ids:
-            rows = (
-                db.query(ProposalItem.pq_item_id)
-                .filter(ProposalItem.pq_item_id.in_(item_ids))
-                .distinct()
-                .all()
-            )
-            items_with_prices = {r.pq_item_id for r in rows}
-        seen: dict = {}
-        for item in items:
-            key = (
-                (item.numero_item or '').strip(),
-                (item.localidade or '').strip(),
-                (item.codigo or '').strip(),
-                (item.descricao or '').strip(),
-                (item.unidade or '').strip(),
-            )
-            if key not in seen:
-                seen[key] = item
-            else:
-                current = seen[key]
-                if item.id in items_with_prices and current.id not in items_with_prices:
-                    seen[key] = item
-                elif item.id not in items_with_prices and current.id not in items_with_prices:
-                    if item.id > current.id:
-                        seen[key] = item
-        return sorted(seen.values(), key=lambda x: (x.ordem, x.numero_item, x.id))
+
+def _effective_price(pi: ProposalItem, proposal: Proposal | None) -> float | None:
+    """Preço efetivo = custo unit. × (1 + BDI)."""
+    raw = pi.custo_unit_com_reidi or pi.preco_unitario
+    if not raw:
+        return None
+    return float(raw) * _bdi_factor(pi, proposal)
+
+
+class AnalyticsService:
 
     @staticmethod
     def get_pareto(db: Session, project_id: int, source: str = "referencia", revision_id: int | None = None) -> ParetoData:
         pq_q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             pq_q = pq_q.filter(PQItem.revision_id == revision_id)
-        pq_items = pq_q.order_by(PQItem.ordem, PQItem.numero_item).all()
-        pq_items = AnalyticsService._dedup_pq_items(pq_items, db)
+        pq_items = pq_q.order_by(PQItem.ordem, PQItem.id).all()
 
-        # Batch-load all proposal prices upfront (avoids N+1)
+        # Carrega preços com BDI aplicado quando source='propostas'
         pi_by_pq_id: dict[int, list[float]] = {}
         if source == "propostas":
             pq_ids = [item.id for item in pq_items]
             if pq_ids:
+                prop_q = db.query(Proposal).filter(Proposal.project_id == project_id)
+                if revision_id is not None:
+                    prop_q = prop_q.filter(Proposal.revision_id == revision_id)
+                proposals = {p.id: p for p in prop_q.all()}
                 for pi in db.query(ProposalItem).filter(ProposalItem.pq_item_id.in_(pq_ids)).all():
-                    price = pi.custo_unit_com_reidi or pi.preco_unitario
-                    if price:
-                        pi_by_pq_id.setdefault(pi.pq_item_id, []).append(float(price))
+                    eff = _effective_price(pi, proposals.get(pi.proposal_id))
+                    if eff and eff > 0:
+                        pi_by_pq_id.setdefault(pi.pq_item_id, []).append(eff)
 
         raw: list[dict] = []
         for item in pq_items:
@@ -134,15 +121,14 @@ class AnalyticsService:
         pq_q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             pq_q = pq_q.filter(PQItem.revision_id == revision_id)
-        pq_items = pq_q.order_by(PQItem.ordem, PQItem.numero_item).all()
-        pq_items = AnalyticsService._dedup_pq_items(pq_items, db)
+        pq_items = pq_q.order_by(PQItem.ordem, PQItem.id).all()
 
         prop_q = db.query(Proposal).filter(Proposal.project_id == project_id)
         if revision_id is not None:
             prop_q = prop_q.filter(Proposal.revision_id == revision_id)
         proposals = prop_q.all()
 
-        # Batch-load ALL ProposalItems in one query (eliminates N×M queries)
+        # Batch-load ALL ProposalItems em uma query (evita N×M queries)
         proposal_ids = [p.id for p in proposals]
         pq_item_ids = [item.id for item in pq_items]
         pi_map: dict[tuple[int, int], ProposalItem] = {}
@@ -167,23 +153,17 @@ class AnalyticsService:
 
             for p in proposals:
                 pi = pi_map.get((p.id, item.id))
-                # Use COM REIDI price for analytics; fall back to sem REIDI for old data
                 com_price = pi.custo_unit_com_reidi if pi else None
                 sem_price = pi.preco_unitario if pi else None
                 pu_raw = com_price or sem_price
                 if pi and pu_raw:
                     pu = float(pu_raw)
-                    bdi_val = pi.bdi_com_reidi if com_price else pi.bdi
-                    # Individual BDI stored as fraction (0.43 = 43%); global BDI stored as percentage (43 = 43%)
-                    if bdi_val is not None:
-                        bdi_factor = 1 + float(bdi_val)
-                    else:
-                        bdi_factor = 1 + float(p.bdi_global or 0) / 100
-                    total = float(item.quantidade) * pu * bdi_factor
+                    bdi_factor = _bdi_factor(pi, p)
+                    total_item = float(item.quantidade) * pu * bdi_factor
                     precos[str(p.id)] = pu
-                    totais[str(p.id)] = round(total, 2)
+                    totais[str(p.id)] = round(total_item, 2)
                     prices_list.append(pu)
-                    prop_totals[p.id] += total
+                    prop_totals[p.id] += total_item
                 else:
                     precos[str(p.id)] = None
                     totais[str(p.id)] = None
@@ -233,17 +213,17 @@ class AnalyticsService:
 
     @staticmethod
     def _avg_proposal_prices(db: Session, project_id: int, revision_id: int | None, pq_item_ids: list[int]) -> dict[int, float]:
-        """Returns average proposal unit price (COM REIDI or SEM REIDI) per PQ item id."""
+        """Preço médio efetivo (BDI aplicado, COM REIDI ou SEM REIDI) por PQ item id."""
         if not pq_item_ids:
             return {}
         prop_q = db.query(Proposal).filter(Proposal.project_id == project_id)
         if revision_id is not None:
             prop_q = prop_q.filter(Proposal.revision_id == revision_id)
-        prop_ids = [p.id for p in prop_q.with_entities(Proposal.id).all()]
+        proposals = {p.id: p for p in prop_q.all()}
+        prop_ids = list(proposals.keys())
         if not prop_ids:
             return {}
 
-        avg_prices: dict[int, float] = {}
         pi_rows = (
             db.query(ProposalItem)
             .filter(
@@ -254,19 +234,18 @@ class AnalyticsService:
         )
         buckets: dict[int, list[float]] = {}
         for pi in pi_rows:
-            price = float(pi.custo_unit_com_reidi or pi.preco_unitario or 0)
-            if price > 0:
-                buckets.setdefault(pi.pq_item_id, []).append(price)
-        for pq_id, prices in buckets.items():
-            avg_prices[pq_id] = sum(prices) / len(prices)
-        return avg_prices
+            eff = _effective_price(pi, proposals.get(pi.proposal_id))
+            if eff and eff > 0:
+                buckets.setdefault(pi.pq_item_id, []).append(eff)
+
+        return {pq_id: sum(prices) / len(prices) for pq_id, prices in buckets.items()}
 
     @staticmethod
     def get_discipline_summary(db: Session, project_id: int, revision_id: int | None = None) -> List[DisciplineSummary]:
         q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             q = q.filter(PQItem.revision_id == revision_id)
-        items = AnalyticsService._dedup_pq_items(q.all(), db)
+        items = q.order_by(PQItem.ordem, PQItem.id).all()
         avg_prices = AnalyticsService._avg_proposal_prices(db, project_id, revision_id, [i.id for i in items])
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
@@ -297,7 +276,7 @@ class AnalyticsService:
         q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             q = q.filter(PQItem.revision_id == revision_id)
-        items = AnalyticsService._dedup_pq_items(q.all(), db)
+        items = q.order_by(PQItem.ordem, PQItem.id).all()
         avg_prices = AnalyticsService._avg_proposal_prices(db, project_id, revision_id, [i.id for i in items])
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}
@@ -328,7 +307,7 @@ class AnalyticsService:
         q = db.query(PQItem).filter(PQItem.project_id == project_id)
         if revision_id is not None:
             q = q.filter(PQItem.revision_id == revision_id)
-        items = AnalyticsService._dedup_pq_items(q.all(), db)
+        items = q.order_by(PQItem.ordem, PQItem.id).all()
         avg_prices = AnalyticsService._avg_proposal_prices(db, project_id, revision_id, [i.id for i in items])
         totals: dict[str, float] = {}
         counts: dict[str, int] = {}

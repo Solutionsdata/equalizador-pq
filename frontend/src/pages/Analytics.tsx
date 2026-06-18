@@ -71,6 +71,28 @@ function pctBadge(pct: number | null) {
 
 // ── Helpers de cálculo local ──────────────────────────────────────────────────
 
+/** Agrupa itens com mesma descrição (tabela dinâmica), somando qtd e valor. */
+function consolidateByDescription(items: ABCItem[]): ABCItem[] {
+  const groups = new Map<string, { qty: number; value: number; base: ABCItem }>()
+  for (const item of items) {
+    const key = item.descricao.trim()
+    if (!key || key === '—') continue
+    const g = groups.get(key)
+    if (!g) {
+      groups.set(key, { qty: item.quantidade, value: item.valor_total, base: item })
+    } else {
+      g.qty += item.quantidade
+      g.value += item.valor_total
+    }
+  }
+  return Array.from(groups.values()).map(({ qty, value, base }) => ({
+    ...base,
+    quantidade: qty,
+    valor_total: value,
+    preco_medio: qty > 0 ? value / qty : base.preco_medio,
+  }))
+}
+
 function computeFilteredPareto(
   paretoData: ParetoData | undefined,
   equalization: EqualizationResponse | undefined,
@@ -79,10 +101,7 @@ function computeFilteredPareto(
 ): ParetoData | undefined {
   if (!paretoData) return undefined
 
-  const hasFilter = filters.localidade || filters.categoria || filters.disciplina || filters.fornecedores.length > 0
-  if (!hasFilter) return paretoData
-
-  // Filtrar itens por localidade/categoria/disciplina
+  // 1. Filtrar por localidade/categoria/disciplina
   let items: ABCItem[] = paretoData.items.filter((item) => {
     if (filters.localidade && item.localidade !== filters.localidade) return false
     if (filters.categoria && item.categoria !== filters.categoria) return false
@@ -90,7 +109,7 @@ function computeFilteredPareto(
     return true
   })
 
-  // Para source='propostas' com filtro de fornecedor, recalcular preco_medio
+  // 2. Para source='propostas' com filtro de fornecedor, recalcular preco_medio
   if (source === 'propostas' && filters.fornecedores.length > 0 && equalization) {
     items = items.map((item) => {
       const eqItem = equalization.items.find((i) => i.pq_item_id === item.pq_item_id)
@@ -105,7 +124,10 @@ function computeFilteredPareto(
     })
   }
 
-  // Recalcular posição, percentual, percentual_acumulado e classe
+  // 3. Consolidar por descrição (tabela dinâmica): soma qtd e valor de itens com mesma descrição
+  items = consolidateByDescription(items)
+
+  // 4. Recalcular posição, percentual, percentual_acumulado e classe ABC
   const sorted = [...items].sort((a, b) => b.valor_total - a.valor_total)
   const total_valor = sorted.reduce((s, i) => s + i.valor_total, 0)
   let acum = 0
