@@ -15,6 +15,8 @@ const PQ_HEADER_MAP: Record<string, string> = {
 }
 
 const PROP_HEADER_MAP: Record<string, string> = {
+  // ID interno — matching exato mesmo quando o Excel converte números de item
+  '_pq_item_id': 'pq_id', '_id': 'pq_id', 'pq_item_id': 'pq_id',
   'item': 'numero_item', 'no item': 'numero_item', 'numero item': 'numero_item',
   'custo unit. direto sem reidi': 'cud_sem',
   'custo unit direto sem reidi': 'cud_sem',
@@ -97,6 +99,8 @@ function parseCsvText(text: string): string[][] {
   return lines.map((l) => splitLine(l, sep))
 }
 
+export { parseCsvText }
+
 export async function parseCsvFile(file: File): Promise<object[]> {
   const text = await file.text()
   const rows = parseCsvText(text)
@@ -167,10 +171,23 @@ export interface ProposalPriceRow {
 
 export async function parseProposalCsvFile(
   file: File,
-  numToId: Map<string, number>
+  numToId: Map<string, number>,
+  idSet?: Set<number>          // conjunto de IDs válidos para validação do _pq_item_id
 ): Promise<ProposalPriceRow[]> {
   const text = await file.text()
-  const rows = parseCsvText(text)
+
+  // Tenta diferentes delimitadores caso o Excel tenha salvo com delimitador diferente
+  // Prioridade: ; > , > tab (nosso template usa ;)
+  let rows: string[][] = []
+  for (const sep of [';', ',', '\t']) {
+    const candidate = parseCsvTextWithSep(text, sep)
+    if (candidate.length > 1 && candidate[0].length >= 4) {
+      rows = candidate
+      break
+    }
+  }
+
+  if (rows.length === 0) throw new Error('Arquivo vazio ou formato não reconhecido.')
 
   let headerIdx = -1
   let colMap: Record<string, number> = {}
@@ -181,30 +198,47 @@ export async function parseProposalCsvFile(
       const field = PROP_HEADER_MAP[norm(rows[ri][ci])]
       if (field) local[field] = ci
     }
-    if ('numero_item' in local) {
+    if ('numero_item' in local || 'pq_id' in local) {
       headerIdx = ri
       colMap = local
       break
     }
   }
 
-  if (headerIdx === -1 || !('numero_item' in colMap)) {
+  if (headerIdx === -1) {
     throw new Error(
       'Cabeçalho "Item" não encontrado. Use o template CSV gerado pelo sistema.'
     )
   }
 
+  const hasPqId = 'pq_id' in colMap
   const result: ProposalPriceRow[] = []
   let skipped = 0
 
   for (let ri = headerIdx + 1; ri < rows.length; ri++) {
     const row = rows[ri]
-    const rawNum = String(row[colMap['numero_item']] ?? '').trim()
-    if (!rawNum) continue
 
-    // Try exact match first; if it fails, try replacing commas with dots to handle
-    // BR-locale Excel which converts item codes like "1.1" → "1,1" when saving as CSV
-    const pqId = numToId.get(rawNum) ?? numToId.get(rawNum.replace(/,/g, '.'))
+    let pqId: number | undefined
+
+    if (hasPqId) {
+      // Matching exato por ID interno — imune a conversões do Excel
+      const rawId = parseInt(String(row[colMap['pq_id']] ?? '').trim(), 10)
+      if (!isNaN(rawId) && rawId > 0) {
+        // Aceita se o ID está no conjunto de IDs válidos (ou se o conjunto não foi fornecido)
+        if (!idSet || idSet.has(rawId)) {
+          pqId = rawId
+        }
+      }
+    }
+
+    if (!pqId && 'numero_item' in colMap) {
+      // Fallback: matching por numero_item (templates antigos sem coluna _pq_item_id)
+      const rawNum = String(row[colMap['numero_item']] ?? '').trim()
+      if (rawNum) {
+        // Tenta exato, depois substitui vírgulas por pontos (Excel BR converte "1.1" → "1,1")
+        pqId = numToId.get(rawNum) ?? numToId.get(rawNum.replace(/,/g, '.'))
+      }
+    }
 
     if (!pqId) {
       skipped++
@@ -231,7 +265,15 @@ export async function parseProposalCsvFile(
     throw new Error('Nenhum preço encontrado. Preencha as colunas SEM REIDI ou COM REIDI e salve como CSV.')
 
   if (skipped > 0)
-    console.warn(`CSV import: ${skipped} linha(s) ignoradas — número de item não encontrado na PQ.`)
+    console.warn(`CSV import: ${skipped} linha(s) ignoradas — item não encontrado na PQ.`)
 
   return result
+}
+
+/** Versão interna de parseCsvText que aceita separador explícito. */
+function parseCsvTextWithSep(text: string, sep: string): string[][] {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '')
+  if (lines.length === 0) return []
+  return lines.map((l) => splitLine(l, sep))
 }

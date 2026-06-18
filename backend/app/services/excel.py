@@ -1241,11 +1241,17 @@ def gerar_proposta_csv(
     bdi_global: float = 0.0,
     proposal_items=None,
 ) -> io.BytesIO:
-    """Gera CSV de Proposta Comercial (12 colunas PQ + 4 colunas de preço, UTF-8 com BOM, separador ;)."""
+    """Gera CSV de Proposta Comercial.
+
+    Coluna '_pq_item_id' (1ª coluna) contém o ID interno do item — usada pelo importador
+    para matching exato, evitando falhas quando o Excel BR converte números de item
+    (ex: "1.10" → "1,1" ou "1.1" → "1,1").
+    """
     import csv as _csv
     output = io.StringIO()
     writer = _csv.writer(output, delimiter=';', lineterminator='\r\n')
     writer.writerow([
+        '_pq_item_id',  # ID interno — NÃO APAGUE esta coluna
         'Item', 'Localidade', 'Disciplina', 'Categoria', 'Codigo',
         'Descricao', 'Unidade Medida', 'Quantidade', 'Referencia',
         'Preco Unit. RF', 'Preco Total RF', 'Observacao',
@@ -1264,6 +1270,7 @@ def gerar_proposta_csv(
         ref_pu = float(item.preco_referencia) if item.preco_referencia else None
         ref_total = qty * ref_pu if ref_pu else ''
         writer.writerow([
+            item.id,  # ID interno para matching exato no importador
             item.numero_item,
             item.localidade or '',
             item.disciplina or '',

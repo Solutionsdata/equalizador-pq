@@ -134,7 +134,8 @@ export default function ProposalInput() {
     const toastId = toast.loading('Importando preços…')
     try {
       const numToId = new Map(pqItems.map((pq) => [String(pq.numero_item).trim(), pq.id]))
-      const rows = await parseProposalCsvFile(file, numToId)
+      const idSet = new Set(pqItems.map((pq) => pq.id))
+      const rows = await parseProposalCsvFile(file, numToId, idSet)
 
       await proposalsAPI.updateItems(rid, rows)
 
