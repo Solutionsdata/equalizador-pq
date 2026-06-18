@@ -91,11 +91,10 @@ class AnalyticsService:
             counters[classe] += 1
             valores[classe] += r["valor"]
 
-            desc = r["item"].descricao
             abc_items.append(ABCItem(
                 pq_item_id=r["item"].id,
                 numero_item=r["item"].numero_item,
-                descricao=desc[:60] + "…" if len(desc) > 60 else desc,
+                descricao=r["item"].descricao,
                 unidade=r["item"].unidade,
                 quantidade=r["item"].quantidade,
                 categoria=r["item"].categoria,
