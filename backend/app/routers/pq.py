@@ -45,44 +45,7 @@ def list_pq_items(
     q = db.query(PQItem).filter(PQItem.project_id == project_id)
     if revision_id is not None:
         q = q.filter(PQItem.revision_id == revision_id)
-    items = q.order_by(PQItem.id).all()
-
-    # Deduplicate within the revision: keep the item that has proposal prices linked.
-    # Multiple identical rows accumulate when PQ is imported more than once.
-    item_ids = [item.id for item in items]
-    items_with_prices: set[int] = set()
-    if item_ids:
-        rows = (
-            db.query(ProposalItem.pq_item_id)
-            .filter(ProposalItem.pq_item_id.in_(item_ids))
-            .distinct()
-            .all()
-        )
-        items_with_prices = {r.pq_item_id for r in rows}
-
-    seen: dict[tuple, PQItem] = {}
-    for item in items:
-        # Quantity intentionally excluded from key: items with same identity but different
-        # quantities (from re-imports or corrupted data) should collapse to one row.
-        key = (
-            (item.numero_item or '').strip(),
-            (item.localidade or '').strip(),
-            (item.codigo or '').strip(),
-            (item.descricao or '').strip(),
-            (item.unidade or '').strip(),
-        )
-        if key not in seen:
-            seen[key] = item
-        else:
-            current = seen[key]
-            # Prefer item with prices; when tied, prefer highest id (latest import)
-            if item.id in items_with_prices and current.id not in items_with_prices:
-                seen[key] = item
-            elif item.id not in items_with_prices and current.id not in items_with_prices:
-                if item.id > current.id:
-                    seen[key] = item
-
-    return sorted(seen.values(), key=lambda x: (x.ordem, x.numero_item, x.id))
+    return q.order_by(PQItem.ordem, PQItem.id).all()
 
 
 @router.post("/project/{project_id}", response_model=PQItemResponse, status_code=status.HTTP_201_CREATED)
@@ -529,9 +492,11 @@ async def import_pq_ws(
                 for i, raw in enumerate(rows):
                     num = str(raw.get("numero_item") or "").strip()
                     desc = str(raw.get("descricao") or "").strip()
-                    if not num or not desc:
+                    if not num and not desc:
                         continue
                     clean = {k: v for k, v in raw.items() if k in _ALLOWED_PQ_FIELDS}
+                    clean['numero_item'] = num or '—'
+                    clean['descricao'] = desc or '—'
                     clean.setdefault("ordem", total_imported + i)
                     clean_rows.append(clean)
 

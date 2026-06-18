@@ -103,22 +103,29 @@ export { parseCsvText }
 
 export async function parseCsvFile(file: File): Promise<object[]> {
   const text = await file.text()
-  const rows = parseCsvText(text)
 
+  // Tenta delimitadores em ordem de preferência (template usa ;).
+  // Usa o primeiro que produz cabeçalho válido — evita que Excel com locale BR
+  // quebre colunas ao salvar com ',' quando números decimais também usam ','.
+  let rows: string[][] = []
   let headerIdx = -1
   let colMap: Record<number, string> = {}
 
-  for (let ri = 0; ri < Math.min(10, rows.length); ri++) {
-    const local: Record<number, string> = {}
-    for (let ci = 0; ci < rows[ri].length; ci++) {
-      const field = PQ_HEADER_MAP[norm(rows[ri][ci])]
-      if (field) local[ci] = field
-    }
-    const vals = Object.values(local)
-    if (vals.includes('numero_item') && vals.includes('descricao')) {
-      headerIdx = ri
-      colMap = local
-      break
+  outer: for (const sep of [';', ',', '\t']) {
+    const candidate = parseCsvTextWithSep(text, sep)
+    for (let ri = 0; ri < Math.min(10, candidate.length); ri++) {
+      const local: Record<number, string> = {}
+      for (let ci = 0; ci < candidate[ri].length; ci++) {
+        const field = PQ_HEADER_MAP[norm(candidate[ri][ci])]
+        if (field) local[ci] = field
+      }
+      const vals = Object.values(local)
+      if (vals.includes('numero_item') && vals.includes('descricao')) {
+        rows = candidate
+        headerIdx = ri
+        colMap = local
+        break outer
+      }
     }
   }
 
@@ -137,15 +144,16 @@ export async function parseCsvFile(file: File): Promise<object[]> {
 
     const num = String(rd['numero_item'] ?? '').trim()
     const desc = String(rd['descricao'] ?? '').trim()
-    if (!num || !desc) continue
+    // Ignora somente linhas totalmente vazias; usa '—' como placeholder
+    if (!num && !desc) continue
 
     items.push({
-      numero_item: num,
+      numero_item: num || '—',
       localidade: toStr(rd['localidade']),
       disciplina: toStr(rd['disciplina']),
       categoria: toStr(rd['categoria']),
       codigo: toStr(rd['codigo']),
-      descricao: desc,
+      descricao: desc || '—',
       unidade: toStr(rd['unidade']) ?? 'un',
       quantidade: toFloat(rd['quantidade']) ?? 0,
       referencia_codigo: toStr(rd['referencia_codigo']),
