@@ -71,26 +71,108 @@ function pctBadge(pct: number | null) {
 
 // ── Helpers de cálculo local ──────────────────────────────────────────────────
 
+/** Campos Decimal do backend chegam como string no JSON — garante número. */
+const n = (v: unknown): number => Number(v) || 0
+
+/** Normaliza descrição para agrupamento: case-insensitive, espaços colapsados. */
+const normalizeDesc = (d: string) => (d ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+
 /** Agrupa itens com mesma descrição (tabela dinâmica), somando qtd e valor. */
 function consolidateByDescription(items: ABCItem[]): ABCItem[] {
-  const groups = new Map<string, { qty: number; value: number; base: ABCItem }>()
+  const groups = new Map<string, { qty: number; pricedQty: number; value: number; base: ABCItem }>()
   for (const item of items) {
-    const key = item.descricao.trim()
-    if (!key || key === '—') continue
+    // Normaliza para comparação, mas mantém texto original no base
+    const key = normalizeDesc(item.descricao) || '__sem_desc'
+    const qty = n(item.quantidade)
+    const value = n(item.valor_total)
     const g = groups.get(key)
     if (!g) {
-      groups.set(key, { qty: item.quantidade, value: item.valor_total, base: item })
+      groups.set(key, { qty, pricedQty: value > 0 ? qty : 0, value, base: item })
     } else {
-      g.qty += item.quantidade
-      g.value += item.valor_total
+      g.qty += qty
+      g.pricedQty += value > 0 ? qty : 0
+      g.value += value
     }
   }
-  return Array.from(groups.values()).map(({ qty, value, base }) => ({
+  // pricedQty garante que itens sem preço não diluem a média
+  return Array.from(groups.values()).map(({ qty, pricedQty, value, base }) => ({
     ...base,
     quantidade: qty,
     valor_total: value,
-    preco_medio: qty > 0 ? value / qty : base.preco_medio,
+    preco_medio: pricedQty > 0 ? value / pricedQty : 0,
   }))
+}
+
+/**
+ * Consolida itens de equalização com mesma descrição: soma qtd, preço médio
+ * ponderado por fornecedor (valor_total_fornecedor / qtd_total).
+ * Usado em Comparativo e Cherry Picking — NÃO usar em Por Fornecedor.
+ */
+function consolidateEqItemsByDescription(
+  items: EqualizationResponse['items'],
+): EqualizationResponse['items'] {
+  const groups = new Map<string, typeof items>()
+  for (const item of items) {
+    const key = normalizeDesc(item.descricao) || '__sem_desc'
+    const g = groups.get(key)
+    if (!g) groups.set(key, [item])
+    else g.push(item)
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return Array.from(groups.values()).map((grp): any => {
+    if (grp.length === 1) return grp[0]
+    const base = grp[0]
+    const totalQty = grp.reduce((s, i) => s + n(i.quantidade), 0)
+
+    // Preço médio ponderado por fornecedor: Σ(qty_i × price_i) / Σ qty_i
+    const sids = new Set<string>()
+    grp.forEach((i) => Object.keys(i.precos).forEach((k) => sids.add(k)))
+
+    const precos: Record<string, number | null> = {}
+    const totais: Record<string, number | null> = {}
+    for (const sid of sids) {
+      let valSum = 0; let qtyWithP = 0
+      for (const i of grp) {
+        const p = i.precos[sid]
+        if (p != null) { valSum += n(p) * n(i.quantidade); qtyWithP += n(i.quantidade) }
+      }
+      if (qtyWithP > 0) {
+        precos[sid] = valSum / qtyWithP
+        totais[sid] = (valSum / qtyWithP) * totalQty
+      } else { precos[sid] = null; totais[sid] = null }
+    }
+
+    // Preço de referência ponderado
+    const refValSum = grp.reduce((s, i) => {
+      const r = n(i.preco_referencia ?? 0)
+      return r > 0 ? s + r * n(i.quantidade) : s
+    }, 0)
+    const refQtySum = grp.reduce((s, i) => n(i.preco_referencia ?? 0) > 0 ? s + n(i.quantidade) : s, 0)
+    const precoRef = refQtySum > 0 ? refValSum / refQtySum : null
+
+    // Estatísticas dos preços consolidados por fornecedor
+    const vals = Object.values(precos).filter((p): p is number => p != null)
+    const preco_medio = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+    const preco_minimo = vals.length > 0 ? Math.min(...vals) : null
+    const preco_maximo = vals.length > 0 ? Math.max(...vals) : null
+    const desvio_padrao = vals.length > 1
+      ? Math.sqrt(vals.reduce((s, p) => s + (p - (preco_medio ?? 0)) ** 2, 0) / vals.length)
+      : null
+
+    return {
+      ...base,
+      quantidade: totalQty,
+      preco_referencia: precoRef,
+      valor_referencia: precoRef != null ? precoRef * totalQty : null,
+      precos,
+      totais,
+      preco_medio,
+      preco_minimo,
+      preco_maximo,
+      desvio_padrao,
+    }
+  })
 }
 
 function computeFilteredPareto(
@@ -109,6 +191,42 @@ function computeFilteredPareto(
     return true
   })
 
+  // 1b. Suplementar com itens sem preço do equalization — garante que TODAS as
+  //     descrições da planilha apareçam na curva ABC (com valor=0, classe C)
+  if (equalization) {
+    const presentKeys = new Set(items.map((i) => normalizeDesc(i.descricao)))
+    const zeroAgg = new Map<string, { qty: number; base: EqualizationResponse['items'][number] }>()
+    for (const ei of equalization.items) {
+      if (filters.localidade && ei.localidade !== filters.localidade) continue
+      if (filters.categoria && ei.categoria !== filters.categoria) continue
+      if (filters.disciplina && ei.disciplina !== filters.disciplina) continue
+      const key = normalizeDesc(ei.descricao) || '__sem_desc'
+      if (presentKeys.has(key)) continue
+      const agg = zeroAgg.get(key)
+      if (!agg) zeroAgg.set(key, { qty: n(ei.quantidade), base: ei })
+      else agg.qty += n(ei.quantidade)
+    }
+    if (zeroAgg.size > 0) {
+      const zeroItems = Array.from(zeroAgg.values()).map(({ qty, base }) => ({
+        pq_item_id: base.pq_item_id,
+        numero_item: base.numero_item,
+        descricao: base.descricao,
+        unidade: base.unidade ?? 'un',
+        quantidade: qty,
+        categoria: base.categoria ?? null,
+        disciplina: base.disciplina ?? null,
+        localidade: base.localidade ?? null,
+        preco_medio: 0,
+        valor_total: 0,
+        percentual: 0,
+        percentual_acumulado: 0,
+        classe: 'C' as const,
+        posicao: 0,
+      } as ABCItem))
+      items = [...items, ...zeroItems]
+    }
+  }
+
   // 2. Para source='propostas' com filtro de fornecedor, recalcular preco_medio
   if (source === 'propostas' && filters.fornecedores.length > 0 && equalization) {
     items = items.map((item) => {
@@ -119,8 +237,8 @@ function computeFilteredPareto(
         .filter((p): p is number => p != null)
       const preco_medio = prices.length > 0
         ? prices.reduce((a, b) => a + b, 0) / prices.length
-        : item.preco_medio
-      return { ...item, preco_medio, valor_total: preco_medio * item.quantidade }
+        : n(item.preco_medio)
+      return { ...item, preco_medio, valor_total: preco_medio * n(item.quantidade) }
     })
   }
 
@@ -128,15 +246,16 @@ function computeFilteredPareto(
   items = consolidateByDescription(items)
 
   // 4. Recalcular posição, percentual, percentual_acumulado e classe ABC
-  const sorted = [...items].sort((a, b) => b.valor_total - a.valor_total)
-  const total_valor = sorted.reduce((s, i) => s + i.valor_total, 0)
+  const sorted = [...items].sort((a, b) => n(b.valor_total) - n(a.valor_total))
+  const total_valor = sorted.reduce((s, i) => s + n(i.valor_total), 0)
   let acum = 0
   const newItems: ABCItem[] = sorted.map((item, idx) => {
-    const percentual = total_valor > 0 ? (item.valor_total / total_valor) * 100 : 0
+    const vt = n(item.valor_total)
+    const percentual = total_valor > 0 ? (vt / total_valor) * 100 : 0
     acum += percentual
     const percentual_acumulado = acum
     const classe = percentual_acumulado <= 80 ? 'A' : percentual_acumulado <= 95 ? 'B' : 'C'
-    return { ...item, posicao: idx + 1, percentual, percentual_acumulado, classe } as ABCItem
+    return { ...item, valor_total: vt, posicao: idx + 1, percentual, percentual_acumulado, classe } as ABCItem
   })
 
   return {
@@ -173,15 +292,15 @@ function computeDistFromEq(
   const enriched = filteredItems.map((item) => {
     let valor_computed: number
     if (source === 'referencia') {
-      valor_computed = (item.preco_referencia ?? item.preco_medio ?? 0) * item.quantidade
+      valor_computed = n(item.preco_referencia ?? item.preco_medio ?? 0) * n(item.quantidade)
     } else {
       const prices = filteredProps
         .map((p) => item.precos[String(p.id)])
         .filter((p): p is number => p != null)
       const preco_medio = prices.length > 0
         ? prices.reduce((a, b) => a + b, 0) / prices.length
-        : (item.preco_referencia ?? 0)
-      valor_computed = preco_medio * item.quantidade
+        : n(item.preco_referencia ?? 0)
+      valor_computed = preco_medio * n(item.quantidade)
     }
     return { ...item, valor_computed }
   })
@@ -444,19 +563,21 @@ function PanelComparativo({
     if (filters.localidade && item.localidade !== filters.localidade) return false
     return true
   })
+  // Consolida por descrição: agrupa linhas com mesma descrição, soma qtd e faz preço ponderado
+  const consolidatedItems = consolidateEqItemsByDescription(filteredItems)
 
   const sorted = useMemo(() => {
-    return [...filteredItems].sort((a, b) => {
+    return [...consolidatedItems].sort((a, b) => {
       let va: number | string = a.numero_item
       let vb: number | string = b.numero_item
       if (sortCol === 'descricao') { va = a.descricao; vb = b.descricao }
-      else if (sortCol === 'ref') { va = a.preco_referencia ?? 0; vb = b.preco_referencia ?? 0 }
-      else if (sortCol === 'media') { va = a.preco_medio ?? 0; vb = b.preco_medio ?? 0 }
+      else if (sortCol === 'ref') { va = n(a.preco_referencia ?? 0) * n(a.quantidade); vb = n(b.preco_referencia ?? 0) * n(b.quantidade) }
+      else if (sortCol === 'media') { va = n(a.preco_medio ?? 0) * n(a.quantidade); vb = n(b.preco_medio ?? 0) * n(b.quantidade) }
       else if (sortCol === 'stddev') { va = a.desvio_padrao ?? 0; vb = b.desvio_padrao ?? 0 }
       const r = typeof va === 'string' ? va.localeCompare(vb as string) : (va as number) - (vb as number)
       return sortDir === 'asc' ? r : -r
     })
-  }, [filteredItems, sortCol, sortDir])
+  }, [consolidatedItems, sortCol, sortDir])
 
   function toggleSort(col: string) {
     if (sortCol === col) setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
@@ -510,10 +631,10 @@ function PanelComparativo({
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-            Preços Unitários — {sorted.length} itens
+            Total por Descrição — {sorted.length} descrições consolidadas
           </h3>
           <span className="text-xs text-gray-400">
-            {source === 'referencia' ? 'Desvio vs Preço Ref. · Verde = abaixo · Vermelho = acima +20%' : 'Desvio vs Média Propostas · Verde = abaixo · Vermelho = acima +20%'}
+            {source === 'referencia' ? 'Desvio vs Total Ref. · Verde = abaixo · Vermelho = acima +20%' : 'Desvio vs Total Média · Verde = abaixo · Vermelho = acima +20%'}
           </span>
         </div>
         <div className="overflow-auto rounded-xl border border-gray-200">
@@ -532,15 +653,14 @@ function PanelComparativo({
                 >
                   <div className="flex items-center gap-1">Descrição <SortIcon col="descricao" /></div>
                 </th>
-                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Un</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Qtd</th>
+                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Qtd Total</th>
                 <th
                   className="px-3 py-2.5 text-right font-semibold cursor-pointer whitespace-nowrap"
                   style={{ backgroundColor: '#E8EDF6', color: source === 'referencia' ? '#1A3A6B' : '#6B7280' }}
                   onClick={() => toggleSort('ref')}
                 >
                   <div className="flex items-center justify-end gap-1">
-                    {source === 'referencia' ? '★ P. Ref.' : 'P. Ref.'} <SortIcon col="ref" />
+                    {source === 'referencia' ? '★ Total Ref.' : 'Total Ref.'} <SortIcon col="ref" />
                   </div>
                 </th>
                 <th
@@ -549,19 +669,13 @@ function PanelComparativo({
                   onClick={() => toggleSort('media')}
                 >
                   <div className="flex items-center justify-end gap-1">
-                    {source === 'propostas' ? '★ Média' : 'Média'} <SortIcon col="media" />
+                    {source === 'propostas' ? '★ Total Média' : 'Total Média'} <SortIcon col="media" />
                   </div>
                 </th>
-                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Mín</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Máx</th>
-                <th
-                  className="px-3 py-2.5 text-right font-semibold text-gray-600 cursor-pointer whitespace-nowrap"
-                  onClick={() => toggleSort('stddev')}
-                >
-                  <div className="flex items-center justify-end gap-1">σ <SortIcon col="stddev" /></div>
-                </th>
+                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Total Mín</th>
+                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Total Máx</th>
                 {visibleProposals.map((p) => (
-                  <th key={p.id} className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap max-w-[100px]">
+                  <th key={p.id} className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap max-w-[120px]">
                     <div className="truncate" title={p.empresa}>{p.empresa}</div>
                   </th>
                 ))}
@@ -569,11 +683,14 @@ function PanelComparativo({
             </thead>
             <tbody>
               {sorted.map((item, idx) => {
-                const refBase = source === 'referencia' ? item.preco_referencia : item.preco_medio
+                const qty = n(item.quantidade)
+                const totalRef = n(item.preco_referencia ?? 0) * qty
+                const totalMedia = n(item.preco_medio ?? 0) * qty
+                const refBase = source === 'referencia' ? totalRef : totalMedia
                 return (
-                <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-slate-50`}>
+                <tr key={item.descricao} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-slate-50`}>
                   <td className="px-3 py-2 font-mono text-gray-500 sticky left-0 bg-inherit">{item.numero_item}</td>
-                  <td className="px-3 py-2 text-gray-700 max-w-[200px]">
+                  <td className="px-3 py-2 text-gray-700 max-w-[220px]">
                     <div className="truncate" title={item.descricao}>{item.descricao}</div>
                     {(item.localidade || item.categoria || item.disciplina) && (
                       <div className="text-[10px] text-gray-400 truncate">
@@ -581,34 +698,37 @@ function PanelComparativo({
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right text-gray-500">{item.unidade}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatNumber(item.quantidade, 0)}</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{formatNumber(qty, 0)}</td>
                   <td className="px-3 py-2 text-right font-medium" style={{ color: '#1A3A6B', backgroundColor: source === 'referencia' ? '#E8EDF6' : undefined }}>
-                    {formatBRL(item.preco_referencia)}
+                    {totalRef > 0 ? formatBRL(totalRef) : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-2 text-right font-medium" style={{ color: '#1A3A6B', backgroundColor: source === 'propostas' ? '#E8EDF6' : undefined }}>
-                    {formatBRL(item.preco_medio)}
+                    {totalMedia > 0 ? formatBRL(totalMedia) : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="px-3 py-2 text-right text-green-700">{formatBRL(item.preco_minimo)}</td>
-                  <td className="px-3 py-2 text-right text-red-600">{formatBRL(item.preco_maximo)}</td>
-                  <td className="px-3 py-2 text-right text-gray-500">{item.desvio_padrao != null ? formatNumber(item.desvio_padrao) : '—'}</td>
+                  <td className="px-3 py-2 text-right text-green-700">
+                    {n(item.preco_minimo ?? 0) > 0 ? formatBRL(n(item.preco_minimo) * qty) : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-red-600">
+                    {n(item.preco_maximo ?? 0) > 0 ? formatBRL(n(item.preco_maximo) * qty) : <span className="text-gray-300">—</span>}
+                  </td>
                   {visibleProposals.map((p) => {
                     const price = item.precos[String(p.id)]
-                    const pct = price != null ? pctDiff(price, refBase ?? undefined) : null
+                    const total = item.totais?.[String(p.id)] ?? (price != null ? price * qty : null)
+                    const pct = total != null && refBase > 0 ? pctDiff(total, refBase) : null
                     const isMin = price != null && price === item.preco_minimo
                     return (
                       <td
                         key={p.id}
                         className={`px-3 py-2 text-right whitespace-nowrap ${
-                          price == null ? 'text-gray-200' :
+                          total == null ? 'text-gray-200' :
                           isMin ? 'bg-green-50 text-green-700 font-semibold' :
                           pct != null && pct > 20 ? 'bg-red-50 text-red-600' :
                           pct != null && pct > 5 ? 'bg-amber-50 text-amber-700' : 'text-gray-700'
                         }`}
                       >
-                        {price == null ? '—' : (
+                        {total == null ? '—' : (
                           <div>
-                            {formatBRL(price)}
+                            {formatBRL(total)}
                             <div>{pctBadge(pct)}</div>
                           </div>
                         )}
@@ -643,9 +763,11 @@ function PanelCherryPicking({
     if (filters.localidade && item.localidade !== filters.localidade) return false
     return true
   })
+  // Consolida por descrição antes de calcular cherry picking
+  const consolidatedItems = consolidateEqItemsByDescription(filteredItems)
 
-  // For each item: find who offers minimum price
-  const cherryRows = filteredItems.map((item) => {
+  // For each consolidated description: find who offers minimum price
+  const cherryRows = consolidatedItems.map((item) => {
     let minPrice: number | null = null
     let minSupplier: string | null = null
     let minPropId: string | null = null
@@ -659,7 +781,7 @@ function PanelCherryPicking({
       }
     }
 
-    const qty = item.quantidade ?? 0
+    const qty = n(item.quantidade)
     const cherryTotal = minPrice != null ? minPrice * qty : null
     const basePrice = source === 'referencia' ? item.preco_referencia : item.preco_medio
     const refTotal = basePrice != null ? basePrice * qty : null
@@ -761,12 +883,12 @@ function PanelCherryPicking({
           </thead>
           <tbody>
             {cherryRows.map(({ item, minPrice, minSupplier, cherryTotal, refTotal, savings, savingsPct, basePrice }, idx) => (
-              <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-slate-50`}>
+              <tr key={item.descricao} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-slate-50`}>
                 <td className="px-3 py-2 font-mono text-gray-500">{item.numero_item}</td>
                 <td className="px-3 py-2 text-gray-700 max-w-[200px]">
                   <div className="truncate" title={item.descricao}>{item.descricao}</div>
                 </td>
-                <td className="px-3 py-2 text-right text-gray-600">{formatNumber(item.quantidade, 0)}</td>
+                <td className="px-3 py-2 text-right text-gray-600">{formatNumber(n(item.quantidade), 0)}</td>
                 <td className="px-3 py-2 text-right" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6' }}>{formatBRL(basePrice)}</td>
                 <td className="px-3 py-2 text-right" style={{ color: '#1A3A6B', backgroundColor: '#E8EDF6' }}>{formatBRL(refTotal)}</td>
                 <td className="px-3 py-2 text-green-700 font-medium bg-green-50/40">
@@ -827,8 +949,8 @@ function PanelFornecedores({
 
   // Base de comparação: média das propostas ou preço de referência
   const baseTotal = filteredItems.reduce((acc, item) => {
-    const base = source === 'referencia' ? (item.preco_referencia ?? item.preco_medio ?? 0) : (item.preco_medio ?? 0)
-    return acc + base * item.quantidade
+    const base = source === 'referencia' ? n(item.preco_referencia ?? item.preco_medio ?? 0) : n(item.preco_medio ?? 0)
+    return acc + base * n(item.quantidade)
   }, 0)
 
   // cherry pick wins per supplier
@@ -1003,10 +1125,10 @@ function PanelFornecedores({
         ))}
       </div>
 
-      {/* Tabela comparativa vs média */}
+      {/* Tabela comparativa — preço total por linha */}
       <div>
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          Preço unitário × {source === 'referencia' ? 'Referência PQ' : 'Média das Propostas'} (desvio em %)
+          Preço Total por Linha × {source === 'referencia' ? 'Referência PQ' : 'Média das Propostas'}
         </h3>
         <div className="overflow-auto rounded-xl border border-gray-200">
           <table className="w-full text-xs border-collapse min-w-max">
@@ -1014,64 +1136,77 @@ function PanelFornecedores({
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Item</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Descrição</th>
+                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap">Qtd</th>
                 <th
                   className="px-3 py-2.5 text-right font-semibold whitespace-nowrap"
                   style={source === 'referencia' ? { backgroundColor: '#E8EDF6', color: '#1A3A6B' } : { color: '#4B5563' }}
                 >
-                  {source === 'referencia' ? '★ Ref. PQ' : 'Ref. PQ'}
+                  {source === 'referencia' ? '★ Total Ref.' : 'Total Ref.'}
                 </th>
                 <th
                   className="px-3 py-2.5 text-right font-semibold whitespace-nowrap"
                   style={source === 'propostas' ? { backgroundColor: '#E8EDF6', color: '#1A3A6B' } : { color: '#4B5563' }}
                 >
-                  {source === 'propostas' ? '★ Média' : 'Média'}
+                  {source === 'propostas' ? '★ Total Média' : 'Total Média'}
                 </th>
                 {proposals.map((p) => (
-                  <th key={p.id} className="px-3 py-2.5 text-right font-semibold text-gray-600 max-w-[110px]">
+                  <th key={p.id} className="px-3 py-2.5 text-right font-semibold text-gray-600 max-w-[120px]">
                     <div className="truncate" title={p.empresa}>{p.empresa}</div>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filteredItems.slice(0, 100).map((item, idx) => (
+              {filteredItems.slice(0, 200).map((item, idx) => {
+                const qty = n(item.quantidade)
+                const totalRef = n(item.preco_referencia ?? 0) * qty
+                const totalMedia = n(item.preco_medio ?? 0) * qty
+                const baseRef = source === 'referencia' ? totalRef : totalMedia
+                return (
                 <tr key={item.pq_item_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-slate-50`}>
                   <td className="px-3 py-1.5 font-mono text-gray-500 whitespace-nowrap">{item.numero_item}</td>
-                  <td className="px-3 py-1.5 text-gray-700 max-w-[180px]">
+                  <td className="px-3 py-1.5 text-gray-700 max-w-[200px]">
                     <div className="truncate" title={item.descricao}>{item.descricao}</div>
                   </td>
+                  <td className="px-3 py-1.5 text-right text-gray-500 whitespace-nowrap">{formatNumber(qty, 0)}</td>
                   <td className="px-3 py-1.5 text-right whitespace-nowrap font-medium"
                     style={{ color: '#1A3A6B', backgroundColor: source === 'referencia' ? '#E8EDF6' : undefined }}>
-                    {formatBRL(item.preco_referencia)}
+                    {totalRef > 0 ? formatBRL(totalRef) : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-1.5 text-right font-medium whitespace-nowrap"
                     style={{ color: '#1A3A6B', backgroundColor: source === 'propostas' ? '#E8EDF6' : undefined }}>
-                    {formatBRL(item.preco_medio)}
+                    {totalMedia > 0 ? formatBRL(totalMedia) : <span className="text-gray-300">—</span>}
                   </td>
                   {proposals.map((p) => {
                     const price = item.precos[String(p.id)]
-                    const refBase = source === 'referencia'
-                      ? (item.preco_referencia ?? item.preco_medio ?? undefined)
-                      : (item.preco_medio ?? undefined)
-                    const pct = price != null ? pctDiff(price, refBase) : null
+                    const total = price != null ? price * qty : null
+                    const pct = total != null && baseRef > 0 ? pctDiff(total, baseRef) : null
+                    const isMin = price != null && price === item.preco_minimo
                     return (
                       <td key={p.id} className={`px-3 py-1.5 text-right whitespace-nowrap ${
-                        price == null ? 'text-gray-200' :
+                        total == null ? 'text-gray-200' :
+                        isMin ? 'bg-green-50 text-green-700 font-semibold' :
                         pct != null && pct > 10 ? 'bg-red-50 text-red-600' :
                         pct != null && pct < -10 ? 'bg-green-50 text-green-700' :
                         'text-gray-700'
                       }`}>
-                        {price == null ? '—' : pctBadge(pct)}
+                        {total == null ? '—' : (
+                          <div>
+                            {formatBRL(total)}
+                            <div>{pctBadge(pct)}</div>
+                          </div>
+                        )}
                       </td>
                     )
                   })}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
-          {filteredItems.length > 100 && (
+          {filteredItems.length > 200 && (
             <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
-              Exibindo 100 de {filteredItems.length} itens. Use filtros para refinar.
+              Exibindo 200 de {filteredItems.length} itens. Use filtros para refinar.
             </div>
           )}
         </div>
