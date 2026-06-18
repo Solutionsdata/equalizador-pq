@@ -43,6 +43,7 @@ export interface Project {
   numero_licitacao?: string
   tipo_obra: WorkType
   extensao_km?: number | null
+  extensao_unidade?: string | null
   spe_unidade?: string | null
   status: ProjectStatus
   created_at: string

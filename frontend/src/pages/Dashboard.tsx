@@ -644,7 +644,7 @@ export default function Dashboard() {
             iconBg="bg-green-50" iconColor="text-green-600" border="border-green-100"
           />
           <KpiCard
-            label="Volume Equalizado"
+            label="Montante Contratado"
             value={totalValorEq > 0 ? fmtShort(totalValorEq) : '—'}
             sub={`${baseline.length} contrato${baseline.length !== 1 ? 's' : ''} premiado${baseline.length !== 1 ? 's' : ''}`}
             icon={TrendingUp}

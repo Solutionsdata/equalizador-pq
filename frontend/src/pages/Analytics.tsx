@@ -1238,7 +1238,10 @@ export default function Analytics() {
   async function handleExport() {
     setExporting(true)
     try {
-      const res = await analyticsAPI.exportExcel(pid, selectedRevisionId)
+      const activeFilters = (filters.categoria || filters.disciplina || filters.localidade || filters.fornecedores.length > 0)
+        ? filters
+        : undefined
+      const res = await analyticsAPI.exportExcel(pid, selectedRevisionId, activeFilters)
       downloadBlob(res.data, `equalizacao_${project?.nome ?? pid}.xlsx`)
       toast.success('Relatório exportado com sucesso')
     } catch {

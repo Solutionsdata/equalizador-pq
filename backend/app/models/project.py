@@ -22,6 +22,7 @@ class Project(Base):
     numero_licitacao = Column(String(100))
     tipo_obra = Column(String(100), default="INFRAESTRUTURA", nullable=False)
     extensao_km = Column(Numeric(10, 3), nullable=True)
+    extensao_unidade = Column(String(20), nullable=True, default="km")
     spe_unidade = Column(String(100), nullable=True)
     status = Column(Enum(ProjectStatus), default=ProjectStatus.EM_ANDAMENTO, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

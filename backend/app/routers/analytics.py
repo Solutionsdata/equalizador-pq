@@ -378,10 +378,13 @@ def get_baseline(
 
 @router.get("/baseline/export")
 def export_baseline_excel(
+    filter_tr: Optional[str] = Query(default=None),
+    filter_empresa: Optional[str] = Query(default=None),
+    filter_ym: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Exporta o Baseline completo em Excel (multi-aba)."""
+    """Exporta o Baseline (com filtros opcionais) em Excel (multi-aba)."""
     owned = db.query(Project).filter(Project.user_id == current_user.id).all()
     shared_ids = [
         s.project_id
@@ -442,6 +445,16 @@ def export_baseline_excel(
             "items": items,
         })
 
+    # Aplica filtros se fornecidos
+    if filter_tr:
+        ft = filter_tr.lower()
+        entries = [e for e in entries if ft in (e.get("numero_licitacao") or "").lower()]
+    if filter_empresa:
+        fe = filter_empresa.lower()
+        entries = [e for e in entries if fe in (e.get("empresa") or "").lower()]
+    if filter_ym:
+        entries = [e for e in entries if (e.get("data_premiacao") or "")[:7] == filter_ym]
+
     buf = gerar_baseline_excel(entries)
     return StreamingResponse(
         buf,
@@ -454,6 +467,10 @@ def export_baseline_excel(
 def export_analytics_excel(
     project_id: int,
     revision_id: Optional[int] = Query(default=None),
+    filter_categoria: Optional[str] = Query(default=None),
+    filter_disciplina: Optional[str] = Query(default=None),
+    filter_localidade: Optional[str] = Query(default=None),
+    filter_fornecedores: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -471,10 +488,37 @@ def export_analytics_excel(
             return obj.dict()
         return {}
 
+    eq_dict = _to_dict(eq_data)
+    pareto_dict = _to_dict(pareto_data)
+
+    # Aplica filtros de itens/fornecedores se fornecidos
+    fornec_ids: Optional[set] = None
+    if filter_fornecedores:
+        fornec_ids = set(filter_fornecedores.split(","))
+        eq_dict["proposals"] = [p for p in eq_dict.get("proposals", []) if str(p.get("id", "")) in fornec_ids]
+
+    def _item_passes(item: dict) -> bool:
+        if filter_categoria and item.get("categoria") != filter_categoria:
+            return False
+        if filter_disciplina and item.get("disciplina") != filter_disciplina:
+            return False
+        if filter_localidade and item.get("localidade") != filter_localidade:
+            return False
+        return True
+
+    if filter_categoria or filter_disciplina or filter_localidade:
+        eq_dict["items"] = [i for i in eq_dict.get("items", []) if _item_passes(i)]
+        pareto_dict["items"] = [i for i in pareto_dict.get("items", []) if _item_passes(i)]
+
+    if fornec_ids:
+        for item in eq_dict.get("items", []):
+            if "precos" in item:
+                item["precos"] = {k: v for k, v in item["precos"].items() if k in fornec_ids}
+
     buf = gerar_relatorio_equalizacao(
         project.nome,
-        _to_dict(eq_data),
-        _to_dict(pareto_data),
+        eq_dict,
+        pareto_dict,
     )
     safe_name = "".join(c for c in project.nome if c.isalnum() or c in " _-")[:40]
     rev_suffix = ""

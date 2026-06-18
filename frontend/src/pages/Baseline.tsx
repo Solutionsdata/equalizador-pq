@@ -168,7 +168,11 @@ export default function Baseline() {
   async function handleExport() {
     const tid = toast.loading('Gerando Excel…')
     try {
-      const res = await analyticsAPI.exportBaseline()
+      const params: { filter_tr?: string; filter_empresa?: string; filter_ym?: string } = {}
+      if (filterTR) params.filter_tr = filterTR
+      if (filterEmpresa) params.filter_empresa = filterEmpresa
+      if (filterYM) params.filter_ym = filterYM
+      const res = await analyticsAPI.exportBaseline(Object.keys(params).length ? params : undefined)
       downloadBlob(res.data, 'baseline_contratos.xlsx')
       toast.success('Exportado!', { id: tid })
     } catch {

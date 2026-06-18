@@ -1,14 +1,17 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { projectsAPI, sharingAPI } from '../services/api'
-import type { Project, ProjectStatus, SharedUser } from '../types'
-import { TIPO_OBRA_OPTIONS, SPE_OPTIONS, getTipoObraLabel, STATUS_LABELS } from '../types'
+import { projectsAPI, sharingAPI, analyticsAPI } from '../services/api'
+import type { Project, ProjectStatus, SharedUser, BaselineEntry } from '../types'
+import { TIPO_OBRA_OPTIONS, SPE_OPTIONS, getTipoObraLabel, STATUS_LABELS, formatBRL } from '../types'
 import toast from 'react-hot-toast'
 import {
   Plus, FolderOpen, Table2, FileText, LineChart,
   Pencil, Trash2, X, Check, Share2, Users, Search,
+  Calendar, Trophy,
 } from 'lucide-react'
+
+const EXTENSAO_UNIT_OPTIONS = ['km', 'm', 'm²', 'm³', 'ha', 'km²', 'ml', 'und']
 
 const STATUS_OPTIONS: ProjectStatus[] = ['EM_ANDAMENTO', 'CONCLUIDO', 'ARQUIVADO']
 
@@ -26,13 +29,14 @@ interface ProjectForm {
   tipo_obra: string
   outraTipoObra: string
   extensao_km: string
+  extensao_unidade: string
   spe_unidade: string
   status?: ProjectStatus
 }
 
 const EMPTY_FORM: ProjectForm = {
   nome: '', descricao: '', numero_licitacao: '', tipo_obra: 'Duplicação',
-  outraTipoObra: '', extensao_km: '', spe_unidade: '',
+  outraTipoObra: '', extensao_km: '', extensao_unidade: 'km', spe_unidade: '',
 }
 
 export default function Projects() {
@@ -91,6 +95,22 @@ export default function Projects() {
     return true
   })
 
+  // ── Baseline (contracted values for CONCLUIDO projects) ──────────────────────
+  const { data: _baselineRaw } = useQuery<BaselineEntry[]>({
+    queryKey: ['baseline'],
+    queryFn: () => analyticsAPI.getBaseline().then((r) => r.data),
+  })
+  const baselineEntries: BaselineEntry[] = Array.isArray(_baselineRaw) ? _baselineRaw : []
+  const contractedValues = useMemo(() => {
+    const map: Record<number, { empresa: string; valor_total: number }> = {}
+    baselineEntries.forEach((e) => {
+      if (!map[e.project_id] || e.valor_total > map[e.project_id].valor_total) {
+        map[e.project_id] = { empresa: e.empresa, valor_total: e.valor_total }
+      }
+    })
+    return map
+  }, [baselineEntries])
+
   // ── Helpers ──────────────────────────────────────────────────────────────────
   function openCreate() {
     setForm(EMPTY_FORM)
@@ -109,6 +129,7 @@ export default function Projects() {
       tipo_obra: isKnown ? project.tipo_obra : 'Outra',
       outraTipoObra: isKnown ? '' : project.tipo_obra,
       extensao_km: project.extensao_km != null ? String(project.extensao_km) : '',
+      extensao_unidade: project.extensao_unidade ?? 'km',
       spe_unidade: project.spe_unidade ?? '',
       status: project.status,
     })
@@ -147,6 +168,7 @@ export default function Projects() {
       numero_licitacao: form.numero_licitacao,
       tipo_obra: tipoObra,
       extensao_km: form.extensao_km ? Number(form.extensao_km) : null,
+      extensao_unidade: form.extensao_unidade || 'km',
       spe_unidade: form.spe_unidade || null,
       status: form.status,
     }
@@ -311,12 +333,24 @@ export default function Projects() {
                 )}
                 {project.extensao_km != null && (
                   <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded font-medium">
-                    {Number(project.extensao_km).toFixed(3)} km
+                    {Number(project.extensao_km).toFixed(3)} {project.extensao_unidade ?? 'km'}
                   </span>
                 )}
               </div>
               {project.descricao && (
                 <p className="text-sm text-gray-500 line-clamp-2">{project.descricao}</p>
+              )}
+
+              {/* Contracted value for CONCLUIDO projects */}
+              {project.status === 'CONCLUIDO' && contractedValues[project.id] && (
+                <div className="flex items-center justify-between bg-green-50 border border-green-100 rounded-xl px-3 py-2">
+                  <div>
+                    <p className="text-[10px] text-green-600 font-semibold uppercase tracking-wide">Valor Contratado</p>
+                    <p className="text-sm font-bold text-green-800">{formatBRL(contractedValues[project.id].valor_total)}</p>
+                    <p className="text-xs text-green-600 truncate max-w-[160px]">{contractedValues[project.id].empresa}</p>
+                  </div>
+                  <Trophy size={20} className="text-yellow-500 flex-shrink-0" />
+                </div>
               )}
 
               {/* Counters */}
@@ -328,6 +362,10 @@ export default function Projects() {
                 <span className="flex items-center gap-1">
                   <FileText size={14} className="text-gray-300" />
                   {project.total_proposals}/10 propostas
+                </span>
+                <span className="flex items-center gap-1 ml-auto text-xs">
+                  <Calendar size={12} className="text-gray-300" />
+                  {new Date(project.created_at).toLocaleDateString('pt-BR')}
                 </span>
               </div>
 
@@ -478,25 +516,36 @@ export default function Projects() {
                   </select>
                 </div>
 
-                {/* Extensão km */}
+                {/* Extensão + Unidade */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Extensão (km)
+                    Extensão
                     {form.tipo_obra === 'Duplicação' && (
                       <span className="ml-2 text-xs text-orange-600 font-normal">● obrigatório para duplicação</span>
                     )}
                   </label>
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    placeholder="Ex: 45.320"
-                    value={form.extensao_km}
-                    onChange={(e) => setForm((f) => ({ ...f, extensao_km: e.target.value }))}
-                    required={form.tipo_obra === 'Duplicação'}
-                  />
-                  <p className="text-xs text-gray-400 mt-1">Usado para calcular o custo por km no Baseline.</p>
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      placeholder="Ex: 45.320"
+                      value={form.extensao_km}
+                      onChange={(e) => setForm((f) => ({ ...f, extensao_km: e.target.value }))}
+                      required={form.tipo_obra === 'Duplicação'}
+                    />
+                    <select
+                      className="input w-28"
+                      value={form.extensao_unidade}
+                      onChange={(e) => setForm((f) => ({ ...f, extensao_unidade: e.target.value }))}
+                    >
+                      {EXTENSAO_UNIT_OPTIONS.map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Usado para calcular o custo por unidade no Baseline.</p>
                 </div>
 
                 {/* Status (edit only) */}

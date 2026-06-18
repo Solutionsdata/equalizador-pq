@@ -181,13 +181,22 @@ export const analyticsAPI = {
     api.get(`/analytics/categorias/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
   getLocalidades: (projectId: number, revisionId?: number | null) =>
     api.get(`/analytics/localidades/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
-  exportExcel: (projectId: number, revisionId?: number | null) =>
-    api.get(`/analytics/export/${projectId}`, {
-      responseType: 'blob',
-      ...(revisionId ? { params: { revision_id: revisionId } } : {}),
-    }),
+  exportExcel: (
+    projectId: number,
+    revisionId?: number | null,
+    filters?: { categoria?: string; disciplina?: string; localidade?: string; fornecedores?: string[] }
+  ) => {
+    const params: Record<string, string> = {}
+    if (revisionId) params.revision_id = String(revisionId)
+    if (filters?.categoria) params.filter_categoria = filters.categoria
+    if (filters?.disciplina) params.filter_disciplina = filters.disciplina
+    if (filters?.localidade) params.filter_localidade = filters.localidade
+    if (filters?.fornecedores?.length) params.filter_fornecedores = filters.fornecedores.join(',')
+    return api.get(`/analytics/export/${projectId}`, { responseType: 'blob', params })
+  },
   getBaseline: () => api.get('/analytics/baseline'),
-  exportBaseline: () => api.get('/analytics/baseline/export', { responseType: 'blob' }),
+  exportBaseline: (params?: { filter_tr?: string; filter_empresa?: string; filter_ym?: string }) =>
+    api.get('/analytics/baseline/export', { responseType: 'blob', params }),
 }
 
 // ── Sharing ───────────────────────────────────────────────────────────────────

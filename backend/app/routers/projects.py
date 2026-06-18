@@ -40,6 +40,7 @@ def _to_response(project: Project, current_user_id: int) -> ProjectResponse:
         numero_licitacao=project.numero_licitacao,
         tipo_obra=project.tipo_obra,
         extensao_km=project.extensao_km,
+        extensao_unidade=project.extensao_unidade,
         spe_unidade=project.spe_unidade,
         status=project.status,
         created_at=project.created_at,

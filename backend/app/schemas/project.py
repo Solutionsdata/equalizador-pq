@@ -11,6 +11,7 @@ class ProjectCreate(BaseModel):
     numero_licitacao: Optional[str] = None
     tipo_obra: str = "INFRAESTRUTURA"
     extensao_km: Optional[Decimal] = None
+    extensao_unidade: Optional[str] = "km"
     spe_unidade: Optional[str] = None
 
 
@@ -20,6 +21,7 @@ class ProjectUpdate(BaseModel):
     numero_licitacao: Optional[str] = None
     tipo_obra: Optional[str] = None
     extensao_km: Optional[Decimal] = None
+    extensao_unidade: Optional[str] = None
     spe_unidade: Optional[str] = None
     status: Optional[ProjectStatus] = None
 
@@ -39,6 +41,7 @@ class ProjectResponse(BaseModel):
     numero_licitacao: Optional[str] = None
     tipo_obra: str
     extensao_km: Optional[Decimal] = None
+    extensao_unidade: Optional[str] = "km"
     spe_unidade: Optional[str] = None
     status: ProjectStatus
     created_at: datetime

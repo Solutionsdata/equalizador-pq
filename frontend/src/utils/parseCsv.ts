@@ -195,11 +195,21 @@ export async function parseProposalCsvFile(
   }
 
   const result: ProposalPriceRow[] = []
+  let skipped = 0
+
   for (let ri = headerIdx + 1; ri < rows.length; ri++) {
     const row = rows[ri]
-    const num = String(row[colMap['numero_item']] ?? '').trim()
-    const pqId = numToId.get(num)
-    if (!pqId) continue
+    const rawNum = String(row[colMap['numero_item']] ?? '').trim()
+    if (!rawNum) continue
+
+    // Try exact match first; if it fails, try replacing commas with dots to handle
+    // BR-locale Excel which converts item codes like "1.1" → "1,1" when saving as CSV
+    const pqId = numToId.get(rawNum) ?? numToId.get(rawNum.replace(/,/g, '.'))
+
+    if (!pqId) {
+      skipped++
+      continue
+    }
 
     const cudSem = toFloat(row[colMap['cud_sem']])
     const bdiSem = toFloat(row[colMap['bdi_sem']])
@@ -219,6 +229,9 @@ export async function parseProposalCsvFile(
 
   if (result.length === 0)
     throw new Error('Nenhum preço encontrado. Preencha as colunas SEM REIDI ou COM REIDI e salve como CSV.')
+
+  if (skipped > 0)
+    console.warn(`CSV import: ${skipped} linha(s) ignoradas — número de item não encontrado na PQ.`)
 
   return result
 }

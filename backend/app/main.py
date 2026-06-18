@@ -212,6 +212,14 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE proposal_items ALTER COLUMN descricao_proposta TYPE VARCHAR(500)"
     ))
+    # Unidade de medida da extensão do projeto (ex: km, m, m², ha)
+    _conn.execute(text(
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS extensao_unidade VARCHAR(20) DEFAULT 'km'"
+    ))
+    # Revogar admin de solutionsdata@outlook.com — super admin é somente Felipe Gonçalves
+    _conn.execute(text(
+        "UPDATE users SET is_admin = FALSE WHERE email = 'solutionsdata@outlook.com'"
+    ))
     _conn.commit()
 
 app = FastAPI(
