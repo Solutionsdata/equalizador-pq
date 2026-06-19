@@ -262,11 +262,19 @@ export interface ScopeValidationResponse {
 export interface RevisionCompareItem {
   numero_item: string
   descricao: string
+  localidade?: string | null
+  disciplina?: string | null
+  categoria?: string | null
+  unidade?: string | null
   status: 'unchanged' | 'added' | 'removed' | 'changed'
-  valor_a?: number
-  valor_b?: number
-  delta?: number
-  delta_pct?: number
+  quantidade_a?: number | null
+  quantidade_b?: number | null
+  preco_referencia_a?: number | null
+  preco_referencia_b?: number | null
+  valor_a?: number | null
+  valor_b?: number | null
+  delta?: number | null
+  delta_pct?: number | null
   pq_change?: { field: string; valor_a: any; valor_b: any }[]
 }
 
@@ -274,11 +282,16 @@ export interface RevisionCompareResponse {
   rev_a: number
   rev_b: number
   global: { total_a: number; total_b: number; delta: number; delta_pct: number }
-  pq_stats?: { count_a: number; count_b: number; sum_qty_a: number; sum_qty_b: number }
+  pq_stats?: {
+    count_a: number; count_b: number
+    sum_qty_a: number; sum_qty_b: number
+    sum_valor_a?: number; sum_valor_b?: number
+  }
   proposals_a?: { empresa: string; valor_total: number; status: string }[]
   proposals_b?: { empresa: string; valor_total: number; status: string }[]
-  by_discipline: { disciplina: string; total_a: number; total_b: number; delta: number; delta_pct: number }[]
-  by_category: { categoria: string; total_a: number; total_b: number; delta: number; delta_pct: number }[]
+  by_discipline: { disciplina: string; total_a: number; total_b: number; delta: number; delta_pct: number; qty_a?: number; qty_b?: number }[]
+  by_category: { categoria: string; total_a: number; total_b: number; delta: number; delta_pct: number; qty_a?: number; qty_b?: number }[]
+  by_localidade?: { localidade: string; total_a: number; total_b: number; delta: number; delta_pct: number; qty_a?: number; qty_b?: number; count_added?: number; count_removed?: number; count_changed?: number; count_unchanged?: number }[]
   by_item: RevisionCompareItem[]
   pq_changes: RevisionCompareItem[]
 }

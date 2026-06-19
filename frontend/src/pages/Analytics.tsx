@@ -6,7 +6,7 @@ import { analyticsAPI, revisionsAPI, projectsAPI, downloadBlob } from '../servic
 import type {
   ParetoData, EqualizationResponse, DisciplineSummary, CategoriaSummary, LocalidadeSummary,
   EqualizationProposal, ScopeValidationResponse, RevisionCompareResponse, ProjectRevision,
-  ABCItem,
+  ABCItem, RevisionCompareItem,
 } from '../types'
 import { formatBRL, formatPercent, formatNumber } from '../types'
 import ParetoChart from '../components/Charts/ParetoChart'
@@ -16,8 +16,12 @@ import {
   ArrowLeft, BarChart3, TrendingUp, GitCompare,
   Sparkles, Users, Download, Filter, X,
   ChevronUp, ChevronDown, Trophy, AlertTriangle, CheckCircle,
-  PieChart, ShieldCheck, GitBranch,
+  PieChart, ShieldCheck, GitBranch, ChevronRight,
 } from 'lucide-react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
+  Legend, ResponsiveContainer, Cell, ReferenceLine,
+} from 'recharts'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1292,6 +1296,602 @@ function PanelDistribuicao({
   )
 }
 
+// ── Painel: Revisões ──────────────────────────────────────────────────────────
+
+const DRILL_COLORS = ['#1A3A6B', '#2563EB', '#3B82F6', '#60A5FA', '#93C5FD']
+const REV_A_COLOR = '#1A3A6B'
+const REV_B_COLOR = '#1B7C3E'
+const ADD_COLOR   = '#16A34A'
+const REM_COLOR   = '#DC2626'
+const CHG_COLOR   = '#D97706'
+
+type DrillDim = 'localidade' | 'disciplina' | 'categoria'
+
+function buildDrillData(
+  items: RevisionCompareItem[],
+  drillPath: string[],
+): { name: string; total_a: number; total_b: number; delta: number; qty_a: number; qty_b: number; count_added: number; count_removed: number; count_changed: number; count_unchanged: number }[] {
+  let filtered = items
+  const dims: DrillDim[] = ['localidade', 'disciplina', 'categoria']
+  const nextDim = dims[drillPath.length] ?? 'categoria'
+
+  // filter by drill path
+  if (drillPath.length >= 1) {
+    filtered = filtered.filter(i => (i.localidade || 'Sem Localidade') === drillPath[0])
+  }
+  if (drillPath.length >= 2) {
+    filtered = filtered.filter(i => (i.disciplina || 'Sem Disciplina') === drillPath[1])
+  }
+  if (drillPath.length >= 3) {
+    filtered = filtered.filter(i => (i.categoria || 'Sem Categoria') === drillPath[2])
+  }
+
+  const map = new Map<string, { total_a: number; total_b: number; qty_a: number; qty_b: number; ca: number; cr: number; cc: number; cu: number }>()
+  for (const item of filtered) {
+    const key = drillPath.length === 0 ? (item.localidade || 'Sem Localidade')
+              : drillPath.length === 1 ? (item.disciplina || 'Sem Disciplina')
+              : drillPath.length === 2 ? (item.categoria || 'Sem Categoria')
+              : (item.descricao || item.numero_item)
+    const g = map.get(key) ?? { total_a: 0, total_b: 0, qty_a: 0, qty_b: 0, ca: 0, cr: 0, cc: 0, cu: 0 }
+    g.total_a += n(item.valor_a ?? 0)
+    g.total_b += n(item.valor_b ?? 0)
+    g.qty_a   += n(item.quantidade_a ?? 0)
+    g.qty_b   += n(item.quantidade_b ?? 0)
+    if (item.status === 'added')     g.ca++
+    else if (item.status === 'removed')  g.cr++
+    else if (item.status === 'changed')  g.cc++
+    else                                 g.cu++
+    map.set(key, g)
+  }
+
+  return Array.from(map.entries())
+    .map(([name, g]) => ({
+      name,
+      total_a: g.total_a,
+      total_b: g.total_b,
+      delta: g.total_b - g.total_a,
+      qty_a: g.qty_a,
+      qty_b: g.qty_b,
+      count_added: g.ca,
+      count_removed: g.cr,
+      count_changed: g.cc,
+      count_unchanged: g.cu,
+    }))
+    .sort((a, b) => (b.total_a + b.total_b) - (a.total_a + a.total_b))
+}
+
+function WaterfallChart({ items, totalA, totalB, revA, revB }: {
+  items: RevisionCompareItem[]
+  totalA: number
+  totalB: number
+  revA: number
+  revB: number
+}) {
+  const addedVal   = items.filter(i => i.status === 'added').reduce((s, i) => s + n(i.valor_b ?? 0), 0)
+  const removedVal = items.filter(i => i.status === 'removed').reduce((s, i) => s + n(i.valor_a ?? 0), 0)
+  const changedDelta = items.filter(i => i.status === 'changed').reduce((s, i) => s + n(i.delta ?? 0), 0)
+
+  // Waterfall: base (invisible) + positive + negative
+  const wfData = [
+    { name: `Rev ${revA}`, base: 0, positive: totalA, negative: 0, isTotal: true },
+    { name: '+ Adicionados', base: totalA, positive: addedVal, negative: 0, isTotal: false },
+    { name: '− Removidos',
+      base: totalA + addedVal - removedVal,
+      positive: 0, negative: removedVal, isTotal: false },
+    { name: changedDelta >= 0 ? '↑ Δ Alterados' : '↓ Δ Alterados',
+      base: changedDelta >= 0
+        ? totalA + addedVal - removedVal
+        : totalA + addedVal - removedVal + changedDelta,
+      positive: changedDelta >= 0 ? changedDelta : 0,
+      negative: changedDelta < 0 ? -changedDelta : 0,
+      isTotal: false },
+    { name: `Rev ${revB}`, base: 0, positive: totalB, negative: 0, isTotal: true },
+  ]
+
+  const fmt = (v: number) => `R$ ${(v / 1_000_000).toFixed(2)}M`
+
+  return (
+    <ResponsiveContainer width="100%" height={280}>
+      <BarChart data={wfData} margin={{ top: 10, right: 20, left: 60, bottom: 5 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+        <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6B7280' }} />
+        <YAxis tickFormatter={fmt} tick={{ fontSize: 10, fill: '#6B7280' }} width={70} />
+        <RTooltip
+          formatter={(value: number, name: string) => {
+            if (name === 'base') return null
+            return [formatBRL(value), name === 'positive' ? 'Positivo' : name === 'negative' ? 'Negativo' : 'Valor']
+          }}
+          labelFormatter={(label) => label}
+        />
+        {/* invisible base bar (transparent) */}
+        <Bar dataKey="base" stackId="wf" fill="transparent" />
+        {/* positive delta bar */}
+        <Bar dataKey="positive" stackId="wf" radius={[3, 3, 0, 0]} name="positive">
+          {wfData.map((entry, i) => (
+            <Cell key={i} fill={entry.isTotal ? REV_A_COLOR : ADD_COLOR} />
+          ))}
+        </Bar>
+        {/* negative delta bar */}
+        <Bar dataKey="negative" stackId="wf" fill={REM_COLOR} radius={[3, 3, 0, 0]} name="negative" />
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+function DrillChart({ items, revA, revB }: {
+  items: RevisionCompareItem[]
+  revA: number
+  revB: number
+}) {
+  const [drillPath, setDrillPath] = useState<string[]>([])
+  const [metric, setMetric] = useState<'valor' | 'quantidade'>('valor')
+
+  const data = useMemo(() => buildDrillData(items, drillPath), [items, drillPath])
+  const maxDepth = 2 // localidade → disciplina → categoria
+
+  const dimLabels = ['Localidade', 'Disciplina', 'Categoria']
+  const currentLabel = dimLabels[drillPath.length] ?? 'Categoria'
+
+  const fmtY = metric === 'valor'
+    ? (v: number) => `R$ ${(v / 1_000_000).toFixed(1)}M`
+    : (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+
+  const keyA = metric === 'valor' ? 'total_a' : 'qty_a'
+  const keyB = metric === 'valor' ? 'total_b' : 'qty_b'
+
+  return (
+    <div>
+      {/* breadcrumb + metric toggle */}
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-1.5 text-xs">
+          <button
+            onClick={() => setDrillPath([])}
+            className={`font-semibold ${drillPath.length === 0 ? 'text-[#1A3A6B]' : 'text-gray-400 hover:text-gray-700'}`}
+          >
+            Localidade
+          </button>
+          {drillPath.map((seg, idx) => (
+            <React.Fragment key={idx}>
+              <ChevronRight size={12} className="text-gray-300" />
+              <button
+                onClick={() => setDrillPath(drillPath.slice(0, idx + 1))}
+                className={`font-semibold ${idx === drillPath.length - 1 ? 'text-[#1A3A6B]' : 'text-gray-400 hover:text-gray-700'}`}
+              >
+                {seg}
+              </button>
+            </React.Fragment>
+          ))}
+          {drillPath.length < maxDepth && (
+            <>
+              <ChevronRight size={12} className="text-gray-300" />
+              <span className="text-gray-300">{dimLabels[drillPath.length + 1] ?? '—'}</span>
+            </>
+          )}
+        </div>
+        <div className="flex gap-0.5 bg-gray-100 p-0.5 rounded-lg">
+          {(['valor', 'quantidade'] as const).map((m) => (
+            <button key={m} onClick={() => setMetric(m)}
+              className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
+              style={metric === m ? { backgroundColor: '#1A3A6B', color: '#fff' } : { color: '#6B7280' }}
+            >
+              {m === 'valor' ? 'Valor (R$)' : 'Quantidade'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-xs text-gray-400 mb-2">
+        {drillPath.length < maxDepth
+          ? `Clique em uma barra para detalhar por ${dimLabels[drillPath.length + 1] ?? 'categoria'}`
+          : 'Nível máximo de detalhe — clique no breadcrumb para voltar'}
+      </p>
+
+      <ResponsiveContainer width="100%" height={300}>
+        <BarChart
+          data={data}
+          margin={{ top: 5, right: 20, left: 60, bottom: 60 }}
+          onClick={(e) => {
+            if (!e?.activeLabel || drillPath.length >= maxDepth) return
+            setDrillPath([...drillPath, e.activeLabel])
+          }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+          <XAxis
+            dataKey="name"
+            tick={{ fontSize: 10, fill: '#6B7280' }}
+            angle={-35}
+            textAnchor="end"
+            interval={0}
+          />
+          <YAxis tickFormatter={fmtY} tick={{ fontSize: 10, fill: '#6B7280' }} width={70} />
+          <RTooltip
+            formatter={(value: number, name: string) => [
+              metric === 'valor' ? formatBRL(value) : formatNumber(value, 0),
+              name === keyA ? `Rev ${revA}` : `Rev ${revB}`,
+            ]}
+          />
+          <Legend formatter={(v) => v === keyA ? `Rev ${revA}` : `Rev ${revB}`} wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey={keyA} name={keyA} fill={REV_A_COLOR} radius={[3, 3, 0, 0]}
+            style={{ cursor: drillPath.length < maxDepth ? 'pointer' : 'default' }} />
+          <Bar dataKey={keyB} name={keyB} fill={REV_B_COLOR} radius={[3, 3, 0, 0]}
+            style={{ cursor: drillPath.length < maxDepth ? 'pointer' : 'default' }} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+function DetailTable({ items, revA, revB }: { items: RevisionCompareItem[]; revA: number; revB: number }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  // Group by localidade → disciplina
+  const groups = useMemo(() => {
+    const map = new Map<string, { items: RevisionCompareItem[]; valA: number; valB: number; qtyA: number; qtyB: number }>()
+    for (const item of items) {
+      const key = `${item.localidade || 'Sem Localidade'} § ${item.disciplina || 'Sem Disciplina'}`
+      const g = map.get(key) ?? { items: [], valA: 0, valB: 0, qtyA: 0, qtyB: 0 }
+      g.items.push(item)
+      g.valA += n(item.valor_a ?? 0)
+      g.valB += n(item.valor_b ?? 0)
+      g.qtyA += n(item.quantidade_a ?? 0)
+      g.qtyB += n(item.quantidade_b ?? 0)
+      map.set(key, g)
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, g]) => {
+        const [loc, disc] = key.split(' § ')
+        return { loc, disc, ...g }
+      })
+  }, [items])
+
+  function toggleGroup(key: string) {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
+  const STATUS_CFG = {
+    added:     { label: '+ Add', bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-100' },
+    removed:   { label: '− Rem', bg: 'bg-red-50',   text: 'text-red-600',   border: 'border-red-100' },
+    changed:   { label: '~ Alt', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100' },
+    unchanged: { label: '= Igual', bg: '',           text: 'text-gray-400', border: 'border-gray-100' },
+  }
+
+  return (
+    <div className="space-y-2">
+      {groups.map(({ loc, disc, items: grpItems, valA, valB, qtyA, qtyB }) => {
+        const key = `${loc} § ${disc}`
+        const isOpen = expanded.has(key)
+        const delta = valB - valA
+        const hasAdded = grpItems.some(i => i.status === 'added')
+        const hasRemoved = grpItems.some(i => i.status === 'removed')
+        const hasChanged = grpItems.some(i => i.status === 'changed')
+
+        return (
+          <div key={key} className="border border-gray-200 rounded-xl overflow-hidden">
+            {/* Group header */}
+            <button
+              className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+              onClick={() => toggleGroup(key)}
+            >
+              <ChevronRight size={14} className={`text-gray-400 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold text-gray-700">{loc}</span>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-xs font-medium text-gray-600">{disc}</span>
+                  <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                    {hasAdded   && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">{grpItems.filter(i=>i.status==='added').length} add</span>}
+                    {hasRemoved && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-medium">{grpItems.filter(i=>i.status==='removed').length} rem</span>}
+                    {hasChanged && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">{grpItems.filter(i=>i.status==='changed').length} alt</span>}
+                    <span className="text-xs text-gray-400">{grpItems.length} linhas</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 mt-1 text-[11px] text-gray-500">
+                  <span>Rev {revA}: <strong>{formatBRL(valA)}</strong> · Qtd {formatNumber(qtyA, 0)}</span>
+                  <span>Rev {revB}: <strong>{formatBRL(valB)}</strong> · Qtd {formatNumber(qtyB, 0)}</span>
+                  <span className={`font-semibold ${delta > 0 ? 'text-red-600' : delta < 0 ? 'text-green-700' : 'text-gray-400'}`}>
+                    Δ {delta >= 0 ? '+' : ''}{formatBRL(delta)}
+                  </span>
+                </div>
+              </div>
+            </button>
+
+            {/* Item rows */}
+            {isOpen && (
+              <div className="overflow-auto">
+                <table className="w-full text-[11px] border-collapse min-w-max">
+                  <thead>
+                    <tr className="bg-white border-b border-gray-100">
+                      <th className="px-2 py-2 text-left font-semibold text-gray-500 whitespace-nowrap">St</th>
+                      <th className="px-2 py-2 text-left font-semibold text-gray-500 whitespace-nowrap">Item</th>
+                      <th className="px-2 py-2 text-left font-semibold text-gray-500">Descrição</th>
+                      <th className="px-2 py-2 text-left font-semibold text-gray-500 whitespace-nowrap">Cat.</th>
+                      <th className="px-2 py-2 text-left font-semibold text-gray-500 whitespace-nowrap">Un</th>
+                      <th className="px-2 py-2 text-right font-semibold whitespace-nowrap" style={{ color: REV_A_COLOR }}>Qtd {revA}</th>
+                      <th className="px-2 py-2 text-right font-semibold whitespace-nowrap" style={{ color: REV_A_COLOR }}>P.Unit {revA}</th>
+                      <th className="px-2 py-2 text-right font-semibold whitespace-nowrap" style={{ color: REV_A_COLOR }}>Total {revA}</th>
+                      <th className="px-2 py-2 text-right font-semibold whitespace-nowrap" style={{ color: REV_B_COLOR }}>Qtd {revB}</th>
+                      <th className="px-2 py-2 text-right font-semibold whitespace-nowrap" style={{ color: REV_B_COLOR }}>P.Unit {revB}</th>
+                      <th className="px-2 py-2 text-right font-semibold whitespace-nowrap" style={{ color: REV_B_COLOR }}>Total {revB}</th>
+                      <th className="px-2 py-2 text-right font-semibold text-gray-500 whitespace-nowrap">Δ Qtd</th>
+                      <th className="px-2 py-2 text-right font-semibold text-gray-500 whitespace-nowrap">Δ Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grpItems.map((item, idx) => {
+                      const cfg = STATUS_CFG[item.status]
+                      const dQty = item.quantidade_a != null && item.quantidade_b != null
+                        ? item.quantidade_b - item.quantidade_a : null
+                      const dVal = n(item.delta ?? 0)
+                      return (
+                        <tr key={item.numero_item + idx}
+                          className={`border-b ${cfg.border} ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'} hover:bg-slate-50`}>
+                          <td className="px-2 py-1.5">
+                            <span className={`text-[9px] px-1 py-0.5 rounded font-semibold ${cfg.bg} ${cfg.text}`}>{cfg.label}</span>
+                          </td>
+                          <td className="px-2 py-1.5 font-mono text-gray-500 whitespace-nowrap">{item.numero_item}</td>
+                          <td className="px-2 py-1.5 text-gray-700 max-w-[200px]">
+                            <div className="truncate" title={item.descricao}>{item.descricao}</div>
+                          </td>
+                          <td className="px-2 py-1.5 text-gray-400 whitespace-nowrap">{item.categoria || '—'}</td>
+                          <td className="px-2 py-1.5 text-gray-400 whitespace-nowrap">{item.unidade || '—'}</td>
+                          <td className="px-2 py-1.5 text-right text-gray-500 whitespace-nowrap">
+                            {item.quantidade_a != null ? formatNumber(item.quantidade_a, 2) : '—'}
+                          </td>
+                          <td className="px-2 py-1.5 text-right text-gray-500 whitespace-nowrap">
+                            {item.preco_referencia_a != null ? formatBRL(item.preco_referencia_a) : '—'}
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-medium text-gray-700 whitespace-nowrap">
+                            {item.valor_a != null ? formatBRL(item.valor_a) : '—'}
+                          </td>
+                          <td className="px-2 py-1.5 text-right text-gray-500 whitespace-nowrap">
+                            {item.quantidade_b != null ? formatNumber(item.quantidade_b, 2) : '—'}
+                          </td>
+                          <td className="px-2 py-1.5 text-right text-gray-500 whitespace-nowrap">
+                            {item.preco_referencia_b != null ? formatBRL(item.preco_referencia_b) : '—'}
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-medium text-gray-700 whitespace-nowrap">
+                            {item.valor_b != null ? formatBRL(item.valor_b) : '—'}
+                          </td>
+                          <td className={`px-2 py-1.5 text-right font-semibold whitespace-nowrap ${
+                            dQty === null ? 'text-gray-300' : dQty > 0 ? 'text-red-600' : dQty < 0 ? 'text-green-700' : 'text-gray-400'
+                          }`}>
+                            {dQty !== null ? `${dQty > 0 ? '+' : ''}${formatNumber(dQty, 2)}` : '—'}
+                          </td>
+                          <td className={`px-2 py-1.5 text-right font-semibold whitespace-nowrap ${
+                            dVal > 0 ? 'text-red-600' : dVal < 0 ? 'text-green-700' : 'text-gray-300'
+                          }`}>
+                            {dVal !== 0 ? `${dVal > 0 ? '+' : ''}${formatBRL(dVal)}` : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function PanelRevisoes({
+  compareData, revA, revB, loadingCompare, compareTriggered,
+  revisions, pid, projectName,
+  setRevA, setRevB, setCompareTriggered,
+}: {
+  compareData: RevisionCompareResponse | undefined
+  revA: number | ''
+  revB: number | ''
+  loadingCompare: boolean
+  compareTriggered: boolean
+  revisions: ProjectRevision[]
+  pid: number
+  projectName: string
+  setRevA: (v: number | '') => void
+  setRevB: (v: number | '') => void
+  setCompareTriggered: (v: boolean) => void
+}) {
+  const [exporting, setExporting] = useState(false)
+
+  async function handleExportRevisions() {
+    if (revA === '' || revB === '') return
+    setExporting(true)
+    try {
+      const res = await revisionsAPI.exportRevisions(pid, revA as number, revB as number)
+      downloadBlob(res.data, `comparativo_rev${revA}_rev${revB}.xlsx`)
+      toast.success('Exportação concluída')
+    } catch {
+      toast.error('Erro ao exportar')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const items: RevisionCompareItem[] = compareData?.by_item ?? []
+  const added     = items.filter(i => i.status === 'added')
+  const removed   = items.filter(i => i.status === 'removed')
+  const changed   = items.filter(i => i.status === 'changed')
+  const unchanged = items.filter(i => i.status === 'unchanged')
+
+  const totalA = n(compareData?.pq_stats?.sum_valor_a ?? 0)
+  const totalB = n(compareData?.pq_stats?.sum_valor_b ?? 0)
+
+  return (
+    <div className="space-y-6">
+
+      {/* Seleção de revisões + export */}
+      <div className="flex flex-wrap items-end gap-4">
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Revisão A (base)</label>
+          <select
+            value={revA}
+            onChange={(e) => { setRevA(e.target.value === '' ? '' : Number(e.target.value)); setCompareTriggered(false) }}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
+          >
+            <option value="">Selecione…</option>
+            {revisions.map((r) => (
+              <option key={r.id} value={r.numero}>Rev. {r.numero}{r.descricao ? ` — ${r.descricao}` : ''}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Revisão B (nova)</label>
+          <select
+            value={revB}
+            onChange={(e) => { setRevB(e.target.value === '' ? '' : Number(e.target.value)); setCompareTriggered(false) }}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
+          >
+            <option value="">Selecione…</option>
+            {revisions.map((r) => (
+              <option key={r.id} value={r.numero}>Rev. {r.numero}{r.descricao ? ` — ${r.descricao}` : ''}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          onClick={() => setCompareTriggered(true)}
+          disabled={revA === '' || revB === '' || revA === revB}
+          className="text-white rounded-xl px-5 py-2 text-sm font-semibold disabled:opacity-40 hover:opacity-90"
+          style={{ backgroundColor: '#1A3A6B' }}
+        >
+          Comparar
+        </button>
+        {compareData && (
+          <button
+            onClick={handleExportRevisions}
+            disabled={exporting}
+            className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium px-4 py-2 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all disabled:opacity-50 ml-auto"
+          >
+            <Download size={14} className={exporting ? 'animate-bounce' : ''} />
+            {exporting ? 'Exportando…' : 'Exportar Excel'}
+          </button>
+        )}
+      </div>
+
+      {loadingCompare && <Loading />}
+
+      {!compareData && !loadingCompare && compareTriggered && (
+        <EmptyState message="Não foi possível comparar as revisões selecionadas." />
+      )}
+      {!compareTriggered && (
+        <EmptyState message="Selecione duas revisões e clique em Comparar." />
+      )}
+
+      {compareData && !loadingCompare && (
+        <>
+          {/* ── 1. Cartões de resumo ── */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Resumo das Revisões</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* Linhas por revisão */}
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <p className="text-xs text-gray-400 mb-1">Linhas Rev. {compareData.rev_a}</p>
+                <p className="text-2xl font-bold text-gray-900">{compareData.pq_stats?.count_a ?? 0}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Qtd total: {formatNumber(compareData.pq_stats?.sum_qty_a ?? 0, 0)}</p>
+                {(compareData.pq_stats?.sum_valor_a ?? 0) > 0 && (
+                  <p className="text-xs font-medium mt-0.5" style={{ color: '#1A3A6B' }}>{formatBRL(compareData.pq_stats!.sum_valor_a!)}</p>
+                )}
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <p className="text-xs text-gray-400 mb-1">Linhas Rev. {compareData.rev_b}</p>
+                <p className="text-2xl font-bold text-gray-900">{compareData.pq_stats?.count_b ?? 0}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Qtd total: {formatNumber(compareData.pq_stats?.sum_qty_b ?? 0, 0)}</p>
+                {(compareData.pq_stats?.sum_valor_b ?? 0) > 0 && (
+                  <p className="text-xs font-medium mt-0.5" style={{ color: '#1B7C3E' }}>{formatBRL(compareData.pq_stats!.sum_valor_b!)}</p>
+                )}
+              </div>
+              <div className={`rounded-xl p-4 border ${compareData.global.delta > 0 ? 'bg-red-50 border-red-200' : compareData.global.delta < 0 ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                <p className="text-xs text-gray-400 mb-1">Delta de Propostas</p>
+                <p className={`text-2xl font-bold ${compareData.global.delta > 0 ? 'text-red-600' : compareData.global.delta < 0 ? 'text-green-700' : 'text-gray-400'}`}>
+                  {compareData.global.delta >= 0 ? '+' : ''}{formatBRL(compareData.global.delta)}
+                </p>
+                <p className={`text-xs mt-0.5 ${compareData.global.delta_pct > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                  {compareData.global.delta_pct >= 0 ? '+' : ''}{formatPercent(compareData.global.delta_pct)}
+                </p>
+              </div>
+              {/* Status chips resumidos */}
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <p className="text-xs text-gray-400 mb-2">Alterações (linhas)</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { label: 'Adicionadas', count: added.length, cls: 'bg-green-100 text-green-700' },
+                    { label: 'Removidas',   count: removed.length, cls: 'bg-red-100 text-red-600' },
+                    { label: 'Alteradas',   count: changed.length, cls: 'bg-amber-100 text-amber-700' },
+                    { label: 'Sem alter.',  count: unchanged.length, cls: 'bg-gray-100 text-gray-500' },
+                  ].map((s) => (
+                    <div key={s.label} className={`rounded-lg px-2 py-1.5 text-center ${s.cls}`}>
+                      <p className="text-base font-bold leading-none">{s.count}</p>
+                      <p className="text-[9px] font-medium mt-0.5">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── 2. Waterfall — evolução de valor ── */}
+          {totalA > 0 || totalB > 0 ? (
+            <div className="bg-white border border-gray-100 rounded-xl p-5">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+                Evolução de Valor — Rev. {compareData.rev_a} → Rev. {compareData.rev_b}
+              </h3>
+              <WaterfallChart items={items} totalA={totalA} totalB={totalB} revA={compareData.rev_a} revB={compareData.rev_b} />
+            </div>
+          ) : (
+            /* sem preços de referência — mostra só os cards de proposta */
+            compareData.proposals_a && compareData.proposals_a.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {([
+                  { label: `Rev. ${compareData.rev_a}`, proposals: compareData.proposals_a, cls: 'border-slate-300' },
+                  { label: `Rev. ${compareData.rev_b}`, proposals: compareData.proposals_b ?? [], cls: 'border-[#7A99C4]' },
+                ] as { label: string; proposals: { empresa: string; valor_total: number }[]; cls: string }[]).map((side) => (
+                  <div key={side.label} className={`border ${side.cls} rounded-xl overflow-hidden`}>
+                    <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 border-b border-gray-200">
+                      {side.label} — {side.proposals.length} proposta{side.proposals.length !== 1 ? 's' : ''}
+                    </div>
+                    <table className="w-full text-xs border-collapse">
+                      <tbody>
+                        {side.proposals.map((p, i) => (
+                          <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                            <td className="px-3 py-2 text-gray-700 font-medium truncate max-w-[180px]">{p.empresa}</td>
+                            <td className="px-3 py-2 text-right font-semibold text-gray-800">{formatBRL(p.valor_total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* ── 3. Drill-down por dimensão ── */}
+          <div className="bg-white border border-gray-100 rounded-xl p-5">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+              Comparativo por Dimensão — Rev. {compareData.rev_a} vs Rev. {compareData.rev_b}
+            </h3>
+            <DrillChart items={items} revA={compareData.rev_a} revB={compareData.rev_b} />
+          </div>
+
+          {/* ── 4. Tabela detalhada por Localidade / Disciplina ── */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              Detalhamento por Localidade / Disciplina — {items.length} linhas
+            </h3>
+            <DetailTable items={items} revA={compareData.rev_a} revB={compareData.rev_b} />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 
 export default function Analytics() {
@@ -1807,357 +2407,18 @@ export default function Analytics() {
 
             {/* ── REVISÕES ── */}
             {tab === 'revisoes' && (
-              <div className="space-y-6">
-                {/* Seleção de revisões */}
-                <div className="flex flex-wrap items-end gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Revisão A</label>
-                    <select
-                      value={revA}
-                      onChange={(e) => { setRevA(e.target.value === '' ? '' : Number(e.target.value)); setCompareTriggered(false) }}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
-                    >
-                      <option value="">Selecione…</option>
-                      {(revisions ?? []).map((r) => (
-                        <option key={r.id} value={r.numero}>Rev. {r.numero}{r.descricao ? ` — ${r.descricao}` : ''}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Revisão B</label>
-                    <select
-                      value={revB}
-                      onChange={(e) => { setRevB(e.target.value === '' ? '' : Number(e.target.value)); setCompareTriggered(false) }}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
-                    >
-                      <option value="">Selecione…</option>
-                      {(revisions ?? []).map((r) => (
-                        <option key={r.id} value={r.numero}>Rev. {r.numero}{r.descricao ? ` — ${r.descricao}` : ''}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    onClick={() => setCompareTriggered(true)}
-                    disabled={revA === '' || revB === '' || revA === revB}
-                    className="text-white rounded-xl px-5 py-2 text-sm font-semibold disabled:opacity-40 hover:opacity-90"
-                    style={{ backgroundColor: '#1A3A6B' }}
-                  >
-                    Comparar
-                  </button>
-                </div>
-
-                {loadingCompare && <Loading />}
-
-                {compareData && !loadingCompare && (() => {
-                  const added    = compareData.by_item.filter((i: any) => i.status === 'added')
-                  const removed  = compareData.by_item.filter((i: any) => i.status === 'removed')
-                  const changed  = compareData.by_item.filter((i: any) => i.status === 'changed')
-                  const unchanged = compareData.by_item.filter((i: any) => i.status === 'unchanged')
-                  return (
-                  <div className="space-y-6">
-                    {/* PQ Stats comparison */}
-                    {compareData.pq_stats && (
-                      <div>
-                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Planilha de Quantidades</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {[
-                            { label: `Linhas Rev. ${compareData.rev_a}`, value: compareData.pq_stats.count_a.toLocaleString('pt-BR'), color: 'text-gray-800' },
-                            { label: `Linhas Rev. ${compareData.rev_b}`, value: compareData.pq_stats.count_b.toLocaleString('pt-BR'), color: 'text-gray-800' },
-                            { label: `Soma Qtd Rev. ${compareData.rev_a}`, value: Number(compareData.pq_stats.sum_qty_a).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), color: 'text-[#1A3A6B]' },
-                            { label: `Soma Qtd Rev. ${compareData.rev_b}`, value: Number(compareData.pq_stats.sum_qty_b).toLocaleString('pt-BR', { maximumFractionDigits: 2 }), color: 'text-[#1A3A6B]' },
-                          ].map((m) => (
-                            <div key={m.label} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{m.label}</p>
-                              <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Proposal values per revision */}
-                    {((compareData.proposals_a?.length ?? 0) > 0 || (compareData.proposals_b?.length ?? 0) > 0) && (
-                      <div>
-                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Valores das Propostas por Revisão</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {([
-                            { label: `Rev. ${compareData.rev_a}`, proposals: compareData.proposals_a ?? [], cls: 'border-slate-300' },
-                            { label: `Rev. ${compareData.rev_b}`, proposals: compareData.proposals_b ?? [], cls: 'border-[#7A99C4]' },
-                          ] as { label: string; proposals: any[]; cls: string }[]).map((side) => (
-                            <div key={side.label} className={`border ${side.cls} rounded-xl overflow-hidden`}>
-                              <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 border-b border-gray-200">
-                                {side.label} — {side.proposals.length} proposta{side.proposals.length !== 1 ? 's' : ''}
-                              </div>
-                              {side.proposals.length === 0 ? (
-                                <p className="text-xs text-gray-400 p-3">Nenhuma proposta.</p>
-                              ) : (
-                                <table className="w-full text-xs border-collapse">
-                                  <tbody>
-                                    {side.proposals.map((p: any, i: number) => (
-                                      <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                                        <td className="px-3 py-2 text-gray-700 font-medium truncate max-w-[180px]">{p.empresa}</td>
-                                        <td className="px-3 py-2 text-right font-semibold text-gray-800">{formatBRL(p.valor_total)}</td>
-                                      </tr>
-                                    ))}
-                                    <tr style={{ backgroundColor: '#E8EDF6', borderTop: '2px solid #A3B4D4' }}>
-                                      <td className="px-3 py-2 font-semibold text-xs" style={{ color: '#1A3A6B' }}>Total</td>
-                                      <td className="px-3 py-2 text-right font-bold" style={{ color: '#1A3A6B' }}>
-                                        {formatBRL(side.proposals.reduce((s: number, p: any) => s + p.valor_total, 0))}
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Global metrics — proposal delta */}
-                    <div>
-                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Delta de Propostas</h3>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[
-                          { label: `Total Propostas Rev. ${compareData.rev_a}`, value: formatBRL(compareData.global.total_a), color: 'text-gray-800' },
-                          { label: `Total Propostas Rev. ${compareData.rev_b}`, value: formatBRL(compareData.global.total_b), color: 'text-gray-800' },
-                          { label: 'Delta (R$)', value: (compareData.global.delta >= 0 ? '+' : '') + formatBRL(compareData.global.delta), color: compareData.global.delta >= 0 ? 'text-red-600' : 'text-green-700' },
-                          { label: 'Delta (%)', value: (compareData.global.delta_pct >= 0 ? '+' : '') + formatPercent(compareData.global.delta_pct), color: compareData.global.delta_pct >= 0 ? 'text-red-600' : 'text-green-700' },
-                        ].map((m) => (
-                          <div key={m.label} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{m.label}</p>
-                            <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Item change summary */}
-                    <div className="flex flex-wrap gap-3">
-                      {[
-                        { label: 'Adicionados', count: added.length, cls: 'bg-green-50 border-green-200 text-green-700' },
-                        { label: 'Removidos',   count: removed.length, cls: 'bg-red-50 border-red-200 text-red-600' },
-                        { label: 'Alterados',   count: changed.length, cls: 'bg-amber-50 border-amber-200 text-amber-700' },
-                        { label: 'Sem alteração', count: unchanged.length, cls: 'bg-gray-50 border-gray-200 text-gray-500' },
-                      ].map((s) => (
-                        <div key={s.label} className={`flex items-center gap-2 border rounded-xl px-4 py-2.5 ${s.cls}`}>
-                          <span className="text-2xl font-bold leading-none">{s.count}</span>
-                          <span className="text-xs font-medium">{s.label}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Added items */}
-                    {added.length > 0 && (
-                      <div>
-                        <h3 className="text-xs font-semibold text-green-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                          Itens Adicionados na Rev. {compareData.rev_b} ({added.length})
-                        </h3>
-                        <div className="overflow-auto rounded-xl border border-green-200">
-                          <table className="w-full text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-green-50 border-b border-green-100">
-                                <th className="px-3 py-2 text-left font-semibold text-green-700">Item</th>
-                                <th className="px-3 py-2 text-left font-semibold text-green-700">Descrição</th>
-                                <th className="px-3 py-2 text-right font-semibold text-green-700">Valor Rev. B</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {added.map((item: any) => (
-                                <tr key={item.numero_item} className="border-b border-green-50 bg-green-50/40 hover:bg-green-50">
-                                  <td className="px-3 py-2 font-mono text-green-700">{item.numero_item}</td>
-                                  <td className="px-3 py-2 text-gray-700 max-w-[300px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
-                                  <td className="px-3 py-2 text-right font-semibold text-green-700">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Removed items */}
-                    {removed.length > 0 && (
-                      <div>
-                        <h3 className="text-xs font-semibold text-red-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
-                          Itens Removidos da Rev. {compareData.rev_b} ({removed.length})
-                        </h3>
-                        <div className="overflow-auto rounded-xl border border-red-200">
-                          <table className="w-full text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-red-50 border-b border-red-100">
-                                <th className="px-3 py-2 text-left font-semibold text-red-700">Item</th>
-                                <th className="px-3 py-2 text-left font-semibold text-red-700">Descrição</th>
-                                <th className="px-3 py-2 text-right font-semibold text-red-700">Valor Rev. A</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {removed.map((item: any) => (
-                                <tr key={item.numero_item} className="border-b border-red-50 bg-red-50/40 hover:bg-red-50">
-                                  <td className="px-3 py-2 font-mono text-red-700">{item.numero_item}</td>
-                                  <td className="px-3 py-2 text-gray-700 max-w-[300px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
-                                  <td className="px-3 py-2 text-right font-semibold text-red-600">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* By discipline */}
-                    {compareData.by_discipline.length > 0 && (
-                      <div>
-                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Por Disciplina</h3>
-                        <div className="overflow-auto rounded-xl border border-gray-200">
-                          <table className="w-full text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-gray-50 border-b border-gray-200">
-                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Disciplina</th>
-                                <th className="px-3 py-2 text-right font-semibold text-gray-600">Rev. A</th>
-                                <th className="px-3 py-2 text-right font-semibold text-gray-600">Rev. B</th>
-                                <th className="px-3 py-2 text-right font-semibold text-gray-600">Delta</th>
-                                <th className="px-3 py-2 text-right font-semibold text-gray-600">%</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {compareData.by_discipline.map((d: any, i: number) => (
-                                <tr key={d.disciplina} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                                  <td className="px-3 py-2 text-gray-700">{d.disciplina}</td>
-                                  <td className="px-3 py-2 text-right text-gray-600">{formatBRL(d.total_a)}</td>
-                                  <td className="px-3 py-2 text-right text-gray-600">{formatBRL(d.total_b)}</td>
-                                  <td className={`px-3 py-2 text-right font-semibold ${d.delta >= 0 ? 'text-red-600' : 'text-green-700'}`}>{d.delta >= 0 ? '+' : ''}{formatBRL(d.delta)}</td>
-                                  <td className={`px-3 py-2 text-right ${d.delta_pct >= 0 ? 'text-red-600' : 'text-green-700'}`}>{d.delta_pct >= 0 ? '+' : ''}{formatPercent(d.delta_pct)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Changed items with quantity detail */}
-                    {(changed.length > 0) && (
-                      <div>
-                        <h3 className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-                          Itens Alterados ({changed.length})
-                        </h3>
-                        <div className="overflow-auto rounded-xl border border-amber-200">
-                          <table className="w-full text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-amber-50 border-b border-amber-100">
-                                <th className="px-3 py-2 text-left font-semibold text-amber-700">Item</th>
-                                <th className="px-3 py-2 text-left font-semibold text-amber-700">Descrição</th>
-                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Qtd A</th>
-                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Qtd B</th>
-                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Δ Qtd</th>
-                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Valor A</th>
-                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Valor B</th>
-                                <th className="px-3 py-2 text-right font-semibold text-amber-700">Δ Valor</th>
-                                <th className="px-3 py-2 text-left font-semibold text-amber-700">Campos</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {changed.map((item: any, i: number) => {
-                                const qChange = item.pq_change?.find((c: any) => c.field === 'quantidade')
-                                const qtdA = qChange ? Number(qChange.valor_a) : null
-                                const qtdB = qChange ? Number(qChange.valor_b) : null
-                                const qtdDelta = qtdA !== null && qtdB !== null ? qtdB - qtdA : null
-                                const changedFields: string[] = item.pq_change?.map((c: any) =>
-                                  c.field === 'descricao' ? 'Descrição' :
-                                  c.field === 'unidade' ? 'Unidade' :
-                                  c.field === 'quantidade' ? 'Quantidade' : c.field
-                                ) ?? []
-                                return (
-                                  <tr key={item.numero_item} className={`border-b border-amber-50 hover:bg-amber-50/30 ${i % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'}`}>
-                                    <td className="px-3 py-2 font-mono text-amber-700">{item.numero_item}</td>
-                                    <td className="px-3 py-2 text-gray-700 max-w-[200px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
-                                    <td className="px-3 py-2 text-right text-gray-500">{qtdA != null ? formatNumber(qtdA, 2) : '—'}</td>
-                                    <td className={`px-3 py-2 text-right font-semibold ${qtdDelta !== null && qtdDelta !== 0 ? 'text-amber-700' : 'text-gray-500'}`}>
-                                      {qtdB != null ? formatNumber(qtdB, 2) : '—'}
-                                    </td>
-                                    <td className={`px-3 py-2 text-right font-semibold ${qtdDelta === null ? 'text-gray-300' : qtdDelta > 0 ? 'text-red-600' : qtdDelta < 0 ? 'text-green-700' : 'text-gray-400'}`}>
-                                      {qtdDelta !== null ? `${qtdDelta > 0 ? '+' : ''}${formatNumber(qtdDelta, 2)}` : '—'}
-                                    </td>
-                                    <td className="px-3 py-2 text-right text-gray-500">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
-                                    <td className="px-3 py-2 text-right text-gray-600">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>
-                                    <td className={`px-3 py-2 text-right font-semibold ${(item.delta ?? 0) >= 0 ? 'text-red-600' : 'text-green-700'}`}>
-                                      {item.delta != null ? `${item.delta >= 0 ? '+' : ''}${formatBRL(item.delta)}` : '—'}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      <div className="flex gap-1 flex-wrap">
-                                        {changedFields.map((f: string) => (
-                                          <span key={f} className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">{f}</span>
-                                        ))}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* All items summary */}
-                    <div>
-                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Todos os Itens</h3>
-                      <div className="overflow-auto rounded-xl border border-gray-200">
-                        <table className="w-full text-xs border-collapse">
-                          <thead>
-                            <tr className="bg-gray-50 border-b border-gray-200">
-                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Item</th>
-                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Descrição</th>
-                              <th className="px-3 py-2 text-center font-semibold text-gray-600">Status</th>
-                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Qtd A</th>
-                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Qtd B</th>
-                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Valor A</th>
-                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Valor B</th>
-                              <th className="px-3 py-2 text-right font-semibold text-gray-600">Delta</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {compareData.by_item.map((item: any, i: number) => {
-                              const rowCls = item.status === 'added' ? 'bg-green-50/60' : item.status === 'removed' ? 'bg-red-50/60' : item.status === 'changed' ? 'bg-amber-50/60' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'
-                              const statusBadge = item.status === 'added' ? 'bg-green-100 text-green-700' : item.status === 'removed' ? 'bg-red-100 text-red-600' : item.status === 'changed' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'
-                              const statusLabel = item.status === 'added' ? '+ Adicionado' : item.status === 'removed' ? '− Removido' : item.status === 'changed' ? '~ Alterado' : 'Igual'
-                              const qChange = item.pq_change?.find((c: any) => c.field === 'quantidade')
-                              return (
-                                <tr key={item.numero_item} className={`border-b border-gray-100 ${rowCls}`}>
-                                  <td className="px-3 py-1.5 font-mono text-gray-500 text-[11px]">{item.numero_item}</td>
-                                  <td className="px-3 py-1.5 text-gray-700 max-w-[180px]"><div className="truncate" title={item.descricao}>{item.descricao}</div></td>
-                                  <td className="px-3 py-1.5 text-center"><span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${statusBadge}`}>{statusLabel}</span></td>
-                                  <td className="px-3 py-1.5 text-right text-gray-400">{qChange ? formatNumber(Number(qChange.valor_a), 2) : '—'}</td>
-                                  <td className={`px-3 py-1.5 text-right ${qChange && qChange.valor_a !== qChange.valor_b ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>
-                                    {qChange ? formatNumber(Number(qChange.valor_b), 2) : '—'}
-                                  </td>
-                                  <td className="px-3 py-1.5 text-right text-gray-500">{item.valor_a != null ? formatBRL(item.valor_a) : '—'}</td>
-                                  <td className="px-3 py-1.5 text-right text-gray-600">{item.valor_b != null ? formatBRL(item.valor_b) : '—'}</td>
-                                  <td className={`px-3 py-1.5 text-right font-semibold ${(item.delta ?? 0) > 0 ? 'text-red-600' : (item.delta ?? 0) < 0 ? 'text-green-700' : 'text-gray-300'}`}>
-                                    {item.delta != null && item.delta !== 0 ? `${item.delta > 0 ? '+' : ''}${formatBRL(item.delta)}` : '—'}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                  )
-                })()}
-
-                {!compareData && !loadingCompare && compareTriggered && (
-                  <EmptyState message="Não foi possível comparar as revisões selecionadas." />
-                )}
-                {!compareTriggered && (
-                  <EmptyState message="Selecione duas revisões e clique em Comparar." />
-                )}
-              </div>
+              <PanelRevisoes
+                compareData={compareData}
+                revA={revA} revB={revB}
+                loadingCompare={loadingCompare}
+                compareTriggered={compareTriggered}
+                revisions={revisions ?? []}
+                pid={pid}
+                projectName={project?.nome ?? ''}
+                setRevA={setRevA}
+                setRevB={setRevB}
+                setCompareTriggered={setCompareTriggered}
+              />
             )}
           </div>
     </div>

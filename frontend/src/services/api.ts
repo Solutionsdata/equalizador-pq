@@ -73,6 +73,11 @@ export const revisionsAPI = {
     api.delete(`/projects/${projectId}/revisions/${revisionId}`),
   compare: (projectId: number, revA: number, revB: number) =>
     api.get(`/projects/${projectId}/revisions/compare`, { params: { rev_a: revA, rev_b: revB } }),
+  exportRevisions: (projectId: number, revA: number, revB: number) =>
+    api.get(`/projects/${projectId}/revisions/export`, {
+      params: { rev_a: revA, rev_b: revB },
+      responseType: 'blob',
+    }),
   scopeValidation: (projectId: number, revisionId?: number) =>
     api.get(`/analytics/scope-validation/${projectId}`, revisionId ? { params: { revision_id: revisionId } } : {}),
 }

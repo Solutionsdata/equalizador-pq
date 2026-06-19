@@ -1341,3 +1341,244 @@ def _float(v) -> Optional[float]:
         return float(str(v).replace(",", ".").replace("R$", "").replace("%", "").strip())
     except (ValueError, AttributeError):
         return None
+
+
+# ── Geração: Comparativo de Revisões ─────────────────────────────────────────
+
+def gerar_comparativo_revisoes(project_name: str, data: dict) -> io.BytesIO:
+    """
+    Gera Excel com 2 abas:
+    - Resumo: consolidado por Localidade / Disciplina / Categoria
+    - Comparativo: linha a linha com colunas A e B lado a lado
+    """
+    rev_a = data["rev_a"]
+    rev_b = data["rev_b"]
+    items = data.get("by_item", [])
+
+    VERDE   = "1B7C3E"
+    VERDE_L = "E8F5EE"
+    VERM    = "B91C1C"
+    VERM_L  = "FEE2E2"
+    AMBAR   = "B45309"
+    AMBAR_L = "FEF3C7"
+    CINZA   = "6B7280"
+    CINZA_L = "F3F4F6"
+    AZUL    = "1E3A5F"
+    AZUL_L  = "E8EDF6"
+    AZUL_H  = "2563EB"
+
+    STATUS_COLOR = {
+        "added":     (VERDE,   VERDE_L),
+        "removed":   (VERM,    VERM_L),
+        "changed":   (AMBAR,   AMBAR_L),
+        "unchanged": (CINZA,   CINZA_L),
+    }
+    STATUS_LABEL = {
+        "added":     "+ Adicionado",
+        "removed":   "− Removido",
+        "changed":   "~ Alterado",
+        "unchanged": "= Igual",
+    }
+
+    wb = Workbook()
+
+    # ── Aba 1: Resumo consolidado ─────────────────────────────────────────────
+
+    ws1 = wb.active
+    ws1.title = f"Resumo Rev{rev_a}-Rev{rev_b}"
+    ws1.sheet_view.showGridLines = False
+
+    RESUMO_COLS = [
+        ("Localidade",  20), ("Disciplina",  22), ("Categoria", 22),
+        (f"Qtd Rev{rev_a}", 14), (f"Qtd Rev{rev_b}", 14), ("Δ Qtd", 12),
+        (f"Valor Rev{rev_a}", 18), (f"Valor Rev{rev_b}", 18), ("Δ Valor", 18), ("Δ %", 10),
+        ("Adicionados", 12), ("Removidos", 12), ("Alterados", 12), ("Sem Alteração", 14),
+    ]
+    n_cols = len(RESUMO_COLS)
+    last_col_r = get_column_letter(n_cols)
+
+    # Título
+    ws1.merge_cells(f"A1:{last_col_r}1")
+    c = ws1["A1"]
+    c.value = f"COMPARATIVO DE REVISÕES  ·  {project_name.upper()}  ·  Rev. {rev_a} → Rev. {rev_b}"
+    c.fill = _fill(AZUL)
+    c.font = _font("FFFFFF", bold=True, size=12)
+    c.alignment = _align("center")
+    ws1.row_dimensions[1].height = 26
+
+    # Cabeçalho
+    for ci, (label, width) in enumerate(RESUMO_COLS, 1):
+        col = get_column_letter(ci)
+        ws1.column_dimensions[col].width = width
+        cell = ws1.cell(row=2, column=ci, value=label)
+        cell.fill = _fill(AZUL_H)
+        cell.font = _font("FFFFFF", bold=True, size=9)
+        cell.alignment = _align("center")
+        cell.border = _border()
+    ws1.row_dimensions[2].height = 20
+
+    # Agrupa: localidade → disciplina → categoria
+    from collections import defaultdict
+    groups: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {
+        "qty_a": 0.0, "qty_b": 0.0, "val_a": 0.0, "val_b": 0.0,
+        "added": 0, "removed": 0, "changed": 0, "unchanged": 0,
+    })))
+    for item in items:
+        loc  = item.get("localidade") or "Sem Localidade"
+        disc = item.get("disciplina") or "Sem Disciplina"
+        cat  = item.get("categoria")  or "Sem Categoria"
+        g = groups[loc][disc][cat]
+        g["qty_a"] += item.get("quantidade_a") or 0
+        g["qty_b"] += item.get("quantidade_b") or 0
+        g["val_a"] += item.get("valor_a") or 0
+        g["val_b"] += item.get("valor_b") or 0
+        g[item.get("status", "unchanged")] += 1
+
+    row_r = 3
+    alt = False
+    for loc in sorted(groups):
+        for disc in sorted(groups[loc]):
+            for cat in sorted(groups[loc][disc]):
+                g = groups[loc][disc][cat]
+                d_val = g["val_b"] - g["val_a"]
+                d_pct = (d_val / g["val_a"] * 100) if g["val_a"] != 0 else 0.0
+                d_qty = g["qty_b"] - g["qty_a"]
+                bg = CINZA_L if alt else BRANCO
+                row_vals = [
+                    loc, disc, cat,
+                    g["qty_a"], g["qty_b"], d_qty,
+                    g["val_a"], g["val_b"], d_val, d_pct,
+                    g["added"], g["removed"], g["changed"], g["unchanged"],
+                ]
+                for ci, val in enumerate(row_vals, 1):
+                    cell = ws1.cell(row=row_r, column=ci, value=val)
+                    cell.fill = _fill(bg)
+                    cell.border = _border()
+                    cell.alignment = _align("center" if ci >= 4 else "left")
+                    cell.font = _font(size=9)
+                    # Formatos
+                    if ci in (4, 5, 6):
+                        cell.number_format = "#,##0.00"
+                    elif ci in (7, 8, 9):
+                        cell.number_format = "R$ #,##0.00"
+                    elif ci == 10:
+                        cell.number_format = '0.00"%"'
+                        if val > 5:
+                            cell.font = _font(VERM, bold=True, size=9)
+                        elif val < -5:
+                            cell.font = _font(VERDE, bold=True, size=9)
+                    elif ci == 9:
+                        if val > 0:
+                            cell.font = _font(VERM, bold=True, size=9)
+                        elif val < 0:
+                            cell.font = _font(VERDE, bold=True, size=9)
+                alt = not alt
+                row_r += 1
+
+    ws1.freeze_panes = "A3"
+
+    # ── Aba 2: Comparativo linha a linha ──────────────────────────────────────
+
+    ws2 = wb.create_sheet(title=f"Linhas Rev{rev_a}-Rev{rev_b}")
+    ws2.sheet_view.showGridLines = False
+
+    LINE_COLS = [
+        ("Status",      14), ("Item",         12), ("Descrição",     40),
+        ("Localidade",  18), ("Disciplina",   20), ("Categoria",     20), ("Un",  8),
+        # Rev A
+        (f"Qtd Rev{rev_a}", 12), (f"P.Unit Rev{rev_a}", 16), (f"Total Rev{rev_a}", 18),
+        # Rev B
+        (f"Qtd Rev{rev_b}", 12), (f"P.Unit Rev{rev_b}", 16), (f"Total Rev{rev_b}", 18),
+        # Deltas
+        ("Δ Qtd", 12), ("Δ Valor", 16), ("Δ %", 10),
+    ]
+    n_cols2 = len(LINE_COLS)
+    last_col_l = get_column_letter(n_cols2)
+
+    # Título
+    ws2.merge_cells(f"A1:{last_col_l}1")
+    c2 = ws2["A1"]
+    c2.value = f"COMPARATIVO LINHA A LINHA  ·  {project_name.upper()}  ·  Rev. {rev_a} → Rev. {rev_b}"
+    c2.fill = _fill(AZUL)
+    c2.font = _font("FFFFFF", bold=True, size=12)
+    c2.alignment = _align("center")
+    ws2.row_dimensions[1].height = 26
+
+    # Cabeçalho — grupo Rev A (azul escuro) e Rev B (azul claro) e Δ
+    header_colors = {
+        8: AZUL, 9: AZUL, 10: AZUL,
+        11: AZUL_H, 12: AZUL_H, 13: AZUL_H,
+        14: "374151", 15: "374151", 16: "374151",
+    }
+    for ci, (label, width) in enumerate(LINE_COLS, 1):
+        col = get_column_letter(ci)
+        ws2.column_dimensions[col].width = width
+        bg_hdr = header_colors.get(ci, AZUL_H)
+        cell = ws2.cell(row=2, column=ci, value=label)
+        cell.fill = _fill(bg_hdr)
+        cell.font = _font("FFFFFF", bold=True, size=9)
+        cell.alignment = _align("center")
+        cell.border = _border()
+    ws2.row_dimensions[2].height = 20
+
+    # Ordena: localidade → disciplina → categoria → numero_item
+    sorted_items = sorted(
+        items,
+        key=lambda x: (
+            x.get("localidade") or "",
+            x.get("disciplina") or "",
+            x.get("categoria") or "",
+            x.get("numero_item") or "",
+        )
+    )
+
+    row_l = 3
+    for item in sorted_items:
+        status = item.get("status", "unchanged")
+        text_color, bg_color = STATUS_COLOR[status]
+
+        qty_a  = item.get("quantidade_a")
+        qty_b  = item.get("quantidade_b")
+        pref_a = item.get("preco_referencia_a")
+        pref_b = item.get("preco_referencia_b")
+        val_a  = item.get("valor_a")
+        val_b  = item.get("valor_b")
+        delta  = item.get("delta")
+        d_pct  = item.get("delta_pct")
+        d_qty  = (qty_b - qty_a) if (qty_a is not None and qty_b is not None) else None
+
+        row_data = [
+            STATUS_LABEL[status],
+            item.get("numero_item", ""),
+            item.get("descricao", ""),
+            item.get("localidade") or "",
+            item.get("disciplina") or "",
+            item.get("categoria") or "",
+            item.get("unidade") or "",
+            qty_a, pref_a, val_a,
+            qty_b, pref_b, val_b,
+            d_qty, delta, d_pct,
+        ]
+
+        for ci, val in enumerate(row_data, 1):
+            cell = ws2.cell(row=row_l, column=ci, value=val)
+            cell.fill = _fill(bg_color)
+            cell.font = _font(text_color if ci in (1, 14, 15, 16) else "111827", size=9,
+                              bold=(ci in (1, 14, 15, 16)))
+            cell.border = _border()
+            cell.alignment = _align("center" if ci >= 8 else ("left" if ci in (3, 4, 5, 6) else "center"))
+            if ci in (8, 11, 14):
+                cell.number_format = "#,##0.00"
+            elif ci in (9, 10, 12, 13, 15):
+                cell.number_format = "R$ #,##0.00"
+            elif ci == 16:
+                cell.number_format = '0.00"%"'
+
+        row_l += 1
+
+    ws2.freeze_panes = "A3"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf

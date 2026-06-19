@@ -1,5 +1,6 @@
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import get_current_user
@@ -80,7 +81,6 @@ def create_revision(
     current_user: User = Depends(get_current_user),
 ):
     _check_project(db, project_id, current_user.id)
-    # Check uniqueness
     existing = db.query(ProjectRevision).filter(
         ProjectRevision.project_id == project_id,
         ProjectRevision.numero == data.numero,
@@ -120,19 +120,11 @@ def delete_revision(
     db.commit()
 
 
-@router.get("/projects/{project_id}/revisions/compare")
-def compare_revisions(
-    project_id: int,
-    rev_a: int = Query(..., description="Número da revisão A"),
-    rev_b: int = Query(..., description="Número da revisão B"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _check_project(db, project_id, current_user.id)
+def _build_compare_data(db: Session, project_id: int, rev_a: int, rev_b: int) -> dict:
+    """Constrói os dados de comparação entre duas revisões."""
     revision_a = _get_revision(db, project_id, rev_a)
     revision_b = _get_revision(db, project_id, rev_b)
 
-    # Get PQ items for each revision
     pq_a = {
         item.numero_item: item
         for item in db.query(PQItem).filter(PQItem.revision_id == revision_a.id).all()
@@ -142,7 +134,6 @@ def compare_revisions(
         for item in db.query(PQItem).filter(PQItem.revision_id == revision_b.id).all()
     }
 
-    # Get proposals for each revision
     proposals_a = db.query(Proposal).filter(Proposal.revision_id == revision_a.id).all()
     proposals_b = db.query(Proposal).filter(Proposal.revision_id == revision_b.id).all()
 
@@ -158,7 +149,6 @@ def compare_revisions(
     delta = total_b - total_a
     delta_pct = ((delta / total_a) * 100) if total_a != 0 else 0.0
 
-    # by_item comparison
     all_items: list[dict] = []
     all_nums = set(pq_a.keys()) | set(pq_b.keys())
 
@@ -166,12 +156,23 @@ def compare_revisions(
         item_a = pq_a.get(num)
         item_b = pq_b.get(num)
 
+        # Dimensões: prioridade para B (mais recente), fallback A
+        ref_item = item_b or item_a
+        localidade = ref_item.localidade
+        disciplina = ref_item.disciplina
+        categoria = ref_item.categoria
+        unidade = ref_item.unidade
+
+        qty_a = float(item_a.quantidade or 0) if item_a else None
+        qty_b = float(item_b.quantidade or 0) if item_b else None
+        pref_a = float(item_a.preco_referencia or 0) if item_a and item_a.preco_referencia else None
+        pref_b = float(item_b.preco_referencia or 0) if item_b and item_b.preco_referencia else None
+
         if item_a and item_b:
             val_a = float(item_a.preco_referencia or 0) * float(item_a.quantidade or 0)
             val_b = float(item_b.preco_referencia or 0) * float(item_b.quantidade or 0)
             d = val_b - val_a
             d_pct = ((d / val_a) * 100) if val_a != 0 else 0.0
-            # Check PQ changes
             pq_changes = []
             for field in ("descricao", "unidade", "quantidade"):
                 va = getattr(item_a, field)
@@ -182,7 +183,15 @@ def compare_revisions(
             all_items.append({
                 "numero_item": num,
                 "descricao": item_b.descricao,
+                "localidade": localidade,
+                "disciplina": disciplina,
+                "categoria": categoria,
+                "unidade": unidade,
                 "status": s,
+                "quantidade_a": qty_a,
+                "quantidade_b": qty_b,
+                "preco_referencia_a": pref_a,
+                "preco_referencia_b": pref_b,
                 "valor_a": val_a,
                 "valor_b": val_b,
                 "delta": d,
@@ -194,7 +203,15 @@ def compare_revisions(
             all_items.append({
                 "numero_item": num,
                 "descricao": item_a.descricao,
+                "localidade": localidade,
+                "disciplina": disciplina,
+                "categoria": categoria,
+                "unidade": unidade,
                 "status": "removed",
+                "quantidade_a": qty_a,
+                "quantidade_b": None,
+                "preco_referencia_a": pref_a,
+                "preco_referencia_b": None,
                 "valor_a": val_a,
                 "valor_b": None,
                 "delta": -val_a,
@@ -206,7 +223,15 @@ def compare_revisions(
             all_items.append({
                 "numero_item": num,
                 "descricao": item_b.descricao,
+                "localidade": localidade,
+                "disciplina": disciplina,
+                "categoria": categoria,
+                "unidade": unidade,
                 "status": "added",
+                "quantidade_a": None,
+                "quantidade_b": qty_b,
+                "preco_referencia_a": None,
+                "preco_referencia_b": pref_b,
                 "valor_a": None,
                 "valor_b": val_b,
                 "delta": val_b,
@@ -219,14 +244,14 @@ def compare_revisions(
     # by_discipline
     disc_map: dict[str, dict] = {}
     for item in all_items:
-        num = item["numero_item"]
-        ia = pq_a.get(num)
-        ib = pq_b.get(num)
-        disc = (ib or ia).disciplina or "Sem disciplina"
+        disc = item["disciplina"] or "Sem Disciplina"
         if disc not in disc_map:
-            disc_map[disc] = {"disciplina": disc, "total_a": 0.0, "total_b": 0.0}
+            disc_map[disc] = {"disciplina": disc, "total_a": 0.0, "total_b": 0.0,
+                               "qty_a": 0.0, "qty_b": 0.0}
         disc_map[disc]["total_a"] += item.get("valor_a") or 0
         disc_map[disc]["total_b"] += item.get("valor_b") or 0
+        disc_map[disc]["qty_a"] += item.get("quantidade_a") or 0
+        disc_map[disc]["qty_b"] += item.get("quantidade_b") or 0
     by_discipline = []
     for v in disc_map.values():
         d = v["total_b"] - v["total_a"]
@@ -236,25 +261,52 @@ def compare_revisions(
     # by_category
     cat_map: dict[str, dict] = {}
     for item in all_items:
-        num = item["numero_item"]
-        ia = pq_a.get(num)
-        ib = pq_b.get(num)
-        cat = (ib or ia).categoria or "Sem categoria"
+        cat = item["categoria"] or "Sem Categoria"
         if cat not in cat_map:
-            cat_map[cat] = {"categoria": cat, "total_a": 0.0, "total_b": 0.0}
+            cat_map[cat] = {"categoria": cat, "total_a": 0.0, "total_b": 0.0,
+                            "qty_a": 0.0, "qty_b": 0.0}
         cat_map[cat]["total_a"] += item.get("valor_a") or 0
         cat_map[cat]["total_b"] += item.get("valor_b") or 0
+        cat_map[cat]["qty_a"] += item.get("quantidade_a") or 0
+        cat_map[cat]["qty_b"] += item.get("quantidade_b") or 0
     by_category = []
     for v in cat_map.values():
         d = v["total_b"] - v["total_a"]
         d_pct = ((d / v["total_a"]) * 100) if v["total_a"] != 0 else 0.0
         by_category.append({**v, "delta": d, "delta_pct": d_pct})
 
-    # PQ stats per revision
+    # by_localidade
+    loc_map: dict[str, dict] = {}
+    for item in all_items:
+        loc = item["localidade"] or "Sem Localidade"
+        if loc not in loc_map:
+            loc_map[loc] = {"localidade": loc, "total_a": 0.0, "total_b": 0.0,
+                            "qty_a": 0.0, "qty_b": 0.0,
+                            "count_added": 0, "count_removed": 0,
+                            "count_changed": 0, "count_unchanged": 0}
+        loc_map[loc]["total_a"] += item.get("valor_a") or 0
+        loc_map[loc]["total_b"] += item.get("valor_b") or 0
+        loc_map[loc]["qty_a"] += item.get("quantidade_a") or 0
+        loc_map[loc]["qty_b"] += item.get("quantidade_b") or 0
+        loc_map[loc][f"count_{item['status']}"] += 1
+    by_localidade = []
+    for v in loc_map.values():
+        d = v["total_b"] - v["total_a"]
+        d_pct = ((d / v["total_a"]) * 100) if v["total_a"] != 0 else 0.0
+        by_localidade.append({**v, "delta": d, "delta_pct": d_pct})
+
     pq_a_items = list(pq_a.values())
     pq_b_items = list(pq_b.values())
     pq_a_sum_qty = sum(float(i.quantidade or 0) for i in pq_a_items)
     pq_b_sum_qty = sum(float(i.quantidade or 0) for i in pq_b_items)
+    pq_a_sum_valor = sum(
+        float(i.quantidade or 0) * float(i.preco_referencia or 0)
+        for i in pq_a_items if i.preco_referencia
+    )
+    pq_b_sum_valor = sum(
+        float(i.quantidade or 0) * float(i.preco_referencia or 0)
+        for i in pq_b_items if i.preco_referencia
+    )
 
     return {
         "rev_a": rev_a,
@@ -270,6 +322,8 @@ def compare_revisions(
             "count_b": len(pq_b_items),
             "sum_qty_a": round(pq_a_sum_qty, 4),
             "sum_qty_b": round(pq_b_sum_qty, 4),
+            "sum_valor_a": round(pq_a_sum_valor, 2),
+            "sum_valor_b": round(pq_b_sum_valor, 2),
         },
         "proposals_a": [
             {"empresa": p.empresa, "valor_total": proposal_total(p), "status": p.status.value}
@@ -281,6 +335,43 @@ def compare_revisions(
         ],
         "by_discipline": by_discipline,
         "by_category": by_category,
+        "by_localidade": by_localidade,
         "by_item": all_items,
         "pq_changes": pq_change_items,
     }
+
+
+@router.get("/projects/{project_id}/revisions/compare")
+def compare_revisions(
+    project_id: int,
+    rev_a: int = Query(..., description="Número da revisão A"),
+    rev_b: int = Query(..., description="Número da revisão B"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _check_project(db, project_id, current_user.id)
+    return _build_compare_data(db, project_id, rev_a, rev_b)
+
+
+@router.get("/projects/{project_id}/revisions/export")
+def export_revision_compare(
+    project_id: int,
+    rev_a: int = Query(...),
+    rev_b: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Exporta o comparativo entre duas revisões em Excel (2 abas)."""
+    project = _check_project(db, project_id, current_user.id)
+    data = _build_compare_data(db, project_id, rev_a, rev_b)
+
+    from app.services.excel import gerar_comparativo_revisoes
+    buf = gerar_comparativo_revisoes(project.nome, data)
+
+    safe_name = "".join(c for c in project.nome if c.isalnum() or c in " _-")[:40]
+    filename = f"comparativo_rev{rev_a}_rev{rev_b}_{safe_name}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
