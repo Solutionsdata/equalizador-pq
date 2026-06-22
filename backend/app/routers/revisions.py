@@ -120,19 +120,61 @@ def delete_revision(
     db.commit()
 
 
+def _normalize_desc(d: str) -> str:
+    """Normaliza descrição para comparação: maiúsculas, espaços colapsados."""
+    return " ".join(str(d or "").split()).upper()
+
+
 def _build_compare_data(db: Session, project_id: int, rev_a: int, rev_b: int) -> dict:
-    """Constrói os dados de comparação entre duas revisões."""
+    """
+    Constrói comparação entre duas revisões.
+
+    Regras de matching:
+    - Blocos = (localidade, disciplina, categoria) — nunca compara itens entre blocos diferentes
+    - Matching por DESCRIÇÃO normalizada dentro do mesmo bloco (ignora numero_item / código)
+    - Sequência original do campo `ordem` é mantida (não ordena alfabeticamente)
+    - Itens de B não encontrados em A → "added" ao final do bloco
+    - Blocos de B não existentes em A → novos blocos com todos os itens "added"
+    """
     revision_a = _get_revision(db, project_id, rev_a)
     revision_b = _get_revision(db, project_id, rev_b)
 
-    pq_a = {
-        item.numero_item: item
-        for item in db.query(PQItem).filter(PQItem.revision_id == revision_a.id).all()
-    }
-    pq_b = {
-        item.numero_item: item
-        for item in db.query(PQItem).filter(PQItem.revision_id == revision_b.id).all()
-    }
+    # Carrega itens ordenados pela sequência de importação (campo ordem)
+    items_a_raw = (
+        db.query(PQItem)
+        .filter(PQItem.revision_id == revision_a.id)
+        .order_by(PQItem.ordem)
+        .all()
+    )
+    items_b_raw = (
+        db.query(PQItem)
+        .filter(PQItem.revision_id == revision_b.id)
+        .order_by(PQItem.ordem)
+        .all()
+    )
+
+    def group_by_block_seq(items):
+        """
+        Agrupa em runs sequenciais: mesmo bloco separado por outro bloco cria novo grupo.
+        Retorna lista de [key, [items]] — permite a mesma chave múltiplas vezes.
+        """
+        result: list = []
+        for item in items:
+            k = (item.localidade or "", item.disciplina or "", item.categoria or "")
+            if result and result[-1][0] == k:
+                result[-1][1].append(item)
+            else:
+                result.append([k, [item]])
+        return result
+
+    a_block_list = group_by_block_seq(items_a_raw)
+    b_block_list = group_by_block_seq(items_b_raw)
+
+    # Indexa blocos de B por chave em deque (popleft = primeira ocorrência disponível)
+    from collections import defaultdict, deque
+    b_blocks_by_key: dict = defaultdict(deque)
+    for bk, b_items in b_block_list:
+        b_blocks_by_key[bk].append(b_items)
 
     proposals_a = db.query(Proposal).filter(Proposal.revision_id == revision_a.id).all()
     proposals_b = db.query(Proposal).filter(Proposal.revision_id == revision_b.id).all()
@@ -150,94 +192,98 @@ def _build_compare_data(db: Session, project_id: int, rev_a: int, rev_b: int) ->
     delta_pct = ((delta / total_a) * 100) if total_a != 0 else 0.0
 
     all_items: list[dict] = []
-    all_nums = set(pq_a.keys()) | set(pq_b.keys())
+    seq = 0
 
-    for num in sorted(all_nums):
-        item_a = pq_a.get(num)
-        item_b = pq_b.get(num)
+    def _make_entry(item_a, item_b, bk: tuple) -> dict:
+        nonlocal seq
+        loc, disc, cat = bk
+        ref = item_b or item_a
 
-        # Dimensões: prioridade para B (mais recente), fallback A
-        ref_item = item_b or item_a
-        localidade = ref_item.localidade
-        disciplina = ref_item.disciplina
-        categoria = ref_item.categoria
-        unidade = ref_item.unidade
-
-        qty_a = float(item_a.quantidade or 0) if item_a else None
-        qty_b = float(item_b.quantidade or 0) if item_b else None
-        pref_a = float(item_a.preco_referencia or 0) if item_a and item_a.preco_referencia else None
-        pref_b = float(item_b.preco_referencia or 0) if item_b and item_b.preco_referencia else None
+        qty_a  = float(item_a.quantidade or 0)         if item_a else None
+        qty_b  = float(item_b.quantidade or 0)         if item_b else None
+        pref_a = float(item_a.preco_referencia or 0)   if item_a and item_a.preco_referencia else None
+        pref_b = float(item_b.preco_referencia or 0)   if item_b and item_b.preco_referencia else None
+        val_a  = (pref_a or 0) * (qty_a or 0)          if item_a else None
+        val_b  = (pref_b or 0) * (qty_b or 0)          if item_b else None
 
         if item_a and item_b:
-            val_a = float(item_a.preco_referencia or 0) * float(item_a.quantidade or 0)
-            val_b = float(item_b.preco_referencia or 0) * float(item_b.quantidade or 0)
-            d = val_b - val_a
-            d_pct = ((d / val_a) * 100) if val_a != 0 else 0.0
+            d = (val_b or 0) - (val_a or 0)
+            d_pct = ((d / val_a) * 100) if val_a else 0.0
             pq_changes = []
             for field in ("descricao", "unidade", "quantidade"):
                 va = getattr(item_a, field)
                 vb = getattr(item_b, field)
                 if str(va) != str(vb):
                     pq_changes.append({"field": field, "valor_a": va, "valor_b": vb})
-            s = "changed" if (d != 0 or pq_changes) else "unchanged"
-            all_items.append({
-                "numero_item": num,
-                "descricao": item_b.descricao,
-                "localidade": localidade,
-                "disciplina": disciplina,
-                "categoria": categoria,
-                "unidade": unidade,
-                "status": s,
-                "quantidade_a": qty_a,
-                "quantidade_b": qty_b,
-                "preco_referencia_a": pref_a,
-                "preco_referencia_b": pref_b,
-                "valor_a": val_a,
-                "valor_b": val_b,
-                "delta": d,
-                "delta_pct": d_pct,
-                "pq_change": pq_changes if pq_changes else None,
-            })
+            status = "changed" if (d != 0 or pq_changes) else "unchanged"
         elif item_a:
-            val_a = float(item_a.preco_referencia or 0) * float(item_a.quantidade or 0)
-            all_items.append({
-                "numero_item": num,
-                "descricao": item_a.descricao,
-                "localidade": localidade,
-                "disciplina": disciplina,
-                "categoria": categoria,
-                "unidade": unidade,
-                "status": "removed",
-                "quantidade_a": qty_a,
-                "quantidade_b": None,
-                "preco_referencia_a": pref_a,
-                "preco_referencia_b": None,
-                "valor_a": val_a,
-                "valor_b": None,
-                "delta": -val_a,
-                "delta_pct": -100.0,
-                "pq_change": None,
-            })
+            d = -(val_a or 0)
+            d_pct = -100.0
+            pq_changes = None
+            status = "removed"
         else:
-            val_b = float(item_b.preco_referencia or 0) * float(item_b.quantidade or 0)
-            all_items.append({
-                "numero_item": num,
-                "descricao": item_b.descricao,
-                "localidade": localidade,
-                "disciplina": disciplina,
-                "categoria": categoria,
-                "unidade": unidade,
-                "status": "added",
-                "quantidade_a": None,
-                "quantidade_b": qty_b,
-                "preco_referencia_a": None,
-                "preco_referencia_b": pref_b,
-                "valor_a": None,
-                "valor_b": val_b,
-                "delta": val_b,
-                "delta_pct": None,
-                "pq_change": None,
-            })
+            d = (val_b or 0)
+            d_pct = None
+            pq_changes = None
+            status = "added"
+
+        entry = {
+            "numero_item": ref.numero_item,
+            "descricao":   ref.descricao,
+            "localidade":  loc or None,
+            "disciplina":  disc or None,
+            "categoria":   cat or None,
+            "unidade":     ref.unidade,
+            "status":      status,
+            "quantidade_a":       qty_a,
+            "quantidade_b":       qty_b,
+            "preco_referencia_a": pref_a,
+            "preco_referencia_b": pref_b,
+            "valor_a":  val_a,
+            "valor_b":  val_b,
+            "delta":    d,
+            "delta_pct": d_pct,
+            "pq_change": pq_changes if pq_changes else None,
+            "seq_order": seq,
+        }
+        seq += 1
+        return entry
+
+    # Percorre runs de A em sequência
+    for bk, a_items in a_block_list:
+        # Pega o próximo run de B com a mesma chave (mantém a correspondência posicional)
+        b_items = b_blocks_by_key[bk].popleft() if b_blocks_by_key[bk] else []
+
+        # Índice de B por descrição normalizada
+        b_by_desc: dict[str, list] = {}
+        for bi in b_items:
+            nd = _normalize_desc(bi.descricao)
+            b_by_desc.setdefault(nd, []).append(bi)
+
+        b_used_ids: set[int] = set()
+
+        # Itera A em sequência, buscando par em B por descrição
+        for ai in a_items:
+            nd_a = _normalize_desc(ai.descricao)
+            candidates = b_by_desc.get(nd_a, [])
+            bi_matched = next((bi for bi in candidates if bi.id not in b_used_ids), None)
+
+            if bi_matched is not None:
+                b_used_ids.add(bi_matched.id)
+                all_items.append(_make_entry(ai, bi_matched, bk))
+            else:
+                all_items.append(_make_entry(ai, None, bk))
+
+        # Itens de B não pareados → adicionados ao final do run
+        for bi in b_items:
+            if bi.id not in b_used_ids:
+                all_items.append(_make_entry(None, bi, bk))
+
+    # Runs de B restantes (sem par em A) → todos adicionados ao final
+    for bk_key, remaining_deque in b_blocks_by_key.items():
+        for b_items in remaining_deque:
+            for bi in b_items:
+                all_items.append(_make_entry(None, bi, bk_key))
 
     pq_change_items = [i for i in all_items if i.get("pq_change")]
 
@@ -295,17 +341,15 @@ def _build_compare_data(db: Session, project_id: int, rev_a: int, rev_b: int) ->
         d_pct = ((d / v["total_a"]) * 100) if v["total_a"] != 0 else 0.0
         by_localidade.append({**v, "delta": d, "delta_pct": d_pct})
 
-    pq_a_items = list(pq_a.values())
-    pq_b_items = list(pq_b.values())
-    pq_a_sum_qty = sum(float(i.quantidade or 0) for i in pq_a_items)
-    pq_b_sum_qty = sum(float(i.quantidade or 0) for i in pq_b_items)
+    pq_a_sum_qty = sum(float(i.quantidade or 0) for i in items_a_raw)
+    pq_b_sum_qty = sum(float(i.quantidade or 0) for i in items_b_raw)
     pq_a_sum_valor = sum(
         float(i.quantidade or 0) * float(i.preco_referencia or 0)
-        for i in pq_a_items if i.preco_referencia
+        for i in items_a_raw if i.preco_referencia
     )
     pq_b_sum_valor = sum(
         float(i.quantidade or 0) * float(i.preco_referencia or 0)
-        for i in pq_b_items if i.preco_referencia
+        for i in items_b_raw if i.preco_referencia
     )
 
     return {
@@ -318,8 +362,8 @@ def _build_compare_data(db: Session, project_id: int, rev_a: int, rev_b: int) ->
             "delta_pct": delta_pct,
         },
         "pq_stats": {
-            "count_a": len(pq_a_items),
-            "count_b": len(pq_b_items),
+            "count_a": len(items_a_raw),
+            "count_b": len(items_b_raw),
             "sum_qty_a": round(pq_a_sum_qty, 4),
             "sum_qty_b": round(pq_b_sum_qty, 4),
             "sum_valor_a": round(pq_a_sum_valor, 2),

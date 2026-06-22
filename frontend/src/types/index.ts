@@ -276,6 +276,7 @@ export interface RevisionCompareItem {
   delta?: number | null
   delta_pct?: number | null
   pq_change?: { field: string; valor_a: any; valor_b: any }[]
+  seq_order?: number
 }
 
 export interface RevisionCompareResponse {

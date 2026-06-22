@@ -1417,63 +1417,66 @@ def gerar_comparativo_revisoes(project_name: str, data: dict) -> io.BytesIO:
         cell.border = _border()
     ws1.row_dimensions[2].height = 20
 
-    # Agrupa: localidade → disciplina → categoria
-    from collections import defaultdict
-    groups: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {
-        "qty_a": 0.0, "qty_b": 0.0, "val_a": 0.0, "val_b": 0.0,
-        "added": 0, "removed": 0, "changed": 0, "unchanged": 0,
-    })))
+    # Constrói runs sequenciais (mesmo bloco separado por outro = nova linha no Resumo)
+    # Isso garante que "Caminhos de Serviço" de lotes diferentes apareçam separados.
+    resumo_runs: list[tuple] = []  # [(loc, disc, cat, g_dict)]
+    _cur_bk: tuple | None = None
+    _cur_g: dict | None = None
     for item in items:
         loc  = item.get("localidade") or "Sem Localidade"
         disc = item.get("disciplina") or "Sem Disciplina"
         cat  = item.get("categoria")  or "Sem Categoria"
-        g = groups[loc][disc][cat]
-        g["qty_a"] += item.get("quantidade_a") or 0
-        g["qty_b"] += item.get("quantidade_b") or 0
-        g["val_a"] += item.get("valor_a") or 0
-        g["val_b"] += item.get("valor_b") or 0
-        g[item.get("status", "unchanged")] += 1
+        bk = (loc, disc, cat)
+        if bk != _cur_bk:
+            if _cur_g is not None:
+                resumo_runs.append((*_cur_bk, _cur_g))
+            _cur_bk = bk
+            _cur_g = {"qty_a": 0.0, "qty_b": 0.0, "val_a": 0.0, "val_b": 0.0,
+                      "added": 0, "removed": 0, "changed": 0, "unchanged": 0}
+        _cur_g["qty_a"] += item.get("quantidade_a") or 0
+        _cur_g["qty_b"] += item.get("quantidade_b") or 0
+        _cur_g["val_a"] += item.get("valor_a") or 0
+        _cur_g["val_b"] += item.get("valor_b") or 0
+        _cur_g[item.get("status", "unchanged")] += 1
+    if _cur_g is not None:
+        resumo_runs.append((*_cur_bk, _cur_g))
 
     row_r = 3
     alt = False
-    for loc in sorted(groups):
-        for disc in sorted(groups[loc]):
-            for cat in sorted(groups[loc][disc]):
-                g = groups[loc][disc][cat]
-                d_val = g["val_b"] - g["val_a"]
-                d_pct = (d_val / g["val_a"] * 100) if g["val_a"] != 0 else 0.0
-                d_qty = g["qty_b"] - g["qty_a"]
-                bg = CINZA_L if alt else BRANCO
-                row_vals = [
-                    loc, disc, cat,
-                    g["qty_a"], g["qty_b"], d_qty,
-                    g["val_a"], g["val_b"], d_val, d_pct,
-                    g["added"], g["removed"], g["changed"], g["unchanged"],
-                ]
-                for ci, val in enumerate(row_vals, 1):
-                    cell = ws1.cell(row=row_r, column=ci, value=val)
-                    cell.fill = _fill(bg)
-                    cell.border = _border()
-                    cell.alignment = _align("center" if ci >= 4 else "left")
-                    cell.font = _font(size=9)
-                    # Formatos
-                    if ci in (4, 5, 6):
-                        cell.number_format = "#,##0.00"
-                    elif ci in (7, 8, 9):
-                        cell.number_format = "R$ #,##0.00"
-                    elif ci == 10:
-                        cell.number_format = '0.00"%"'
-                        if val > 5:
-                            cell.font = _font(VERM, bold=True, size=9)
-                        elif val < -5:
-                            cell.font = _font(VERDE, bold=True, size=9)
-                    elif ci == 9:
-                        if val > 0:
-                            cell.font = _font(VERM, bold=True, size=9)
-                        elif val < 0:
-                            cell.font = _font(VERDE, bold=True, size=9)
-                alt = not alt
-                row_r += 1
+    for (loc, disc, cat, g) in resumo_runs:
+        d_val = g["val_b"] - g["val_a"]
+        d_pct = (d_val / g["val_a"] * 100) if g["val_a"] != 0 else 0.0
+        d_qty = g["qty_b"] - g["qty_a"]
+        bg = CINZA_L if alt else BRANCO
+        row_vals = [
+            loc, disc, cat,
+            g["qty_a"], g["qty_b"], d_qty,
+            g["val_a"], g["val_b"], d_val, d_pct,
+            g["added"], g["removed"], g["changed"], g["unchanged"],
+        ]
+        for ci, val in enumerate(row_vals, 1):
+            cell = ws1.cell(row=row_r, column=ci, value=val)
+            cell.fill = _fill(bg)
+            cell.border = _border()
+            cell.alignment = _align("center" if ci >= 4 else "left")
+            cell.font = _font(size=9)
+            if ci in (4, 5, 6):
+                cell.number_format = "#,##0.00"
+            elif ci in (7, 8, 9):
+                cell.number_format = "R$ #,##0.00"
+            elif ci == 10:
+                cell.number_format = '0.00"%"'
+                if val > 5:
+                    cell.font = _font(VERM, bold=True, size=9)
+                elif val < -5:
+                    cell.font = _font(VERDE, bold=True, size=9)
+            elif ci == 9:
+                if val > 0:
+                    cell.font = _font(VERM, bold=True, size=9)
+                elif val < 0:
+                    cell.font = _font(VERDE, bold=True, size=9)
+        alt = not alt
+        row_r += 1
 
     ws1.freeze_panes = "A3"
 
@@ -1521,19 +1524,9 @@ def gerar_comparativo_revisoes(project_name: str, data: dict) -> io.BytesIO:
         cell.border = _border()
     ws2.row_dimensions[2].height = 20
 
-    # Ordena: localidade → disciplina → categoria → numero_item
-    sorted_items = sorted(
-        items,
-        key=lambda x: (
-            x.get("localidade") or "",
-            x.get("disciplina") or "",
-            x.get("categoria") or "",
-            x.get("numero_item") or "",
-        )
-    )
-
+    # Itens já vêm do backend na sequência correta (campo ordem) — não reordenar
     row_l = 3
-    for item in sorted_items:
+    for item in items:
         status = item.get("status", "unchanged")
         text_color, bg_color = STATUS_COLOR[status]
 

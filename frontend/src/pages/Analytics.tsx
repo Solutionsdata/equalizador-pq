@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
-  Legend, ResponsiveContainer, Cell, ReferenceLine,
+  Legend, ResponsiveContainer, Cell, ReferenceLine, LabelList,
 } from 'recharts'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1486,10 +1486,10 @@ function DrillChart({ items, revA, revB }: {
           : 'Nível máximo de detalhe — clique no breadcrumb para voltar'}
       </p>
 
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={340}>
         <BarChart
           data={data}
-          margin={{ top: 5, right: 20, left: 60, bottom: 60 }}
+          margin={{ top: 30, right: 20, left: 60, bottom: 60 }}
           onClick={(e) => {
             if (!e?.activeLabel || drillPath.length >= maxDepth) return
             setDrillPath([...drillPath, e.activeLabel])
@@ -1510,11 +1510,30 @@ function DrillChart({ items, revA, revB }: {
               name === keyA ? `Rev ${revA}` : `Rev ${revB}`,
             ]}
           />
-          <Legend formatter={(v) => v === keyA ? `Rev ${revA}` : `Rev ${revB}`} wrapperStyle={{ fontSize: 11 }} />
+          <Legend
+            verticalAlign="top"
+            align="right"
+            wrapperStyle={{ fontSize: 11, paddingBottom: 8 }}
+            formatter={(v) => v === keyA ? `Rev ${revA}` : `Rev ${revB}`}
+          />
           <Bar dataKey={keyA} name={keyA} fill={REV_A_COLOR} radius={[3, 3, 0, 0]}
-            style={{ cursor: drillPath.length < maxDepth ? 'pointer' : 'default' }} />
+            style={{ cursor: drillPath.length < maxDepth ? 'pointer' : 'default' }}>
+            <LabelList
+              dataKey={keyA}
+              position="top"
+              style={{ fontSize: 9, fill: REV_A_COLOR, fontWeight: 600 }}
+              formatter={(v: number) => metric === 'valor' ? fmtY(v) : formatNumber(v, 0)}
+            />
+          </Bar>
           <Bar dataKey={keyB} name={keyB} fill={REV_B_COLOR} radius={[3, 3, 0, 0]}
-            style={{ cursor: drillPath.length < maxDepth ? 'pointer' : 'default' }} />
+            style={{ cursor: drillPath.length < maxDepth ? 'pointer' : 'default' }}>
+            <LabelList
+              dataKey={keyB}
+              position="top"
+              style={{ fontSize: 9, fill: REV_B_COLOR, fontWeight: 600 }}
+              formatter={(v: number) => metric === 'valor' ? fmtY(v) : formatNumber(v, 0)}
+            />
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -1524,25 +1543,29 @@ function DrillChart({ items, revA, revB }: {
 function DetailTable({ items, revA, revB }: { items: RevisionCompareItem[]; revA: number; revB: number }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
-  // Group by localidade → disciplina
+  // Runs sequenciais por (localidade, disciplina, categoria) — mesmo bloco em posições
+  // diferentes do arquivo = grupos separados (nunca mescla blocos não-contíguos)
   const groups = useMemo(() => {
-    const map = new Map<string, { items: RevisionCompareItem[]; valA: number; valB: number; qtyA: number; qtyB: number }>()
+    type Run = { loc: string; disc: string; cat: string; items: RevisionCompareItem[]; valA: number; valB: number; qtyA: number; qtyB: number }
+    const runs: Run[] = []
     for (const item of items) {
-      const key = `${item.localidade || 'Sem Localidade'} § ${item.disciplina || 'Sem Disciplina'}`
-      const g = map.get(key) ?? { items: [], valA: 0, valB: 0, qtyA: 0, qtyB: 0 }
-      g.items.push(item)
-      g.valA += n(item.valor_a ?? 0)
-      g.valB += n(item.valor_b ?? 0)
-      g.qtyA += n(item.quantidade_a ?? 0)
-      g.qtyB += n(item.quantidade_b ?? 0)
-      map.set(key, g)
+      const loc  = item.localidade  || 'Sem Localidade'
+      const disc = item.disciplina  || 'Sem Disciplina'
+      const cat  = item.categoria   || 'Sem Categoria'
+      const last = runs[runs.length - 1]
+      if (last && last.loc === loc && last.disc === disc && last.cat === cat) {
+        last.items.push(item)
+        last.valA += n(item.valor_a ?? 0)
+        last.valB += n(item.valor_b ?? 0)
+        last.qtyA += n(item.quantidade_a ?? 0)
+        last.qtyB += n(item.quantidade_b ?? 0)
+      } else {
+        runs.push({ loc, disc, cat, items: [item],
+          valA: n(item.valor_a ?? 0), valB: n(item.valor_b ?? 0),
+          qtyA: n(item.quantidade_a ?? 0), qtyB: n(item.quantidade_b ?? 0) })
+      }
     }
-    return Array.from(map.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, g]) => {
-        const [loc, disc] = key.split(' § ')
-        return { loc, disc, ...g }
-      })
+    return runs
   }, [items])
 
   function toggleGroup(key: string) {
@@ -1562,8 +1585,8 @@ function DetailTable({ items, revA, revB }: { items: RevisionCompareItem[]; revA
 
   return (
     <div className="space-y-2">
-      {groups.map(({ loc, disc, items: grpItems, valA, valB, qtyA, qtyB }) => {
-        const key = `${loc} § ${disc}`
+      {groups.map(({ loc, disc, cat, items: grpItems, valA, valB, qtyA, qtyB }, runIdx) => {
+        const key = `${runIdx}:${loc} § ${disc} § ${cat}`
         const isOpen = expanded.has(key)
         const delta = valB - valA
         const hasAdded = grpItems.some(i => i.status === 'added')
@@ -1581,8 +1604,14 @@ function DetailTable({ items, revA, revB }: { items: RevisionCompareItem[]; revA
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-semibold text-gray-700">{loc}</span>
-                  <span className="text-gray-300">·</span>
+                  <span className="text-gray-300">›</span>
                   <span className="text-xs font-medium text-gray-600">{disc}</span>
+                  {cat && cat !== 'Sem Categoria' && (
+                    <>
+                      <span className="text-gray-300">›</span>
+                      <span className="text-xs font-medium text-gray-500">{cat}</span>
+                    </>
+                  )}
                   <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                     {hasAdded   && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">{grpItems.filter(i=>i.status==='added').length} add</span>}
                     {hasRemoved && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-medium">{grpItems.filter(i=>i.status==='removed').length} rem</span>}
